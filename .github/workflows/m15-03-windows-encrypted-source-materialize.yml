@@ -21,10 +21,10 @@ jobs:
           $cachedCipher = Join-Path $cache 'source-bundle.tar.enc'
           $bundle = Join-Path $workspace 'source-bundle.tar'
           $keyFile = Join-Path $workspace '.source-passphrase'
-          $assetUrl = 'https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r2-20260914/source-bundle.tar.enc'
-          $expectedCipher = '388a3c0287e92dee3099b7e5d8bbfb29408c15b08f4a23555e33282efbc1eb25'
-          $expectedBundle = '9790e48d14bc09feb85b2462f0ca2397dc81d04ba89debee99a12c63ea073267'
-          $expectedManifest = '571dfcdbd4e5a515b7fcd0c5027ca1ffd8a6114e063e54f593f4fea1cb852656'
+          $assetUrl = 'https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r3-20260914/source-bundle.tar.enc'
+          $expectedCipher = '5703d604a718eae5d9cfea82597c6f7855b4c7a1c7bdd55061954051834699df'
+          $expectedBundle = '41b4f06031f56b3dd3bb6506ac87dff52e83aed8af62eee307dd9d7723a070d0'
+          $expectedManifest = '6c4c03d88684a3e5be181f6cff4a32ed5524745d3e1476874a6b333a1776acdc'
           $python = 'C:\GoodBear\tools\Python312\python.exe'
           $openssl = 'C:\mozilla-build\msys2\usr\bin\openssl.exe'
           $tar = "$env:WINDIR\System32\tar.exe"
@@ -78,7 +78,7 @@ jobs:
           $baseline = Join-Path $workspace 'source\config\firefox-baseline.json'
           $archive = Join-Path $workspace 'source\source\firefox-154.0.source.tar.xz'
           $env:PATH = 'C:\Program Files\Git\cmd;' + $env:PATH
-          & $python $materializer --config $baseline --archive $archive
+          & $python $materializer --config $baseline --archive $archive --baseline-offline
           if ($LASTEXITCODE -ne 0) { throw 'Good Bear source materialization failed' }
 
           $worktree = Join-Path $workspace 'source\source\worktrees\firefox-154.0'
