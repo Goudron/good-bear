@@ -64,7 +64,7 @@ jobs:
           Assert-Signed $python 'Python Software Foundation'
           Invoke-Installer $python @('/quiet','InstallAllUsers=1','TargetDir=C:\GoodBear\tools\Python312','PrependPath=0','Include_pip=1','Include_test=0') 'Python 3.12.10'
 
-          $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'd071cdfb1ed21def537af8462b3dfa8d5359afcaee1bd2c73ac3af4280bc4860'
+          $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6'
           $rustExtract = Join-Path $download 'rust-1.90.0-extract'
           & "$env:WINDIR\System32\tar.exe" -xf $rust -C $download
           if ($LASTEXITCODE -ne 0) { throw 'Rust archive extraction failed' }
