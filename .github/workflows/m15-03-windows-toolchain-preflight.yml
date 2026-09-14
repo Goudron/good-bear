@@ -1,0 +1,28 @@
+name: M15-03 Windows toolchain preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  toolchain-preflight:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Report declared build-tool availability without repository checkout
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $names = 'cl.exe','link.exe','rustc.exe','cargo.exe','python.exe','node.exe','nasm.exe','git.exe'
+          foreach ($name in $names) {
+            $command = Get-Command $name -ErrorAction SilentlyContinue
+            if ($command) {
+              Write-Output ("GOOD_BEAR_TOOL_PRESENT " + $name)
+            } else {
+              Write-Output ("GOOD_BEAR_TOOL_MISSING " + $name)
+            }
+          }
+          $freeGiB = [math]::Round((Get-PSDrive C).Free / 1GB, 1)
+          if ($freeGiB -lt 80) { throw 'Less than 80 GiB free on C:.' }
+          Write-Output ("GOOD_BEAR_WORKSPACE_FREE_GIB=" + $freeGiB)
