@@ -1,0 +1,92 @@
+name: M15-03 Windows encrypted source materialization
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  materialize:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 70
+    env:
+      GOODBEAR_M15_03_SOURCE_PASSPHRASE: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE }}
+    steps:
+      - name: Download, verify, decrypt and materialize private source
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $cipher = Join-Path $workspace 'source-bundle.tar.enc'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          $keyFile = Join-Path $workspace '.source-passphrase'
+          $assetUrl = 'https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r2-20260914/source-bundle.tar.enc'
+          $expectedCipher = '388a3c0287e92dee3099b7e5d8bbfb29408c15b08f4a23555e33282efbc1eb25'
+          $expectedBundle = '9790e48d14bc09feb85b2462f0ca2397dc81d04ba89debee99a12c63ea073267'
+          $expectedManifest = '571dfcdbd4e5a515b7fcd0c5027ca1ffd8a6114e063e54f593f4fea1cb852656'
+          $python = 'C:\GoodBear\tools\Python312\python.exe'
+          $openssl = 'C:\mozilla-build\msys2\usr\bin\openssl.exe'
+          $tar = "$env:WINDIR\System32\tar.exe"
+
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE)) {
+            throw 'The encrypted-source Actions secret is absent'
+          }
+          if (Test-Path -LiteralPath $workspace) {
+            Remove-Item -LiteralPath $workspace -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          try {
+            Invoke-WebRequest -Uri $assetUrl -OutFile $cipher -UseBasicParsing
+            $cipherHash = (Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($cipherHash -ne $expectedCipher) { throw 'Encrypted source asset SHA-256 does not match' }
+
+            Set-Content -LiteralPath $keyFile -Value $env:GOODBEAR_M15_03_SOURCE_PASSPHRASE -NoNewline -Encoding ascii
+            & icacls $keyFile /inheritance:r /grant:r 'SYSTEM:(R)' | Out-Null
+            & $openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
+            if ($LASTEXITCODE -ne 0) { throw 'Encrypted source decryption failed' }
+          }
+          finally {
+            if (Test-Path -LiteralPath $keyFile) { Remove-Item -LiteralPath $keyFile -Force }
+          }
+
+          $bundleHash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($bundleHash -ne $expectedBundle) { throw 'Decrypted source bundle SHA-256 does not match' }
+          & $tar -xf $bundle -C $workspace
+          if ($LASTEXITCODE -ne 0) { throw 'Source bundle extraction failed' }
+
+          $verifier = Join-Path $workspace 'source\tools\m15_remote_transport.py'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          & $python $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $expectedManifest --expected-bundle-sha256 $expectedBundle
+          if ($LASTEXITCODE -ne 0) { throw 'M15-01 source bundle verification failed' }
+
+          $materializer = Join-Path $workspace 'source\tools\materialize_firefox_source.py'
+          $baseline = Join-Path $workspace 'source\config\firefox-baseline.json'
+          $archive = Join-Path $workspace 'source\source\firefox-154.0.source.tar.xz'
+          $env:PATH = 'C:\Program Files\Git\cmd;' + $env:PATH
+          & $python $materializer --config $baseline --archive $archive
+          if ($LASTEXITCODE -ne 0) { throw 'Good Bear source materialization failed' }
+
+          $worktree = Join-Path $workspace 'source\source\worktrees\firefox-154.0'
+          if (-not (Test-Path -LiteralPath (Join-Path $worktree '.good-bear-materialization.json'))) {
+            throw 'Materialization provenance marker is absent'
+          }
+          $evidence = [ordered]@{
+            task = 'GB100-M15-03'
+            encrypted_asset_sha256 = $cipherHash
+            source_bundle_sha256 = $bundleHash
+            source_manifest_sha256 = $expectedManifest
+            materialized = $true
+            source_returned_as_artifact = $false
+          }
+          $evidence | ConvertTo-Json -Compress | Set-Content -LiteralPath 'C:\GoodBear\m15-03-materialization-evidence.json' -Encoding utf8
+          $evidence | ConvertTo-Json -Compress
+          Write-Output 'GOOD_BEAR_WINDOWS_ENCRYPTED_SOURCE_MATERIALIZED_OK'
+          $global:LASTEXITCODE = 0
+          exit 0
+
+      - name: Publish source-free materialization evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: m15-03-windows-materialization-evidence
+          path: C:\GoodBear\m15-03-materialization-evidence.json
+          if-no-files-found: error
