@@ -83,16 +83,17 @@ jobs:
           $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6'
           $mozillaXz = Join-Path $mozillaBin 'xz.exe'
           if (-not (Test-Path -LiteralPath $mozillaXz)) { throw 'MozillaBuild xz.exe is absent' }
-          $rustInstaller = Get-ChildItem -LiteralPath $download -Filter 'install.bat' -File -Recurse | Where-Object { $_.FullName -like '*rust-1.90.0-x86_64-pc-windows-msvc*' } | Select-Object -First 1
-          if ($null -eq $rustInstaller) {
+          $rustInstaller = Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc\install.sh'
+          if (-not (Test-Path -LiteralPath $rustInstaller)) {
             & $mozillaXz '--decompress' '--keep' '--force' '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz'
             if ($LASTEXITCODE -ne 0) { throw 'Rust xz decompression failed' }
             & "$env:WINDIR\System32\tar.exe" -xf (Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc.tar') -C $download
             if ($LASTEXITCODE -ne 0) { throw 'Rust archive extraction failed' }
-            $rustInstaller = Get-ChildItem -LiteralPath $download -Filter 'install.bat' -File -Recurse | Where-Object { $_.FullName -like '*rust-1.90.0-x86_64-pc-windows-msvc*' } | Select-Object -First 1
           }
-          if ($null -eq $rustInstaller) { throw 'Rust install.bat is absent after extraction' }
-          & $rustInstaller.FullName '--prefix=C:\GoodBear\tools\rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
+          if (-not (Test-Path -LiteralPath $rustInstaller)) { throw 'Rust install.sh is absent after extraction' }
+          $mozillaBash = Join-Path $mozillaBin 'bash.exe'
+          if (-not (Test-Path -LiteralPath $mozillaBash)) { throw 'MozillaBuild bash.exe is absent' }
+          & $mozillaBash '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc/install.sh' '--prefix=/c/GoodBear/tools/rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
           if ($LASTEXITCODE -ne 0) { throw 'Rust 1.90.0 installation failed' }
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Rust 1.90.0'
 
