@@ -71,6 +71,15 @@ jobs:
             Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
           }
 
+          $gitExe = 'C:\Program Files\Git\cmd\git.exe'
+          if ((Test-Path -LiteralPath $gitExe) -and ((& $gitExe --version | Out-String).Trim() -eq 'git version 2.55.0.windows.5')) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Git for Windows 2.55.0.windows.5'
+          } else {
+            $gitInstaller = Get-Pinned 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe' 'Git-2.55.0.5-64-bit.exe' 'd065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6'
+            Assert-Signed $gitInstaller 'Git Development Community'
+            Invoke-Installer $gitInstaller @('/VERYSILENT','/NORESTART','/SUPPRESSMSGBOXES','/SP-') 'Git for Windows 2.55.0.windows.5'
+          }
+
           $pythonExe = 'C:\GoodBear\tools\Python312\python.exe'
           if ((Test-Path -LiteralPath $pythonExe) -and ((& $pythonExe --version 2>&1 | Out-String).Trim() -eq 'Python 3.12.10')) {
             Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Python 3.12.10'
@@ -119,6 +128,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $sdkRc)) { throw 'Windows SDK 10.0.26100.0 rc.exe is absent' }
           $required = @(
             'C:\mozilla-build\start-shell.bat',
+            'C:\Program Files\Git\cmd\git.exe',
             'C:\GoodBear\tools\Python312\python.exe',
             'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe',
             'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe',
@@ -128,6 +138,7 @@ jobs:
           foreach ($path in $required) { if (-not (Test-Path -LiteralPath $path)) { throw ("Required tool is absent: " + $path) } }
           $evidence = [ordered]@{
             task = 'GB100-M15-03'; build_tools = $actualVs; msvc = $msvc.Name; windows_sdk_rc = $sdkRc
+            git = (& 'C:\Program Files\Git\cmd\git.exe' --version | Out-String).Trim()
             python = (& 'C:\GoodBear\tools\Python312\python.exe' --version 2>&1 | Out-String).Trim()
             rust = (& 'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe' --version | Out-String).Trim()
             node = (& 'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe' --version | Out-String).Trim()
