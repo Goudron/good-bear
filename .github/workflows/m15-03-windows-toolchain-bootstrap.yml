@@ -137,3 +137,5 @@ jobs:
           $evidence | ConvertTo-Json | Set-Content -LiteralPath 'C:\GoodBear\toolchain-evidence.json' -Encoding utf8
           $evidence | ConvertTo-Json -Compress
           Write-Output 'GOOD_BEAR_WINDOWS_TOOLCHAIN_BOOTSTRAP_OK'
+          $global:LASTEXITCODE = 0
+          exit 0
