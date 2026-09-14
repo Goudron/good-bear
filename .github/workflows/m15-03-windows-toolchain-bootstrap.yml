@@ -76,7 +76,7 @@ jobs:
             Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Git for Windows 2.55.0.windows.5'
           } else {
             $gitInstaller = Get-Pinned 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe' 'Git-2.55.0.5-64-bit.exe' 'd065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6'
-            Assert-Signed $gitInstaller 'Git Development Community'
+            Assert-Signed $gitInstaller 'Johannes Schindelin'
             Invoke-Installer $gitInstaller @('/VERYSILENT','/NORESTART','/SUPPRESSMSGBOXES','/SP-') 'Git for Windows 2.55.0.windows.5'
           }
 
