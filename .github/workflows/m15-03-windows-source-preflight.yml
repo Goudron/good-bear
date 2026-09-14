@@ -19,6 +19,7 @@ jobs:
             'C:\mozilla-build\start-shell.bat',
             'C:\mozilla-build\msys2\usr\bin\bash.exe',
             'C:\mozilla-build\msys2\usr\bin\xz.exe',
+            'C:\mozilla-build\msys2\usr\bin\openssl.exe',
             $python,
             "$env:WINDIR\System32\tar.exe"
           )
@@ -30,11 +31,14 @@ jobs:
           $gitVersion = (& $git --version | Out-String).Trim()
           $lzmaProbe = (& $python -c 'import lzma; print("python-lzma-ok")' | Out-String).Trim()
           if ($lzmaProbe -ne 'python-lzma-ok') { throw 'Python lzma probe failed' }
+          $openssl = 'C:\mozilla-build\msys2\usr\bin\openssl.exe'
+          $opensslVersion = (& $openssl version | Out-String).Trim()
           $result = [ordered]@{
             task = 'GB100-M15-03'
             kind = 'private-source-materialization-preflight-no-source'
             git = $gitVersion
             python_lzma = $lzmaProbe
+            openssl = $opensslVersion
             system_tar = "$env:WINDIR\System32\tar.exe"
             mozilla_build = 'C:\mozilla-build'
           }
