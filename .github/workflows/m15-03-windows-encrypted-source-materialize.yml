@@ -8,38 +8,35 @@ permissions: {}
 jobs:
   materialize:
     runs-on: [self-hosted, Windows, X64, goodbear]
-    timeout-minutes: 70
+    # A first native NTFS copy of Firefox takes tens of minutes.  This leaves
+    # room for secure recovery and verification without treating it as failed.
+    timeout-minutes: 150
     env:
       GOODBEAR_M15_03_SOURCE_PASSPHRASE: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE }}
+      GOODBEAR_WORKSPACE: C:\GoodBear\m15-03-private-source
+      GOODBEAR_CACHE: C:\GoodBear\m15-03-encrypted-cache
+      GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r4-20260914/source-bundle.tar.enc
+      GOODBEAR_EXPECTED_CIPHER: 252b70b9ea3d62714b88efdd573aae616a7eb8c99d5772740a7517616325a36b
+      GOODBEAR_EXPECTED_BUNDLE: 1db4234bab7c27bbb5d771a2186c9998eb247a5affb427d8ddf13b9a2bdeb1b2
+      GOODBEAR_EXPECTED_MANIFEST: dc5c84da35b65c238b6e8169464f6717e197c50ad1f938a73b7af55592ad6590
+      GOODBEAR_PYTHON: C:\GoodBear\tools\Python312\python.exe
+      GOODBEAR_OPENSSL: C:\mozilla-build\msys2\usr\bin\openssl.exe
     steps:
-      - name: Download, verify, decrypt and materialize private source
+      - name: Prepare confidential workspace
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $workspace = 'C:\GoodBear\m15-03-private-source'
-          $cache = 'C:\GoodBear\m15-03-encrypted-cache'
+          $workspace = $env:GOODBEAR_WORKSPACE
+          $cache = $env:GOODBEAR_CACHE
           $cachedCipher = Join-Path $cache 'source-bundle.tar.enc'
-          $bundle = Join-Path $workspace 'source-bundle.tar'
-          $keyFile = Join-Path $workspace '.source-passphrase'
-          $assetUrl = 'https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r3-20260914/source-bundle.tar.enc'
-          $expectedCipher = '5703d604a718eae5d9cfea82597c6f7855b4c7a1c7bdd55061954051834699df'
-          $expectedBundle = '41b4f06031f56b3dd3bb6506ac87dff52e83aed8af62eee307dd9d7723a070d0'
-          $expectedManifest = '6c4c03d88684a3e5be181f6cff4a32ed5524745d3e1476874a6b333a1776acdc'
-          $python = 'C:\GoodBear\tools\Python312\python.exe'
-          $openssl = 'C:\mozilla-build\msys2\usr\bin\openssl.exe'
-          $tar = "$env:WINDIR\System32\tar.exe"
-
-          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE)) {
-            throw 'The encrypted-source Actions secret is absent'
-          }
+          Remove-Item -LiteralPath 'C:\GoodBear\m15-03-materialization-evidence.json' -Force -ErrorAction SilentlyContinue
           if (Test-Path -LiteralPath $workspace) {
-            # Recover from a prior interrupted run.  The cache may retain only
-            # ciphertext; plaintext and the passphrase file are never retained.
+            Write-Output 'Recovering interrupted private workspace; retaining ciphertext only'
             & icacls $workspace /reset /T /C | Out-Null
             $staleCipher = Join-Path $workspace 'source-bundle.tar.enc'
             if (Test-Path -LiteralPath $staleCipher) {
               $staleHash = (Get-FileHash -LiteralPath $staleCipher -Algorithm SHA256).Hash.ToLowerInvariant()
-              if ($staleHash -eq $expectedCipher) {
+              if ($staleHash -eq $env:GOODBEAR_EXPECTED_CIPHER) {
                 New-Item -ItemType Directory -Path $cache -Force | Out-Null
                 Move-Item -LiteralPath $staleCipher -Destination $cachedCipher -Force
               }
@@ -47,59 +44,90 @@ jobs:
             Remove-Item -LiteralPath $workspace -Recurse -Force
           }
           New-Item -ItemType Directory -Path $workspace -Force | Out-Null
-          $cipher = $cachedCipher
-          try {
-            if (-not (Test-Path -LiteralPath $cipher) -or ((Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedCipher)) {
-              New-Item -ItemType Directory -Path $cache -Force | Out-Null
-              Invoke-WebRequest -Uri $assetUrl -OutFile $cipher -UseBasicParsing
-            }
-            $cipherHash = (Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($cipherHash -ne $expectedCipher) { throw 'Encrypted source asset SHA-256 does not match' }
+          New-Item -ItemType Directory -Path $cache -Force | Out-Null
+          Write-Output 'PRIVATE_WORKSPACE_READY'
 
+      - name: Download and verify encrypted source cache
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $cipher = Join-Path $env:GOODBEAR_CACHE 'source-bundle.tar.enc'
+          if (-not (Test-Path -LiteralPath $cipher) -or ((Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_EXPECTED_CIPHER)) {
+            Write-Output 'Downloading encrypted source asset'
+            Invoke-WebRequest -Uri $env:GOODBEAR_ASSET_URL -OutFile $cipher -UseBasicParsing
+          } else {
+            Write-Output 'Using verified local ciphertext cache'
+          }
+          $cipherHash = (Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($cipherHash -ne $env:GOODBEAR_EXPECTED_CIPHER) { throw 'Encrypted source asset SHA-256 does not match' }
+          Write-Output 'ENCRYPTED_SOURCE_CACHE_VERIFIED'
+
+      - name: Decrypt and extract private source bundle
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE)) { throw 'The encrypted-source Actions secret is absent' }
+          $workspace = $env:GOODBEAR_WORKSPACE
+          $cipher = Join-Path $env:GOODBEAR_CACHE 'source-bundle.tar.enc'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          $keyFile = Join-Path $workspace '.source-passphrase'
+          try {
             Set-Content -LiteralPath $keyFile -Value $env:GOODBEAR_M15_03_SOURCE_PASSPHRASE -NoNewline -Encoding ascii
-            & $openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
+            & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
             if ($LASTEXITCODE -ne 0) { throw 'Encrypted source decryption failed' }
           }
           finally {
             if (Test-Path -LiteralPath $keyFile) { Remove-Item -LiteralPath $keyFile -Force }
           }
-
           $bundleHash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($bundleHash -ne $expectedBundle) { throw 'Decrypted source bundle SHA-256 does not match' }
-          & $tar -xf $bundle -C $workspace
+          if ($bundleHash -ne $env:GOODBEAR_EXPECTED_BUNDLE) { throw 'Decrypted source bundle SHA-256 does not match' }
+          & "$env:WINDIR\System32\tar.exe" -xf $bundle -C $workspace
           if ($LASTEXITCODE -ne 0) { throw 'Source bundle extraction failed' }
+          Write-Output 'PRIVATE_SOURCE_BUNDLE_EXTRACTED_AND_VERIFIED'
 
+      - name: Verify private source bundle manifest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = $env:GOODBEAR_WORKSPACE
           $verifier = Join-Path $workspace 'source\tools\m15_remote_transport.py'
           $manifest = Join-Path $workspace 'source-manifest.json'
-          & $python $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $expectedManifest --expected-bundle-sha256 $expectedBundle
-          if ($LASTEXITCODE -ne 0) { throw 'M15-01 source bundle verification failed' }
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          & $env:GOODBEAR_PYTHON $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_EXPECTED_MANIFEST --expected-bundle-sha256 $env:GOODBEAR_EXPECTED_BUNDLE
+          if ($LASTEXITCODE -ne 0) { throw 'M15-03 source bundle verification failed' }
+          Write-Output 'PRIVATE_SOURCE_MANIFEST_VERIFIED'
 
+      - name: Materialize isolated Firefox worktree
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = $env:GOODBEAR_WORKSPACE
           $materializer = Join-Path $workspace 'source\tools\materialize_firefox_source.py'
           $baseline = Join-Path $workspace 'source\config\firefox-baseline.json'
           $archive = Join-Path $workspace 'source\source\firefox-154.0.source.tar.xz'
           $env:PATH = 'C:\Program Files\Git\cmd;' + $env:PATH
-          & $python $materializer --config $baseline --archive $archive --baseline-offline
+          & $env:GOODBEAR_PYTHON $materializer --config $baseline --archive $archive --baseline-offline
           if ($LASTEXITCODE -ne 0) { throw 'Good Bear source materialization failed' }
-
           $worktree = Join-Path $workspace 'source\source\worktrees\firefox-154.0'
-          if (-not (Test-Path -LiteralPath (Join-Path $worktree '.good-bear-materialization.json'))) {
-            throw 'Materialization provenance marker is absent'
-          }
+          if (-not (Test-Path -LiteralPath (Join-Path $worktree '.good-bear-materialization.json'))) { throw 'Materialization provenance marker is absent' }
+          Write-Output 'PRIVATE_FIREFOX_WORKTREE_MATERIALIZED'
+
+      - name: Publish source-free materialization evidence
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
           $evidence = [ordered]@{
             task = 'GB100-M15-03'
-            encrypted_asset_sha256 = $cipherHash
-            source_bundle_sha256 = $bundleHash
-            source_manifest_sha256 = $expectedManifest
+            encrypted_asset_sha256 = $env:GOODBEAR_EXPECTED_CIPHER
+            source_bundle_sha256 = $env:GOODBEAR_EXPECTED_BUNDLE
+            source_manifest_sha256 = $env:GOODBEAR_EXPECTED_MANIFEST
             materialized = $true
             source_returned_as_artifact = $false
           }
           $evidence | ConvertTo-Json -Compress | Set-Content -LiteralPath 'C:\GoodBear\m15-03-materialization-evidence.json' -Encoding utf8
-          $evidence | ConvertTo-Json -Compress
           Write-Output 'GOOD_BEAR_WINDOWS_ENCRYPTED_SOURCE_MATERIALIZED_OK'
-          $global:LASTEXITCODE = 0
-          exit 0
 
-      - name: Publish source-free materialization evidence
+      - name: Upload source-free materialization evidence
         uses: actions/upload-artifact@v4
         with:
           name: m15-03-windows-materialization-evidence
