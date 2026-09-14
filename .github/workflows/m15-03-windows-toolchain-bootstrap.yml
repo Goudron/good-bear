@@ -42,7 +42,7 @@ jobs:
           function Assert-Signed([string]$Path, [string]$Publisher) {
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch [regex]::Escape($Publisher)) {
-              throw ("Authenticode verification failed for " + $Path)
+              throw ("Authenticode verification failed for " + $Path + "; status=" + $signature.Status + "; subject=" + $signature.SignerCertificate.Subject)
             }
             Write-Output ("GOOD_BEAR_TOOL_SIGNATURE_VALID " + (Split-Path -Leaf $Path))
           }
