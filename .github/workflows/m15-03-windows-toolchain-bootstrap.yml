@@ -1,0 +1,105 @@
+name: M15-03 Windows pinned toolchain bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 120
+    steps:
+      - name: Download, verify, install and inventory pinned build tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $download = 'C:\GoodBear\toolchain-downloads'
+          $tools = 'C:\GoodBear\tools'
+          $vs = 'C:\GoodBear\vs-buildtools'
+          New-Item -ItemType Directory -Force -Path $download,$tools | Out-Null
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Type DWord -Value 1
+
+          function Get-Pinned([string]$Uri, [string]$Name, [string]$Expected) {
+            $path = Join-Path $download $Name
+            Write-Output ("GOOD_BEAR_TOOL_DOWNLOAD_BEGIN " + $Name)
+            Invoke-WebRequest -Uri $Uri -OutFile $path -UseBasicParsing
+            $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Expected) { throw ("SHA-256 mismatch for " + $Name) }
+            Write-Output ("GOOD_BEAR_TOOL_DOWNLOAD_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
+            return $path
+          }
+          function Assert-Signed([string]$Path, [string]$Publisher) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch [regex]::Escape($Publisher)) {
+              throw ("Authenticode verification failed for " + $Path)
+            }
+            Write-Output ("GOOD_BEAR_TOOL_SIGNATURE_VALID " + (Split-Path -Leaf $Path))
+          }
+          function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Label) {
+            Write-Output ("GOOD_BEAR_TOOL_INSTALL_BEGIN " + $Label)
+            $process = Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru
+            if ($process.ExitCode -notin 0,3010) { throw ("Installer failed for " + $Label + ": " + $process.ExitCode) }
+            Write-Output ("GOOD_BEAR_TOOL_INSTALL_DONE " + $Label + " exit=" + $process.ExitCode)
+          }
+
+          $vsBootstrap = Get-Pinned 'https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe' 'vs_BuildTools-17.14.37628.2.exe' 'c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425'
+          Assert-Signed $vsBootstrap 'Microsoft Corporation'
+          Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') 'Visual Studio Build Tools 17.14.37628.2'
+
+          $mozillaBuild = Get-Pinned 'https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe' 'MozillaBuildSetup-4.2.1.exe' '8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8'
+          Assert-Signed $mozillaBuild 'Mozilla Corporation'
+          Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
+
+          $python = Get-Pinned 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' 'python-3.12.10-amd64.exe' '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb'
+          Assert-Signed $python 'Python Software Foundation'
+          Invoke-Installer $python @('/quiet','InstallAllUsers=1','TargetDir=C:\GoodBear\tools\Python312','PrependPath=0','Include_pip=1','Include_test=0') 'Python 3.12.10'
+
+          $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'd071cdfb1ed21def537af8462b3dfa8d5359afcaee1bd2c73ac3af4280bc4860'
+          $rustExtract = Join-Path $download 'rust-1.90.0-extract'
+          & "$env:WINDIR\System32\tar.exe" -xf $rust -C $download
+          if ($LASTEXITCODE -ne 0) { throw 'Rust archive extraction failed' }
+          $rustInstaller = Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc\install.bat'
+          & $rustInstaller '--prefix=C:\GoodBear\tools\rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
+          if ($LASTEXITCODE -ne 0) { throw 'Rust 1.90.0 installation failed' }
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Rust 1.90.0'
+
+          $node = Get-Pinned 'https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip' 'node-v24.19.0-win-x64.zip' '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73'
+          Expand-Archive -LiteralPath $node -DestinationPath $tools -Force
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Node 24.19.0'
+          $nasm = Get-Pinned 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.01/win64/nasm-2.16.01-win64.zip' 'nasm-2.16.01-win64.zip' '029eed31faf0d2c5f95783294432cbea6c15bf633430f254bb3c1f195c67ca3a'
+          Expand-Archive -LiteralPath $nasm -DestinationPath $tools -Force
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE NASM 2.16.01'
+          $llvm = Get-Pinned 'https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'd96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234'
+          & "$env:WINDIR\System32\tar.exe" -xf $llvm -C $tools
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM archive extraction failed' }
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE LLVM 22.1.8'
+
+          $vswhere = Join-Path $env:ProgramFiles(x86) 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $actualVs = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+          if ($actualVs -ne '17.14.37628.2') { throw ("Unexpected Build Tools version: " + $actualVs) }
+          $msvc = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Where-Object { $_.Name -like '14.44.*' } | Select-Object -First 1
+          if ($null -eq $msvc) { throw 'MSVC 14.44 is absent' }
+          $sdkRc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
+          if (-not (Test-Path -LiteralPath $sdkRc)) { throw 'Windows SDK 10.0.26100.0 rc.exe is absent' }
+          $required = @(
+            'C:\mozilla-build\start-shell.bat',
+            'C:\GoodBear\tools\Python312\python.exe',
+            'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe',
+            'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe',
+            'C:\GoodBear\tools\nasm-2.16.01\nasm.exe',
+            'C:\GoodBear\tools\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe'
+          )
+          foreach ($path in $required) { if (-not (Test-Path -LiteralPath $path)) { throw ("Required tool is absent: " + $path) } }
+          $evidence = [ordered]@{
+            task = 'GB100-M15-03'; build_tools = $actualVs; msvc = $msvc.Name; windows_sdk_rc = $sdkRc
+            python = (& 'C:\GoodBear\tools\Python312\python.exe' --version 2>&1 | Out-String).Trim()
+            rust = (& 'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe' --version | Out-String).Trim()
+            node = (& 'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe' --version | Out-String).Trim()
+            nasm = (& 'C:\GoodBear\tools\nasm-2.16.01\nasm.exe' -v | Out-String).Trim()
+            llvm = (& 'C:\GoodBear\tools\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe' --version | Select-Object -First 1 | Out-String).Trim()
+          }
+          $evidence | ConvertTo-Json | Set-Content -LiteralPath 'C:\GoodBear\toolchain-evidence.json' -Encoding utf8
+          $evidence | ConvertTo-Json -Compress
+          Write-Output 'GOOD_BEAR_WINDOWS_TOOLCHAIN_BOOTSTRAP_OK'
