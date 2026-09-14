@@ -1,0 +1,20 @@
+name: M15-03 Windows runner smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  windows-runner-smoke:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Prove the managed runner is Windows without using repository code
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RUNNER_OS -ne 'Windows') {
+            throw 'The selected runner is not Windows.'
+          }
+          Write-Output 'GOOD_BEAR_WINDOWS_RUNNER_SMOKE_OK'
