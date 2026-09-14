@@ -25,8 +25,9 @@ jobs:
           foreach ($path in $required) {
             if (-not (Test-Path -LiteralPath $path)) { throw "Required source-materialization tool is absent: $path" }
           }
-          $git = Get-Command git.exe -ErrorAction Stop
-          $gitVersion = (& $git.Source --version | Out-String).Trim()
+          $git = 'C:\Program Files\Git\cmd\git.exe'
+          if (-not (Test-Path -LiteralPath $git)) { throw 'Git for Windows is absent' }
+          $gitVersion = (& $git --version | Out-String).Trim()
           $lzmaProbe = (& $python -c 'import lzma; print("python-lzma-ok")' | Out-String).Trim()
           if ($lzmaProbe -ne 'python-lzma-ok') { throw 'Python lzma probe failed' }
           $result = [ordered]@{
