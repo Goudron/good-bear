@@ -28,20 +28,18 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $workspace = $env:GOODBEAR_WORKSPACE
           $cache = $env:GOODBEAR_CACHE
-          $cachedCipher = Join-Path $cache 'source-bundle.tar.enc'
           Remove-Item -LiteralPath 'C:\GoodBear\m15-03-materialization-evidence.json' -Force -ErrorAction SilentlyContinue
           if (Test-Path -LiteralPath $workspace) {
-            Write-Output 'Recovering interrupted private workspace; retaining ciphertext only'
-            & icacls $workspace /reset /T /C | Out-Null
-            $staleCipher = Join-Path $workspace 'source-bundle.tar.enc'
-            if (Test-Path -LiteralPath $staleCipher) {
-              $staleHash = (Get-FileHash -LiteralPath $staleCipher -Algorithm SHA256).Hash.ToLowerInvariant()
-              if ($staleHash -eq $env:GOODBEAR_EXPECTED_CIPHER) {
-                New-Item -ItemType Directory -Path $cache -Force | Out-Null
-                Move-Item -LiteralPath $staleCipher -Destination $cachedCipher -Force
-              }
+            Write-Output 'Removing interrupted private workspace'
+            try {
+              Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction Stop
             }
-            Remove-Item -LiteralPath $workspace -Recurse -Force
+            catch {
+              # Only repair ACLs when direct deletion proves that it is needed.
+              Write-Output 'Direct removal was blocked; repairing workspace ACLs'
+              & icacls $workspace /reset /T /C | Out-Null
+              Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction Stop
+            }
           }
           New-Item -ItemType Directory -Path $workspace -Force | Out-Null
           New-Item -ItemType Directory -Path $cache -Force | Out-Null
