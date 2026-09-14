@@ -52,17 +52,32 @@ jobs:
             Write-Output ("GOOD_BEAR_TOOL_INSTALL_DONE " + $Label + " exit=" + $process.ExitCode)
           }
 
-          $vsBootstrap = Get-Pinned 'https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe' 'vs_BuildTools-17.14.37628.2.exe' 'c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425'
-          Assert-Signed $vsBootstrap 'Microsoft Corporation'
-          Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') 'Visual Studio Build Tools 17.14.37628.2'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $installedVs = if (Test-Path -LiteralPath $vswhere) { & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion } else { '' }
+          if ($installedVs -eq '17.14.37628.2') {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Visual Studio Build Tools 17.14.37628.2'
+          } else {
+            $vsBootstrap = Get-Pinned 'https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe' 'vs_BuildTools-17.14.37628.2.exe' 'c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425'
+            Assert-Signed $vsBootstrap 'Microsoft Corporation'
+            Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') 'Visual Studio Build Tools 17.14.37628.2'
+          }
 
-          $mozillaBuild = Get-Pinned 'https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe' 'MozillaBuildSetup-4.2.1.exe' '8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8'
-          Assert-Signed $mozillaBuild 'Mozilla Corporation'
-          Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
+          if (Test-Path -LiteralPath 'C:\mozilla-build\start-shell.bat') {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID MozillaBuild 4.2.1'
+          } else {
+            $mozillaBuild = Get-Pinned 'https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe' 'MozillaBuildSetup-4.2.1.exe' '8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8'
+            Assert-Signed $mozillaBuild 'Mozilla Corporation'
+            Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
+          }
 
-          $python = Get-Pinned 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' 'python-3.12.10-amd64.exe' '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb'
-          Assert-Signed $python 'Python Software Foundation'
-          Invoke-Installer $python @('/quiet','InstallAllUsers=1','TargetDir=C:\GoodBear\tools\Python312','PrependPath=0','Include_pip=1','Include_test=0') 'Python 3.12.10'
+          $pythonExe = 'C:\GoodBear\tools\Python312\python.exe'
+          if ((Test-Path -LiteralPath $pythonExe) -and ((& $pythonExe --version 2>&1 | Out-String).Trim() -eq 'Python 3.12.10')) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Python 3.12.10'
+          } else {
+            $python = Get-Pinned 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' 'python-3.12.10-amd64.exe' '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb'
+            Assert-Signed $python 'Python Software Foundation'
+            Invoke-Installer $python @('/quiet','InstallAllUsers=1','TargetDir=C:\GoodBear\tools\Python312','PrependPath=0','Include_pip=1','Include_test=0') 'Python 3.12.10'
+          }
 
           $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6'
           $rustExtract = Join-Path $download 'rust-1.90.0-extract'
@@ -84,7 +99,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'LLVM archive extraction failed' }
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE LLVM 22.1.8'
 
-          $vswhere = Join-Path $env:ProgramFiles(x86) 'Microsoft Visual Studio\Installer\vswhere.exe'
           $actualVs = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
           if ($actualVs -ne '17.14.37628.2') { throw ("Unexpected Build Tools version: " + $actualVs) }
           $msvc = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Where-Object { $_.Name -like '14.44.*' } | Select-Object -First 1
