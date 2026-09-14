@@ -1,0 +1,67 @@
+name: M15-03 Windows native Russian smoke
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  native-smoke:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 15
+    steps:
+      - name: Build synthetic Russian C++ and Rust smoke package without repository source
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'C:\GoodBear\m15-03-native-smoke'
+          $tools = 'C:\GoodBear\tools'
+          $vsDevCmd = 'C:\GoodBear\vs-buildtools\Common7\Tools\VsDevCmd.bat'
+          $clang = Join-Path $tools 'clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe'
+          $rustc = Join-Path $tools 'rust-1.90.0\bin\rustc.exe'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          @'
+          #include <cstdio>
+          int main() {
+            std::puts("Good Bear: русскоязычная проверка нативной сборки Windows");
+            return 0;
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $root 'goodbear_smoke.cpp') -Encoding utf8
+          @'
+          fn main() {
+              println!("Good Bear: русскоязычная проверка Rust для Windows");
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $root 'goodbear_smoke.rs') -Encoding utf8
+          if (-not (Test-Path -LiteralPath $vsDevCmd)) { throw 'VsDevCmd.bat is absent' }
+          if (-not (Test-Path -LiteralPath $clang)) { throw 'clang-cl.exe is absent' }
+          if (-not (Test-Path -LiteralPath $rustc)) { throw 'rustc.exe is absent' }
+          cmd.exe /d /s /c "call `"$vsDevCmd`" -arch=x64 -host_arch=x64 && `"$clang`" /nologo /std:c++20 /utf-8 /EHsc `"$root\goodbear_smoke.cpp`" /Fe:`"$root\goodbear-cpp-smoke.exe`""
+          if ($LASTEXITCODE -ne 0) { throw 'clang-cl smoke compilation failed' }
+          & $rustc '--edition=2021' (Join-Path $root 'goodbear_smoke.rs') '-o' (Join-Path $root 'goodbear-rust-smoke.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'rustc smoke compilation failed' }
+          & (Join-Path $root 'goodbear-cpp-smoke.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'C++ smoke executable failed' }
+          & (Join-Path $root 'goodbear-rust-smoke.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Rust smoke executable failed' }
+          $hashes = Get-ChildItem -LiteralPath $root -File | ForEach-Object {
+            [ordered]@{ name = $_.Name; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); bytes = $_.Length }
+          }
+          [ordered]@{
+            task = 'GB100-M15-03'
+            kind = 'synthetic-native-russian-smoke-no-product-source'
+            platform = 'windows-x64'
+            compiler = (& $clang --version | Select-Object -First 1)
+            rust = (& $rustc --version)
+            files = $hashes
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $root 'manifest.json') -Encoding utf8
+          Compress-Archive -Path (Join-Path $root '*') -DestinationPath 'C:\GoodBear\m15-03-native-smoke.zip' -Force
+          Write-Output 'GOOD_BEAR_WINDOWS_NATIVE_RUSSIAN_SMOKE_OK'
+          $global:LASTEXITCODE = 0
+          exit 0
+      - name: Upload synthetic smoke evidence only
+        uses: actions/upload-artifact@v4
+        with:
+          name: m15-03-windows-native-smoke
+          path: C:\GoodBear\m15-03-native-smoke.zip
+          if-no-files-found: error
+          retention-days: 7
