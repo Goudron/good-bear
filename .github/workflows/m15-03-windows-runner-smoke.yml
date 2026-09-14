@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Prove the managed runner is Windows without using repository code
-        shell: pwsh
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           if ($env:RUNNER_OS -ne 'Windows') {
