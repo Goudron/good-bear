@@ -18,6 +18,7 @@ jobs:
           $download = 'C:\GoodBear\toolchain-downloads'
           $tools = 'C:\GoodBear\tools'
           $vs = 'C:\GoodBear\vs-buildtools'
+          $mozillaBin = 'C:\mozilla-build\msys2\usr\bin'
           New-Item -ItemType Directory -Force -Path $download,$tools | Out-Null
           Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Type DWord -Value 1
 
@@ -80,8 +81,9 @@ jobs:
           }
 
           $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6'
-          $rustExtract = Join-Path $download 'rust-1.90.0-extract'
-          & "$env:WINDIR\System32\tar.exe" -xf $rust -C $download
+          $mozillaTar = Join-Path $mozillaBin 'tar.exe'
+          if (-not (Test-Path -LiteralPath $mozillaTar)) { throw 'MozillaBuild tar.exe is absent' }
+          & $mozillaTar -xf $rust -C $download
           if ($LASTEXITCODE -ne 0) { throw 'Rust archive extraction failed' }
           $rustInstaller = Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc\install.bat'
           & $rustInstaller '--prefix=C:\GoodBear\tools\rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
@@ -95,7 +97,7 @@ jobs:
           Expand-Archive -LiteralPath $nasm -DestinationPath $tools -Force
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE NASM 2.16.01'
           $llvm = Get-Pinned 'https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'd96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234'
-          & "$env:WINDIR\System32\tar.exe" -xf $llvm -C $tools
+          & $mozillaTar -xf $llvm -C $tools
           if ($LASTEXITCODE -ne 0) { throw 'LLVM archive extraction failed' }
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE LLVM 22.1.8'
 
