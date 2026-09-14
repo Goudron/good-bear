@@ -1,0 +1,43 @@
+name: M15-03 Windows private-source preflight
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  source-preflight:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Verify source materialization prerequisites without source inputs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $python = 'C:\GoodBear\tools\Python312\python.exe'
+          $required = @(
+            'C:\mozilla-build\start-shell.bat',
+            'C:\mozilla-build\msys2\usr\bin\bash.exe',
+            'C:\mozilla-build\msys2\usr\bin\xz.exe',
+            $python,
+            "$env:WINDIR\System32\tar.exe"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "Required source-materialization tool is absent: $path" }
+          }
+          $git = Get-Command git.exe -ErrorAction Stop
+          $gitVersion = (& $git.Source --version | Out-String).Trim()
+          $lzmaProbe = (& $python -c 'import lzma; print("python-lzma-ok")' | Out-String).Trim()
+          if ($lzmaProbe -ne 'python-lzma-ok') { throw 'Python lzma probe failed' }
+          $result = [ordered]@{
+            task = 'GB100-M15-03'
+            kind = 'private-source-materialization-preflight-no-source'
+            git = $gitVersion
+            python_lzma = $lzmaProbe
+            system_tar = "$env:WINDIR\System32\tar.exe"
+            mozilla_build = 'C:\mozilla-build'
+          }
+          $result | ConvertTo-Json -Compress
+          Write-Output 'GOOD_BEAR_WINDOWS_PRIVATE_SOURCE_PREFLIGHT_OK'
+          $global:LASTEXITCODE = 0
+          exit 0
