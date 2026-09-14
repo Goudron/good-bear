@@ -23,11 +23,19 @@ jobs:
 
           function Get-Pinned([string]$Uri, [string]$Name, [string]$Expected) {
             $path = Join-Path $download $Name
-            Write-Output ("GOOD_BEAR_TOOL_DOWNLOAD_BEGIN " + $Name)
+            if (Test-Path -LiteralPath $path) {
+              $cached = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($cached -eq $Expected) {
+                Write-Host ("GOOD_BEAR_TOOL_CACHE_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
+                return $path
+              }
+              Remove-Item -LiteralPath $path -Force
+            }
+            Write-Host ("GOOD_BEAR_TOOL_DOWNLOAD_BEGIN " + $Name)
             Invoke-WebRequest -Uri $Uri -OutFile $path -UseBasicParsing
             $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($actual -ne $Expected) { throw ("SHA-256 mismatch for " + $Name) }
-            Write-Output ("GOOD_BEAR_TOOL_DOWNLOAD_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
+            Write-Host ("GOOD_BEAR_TOOL_DOWNLOAD_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
             return $path
           }
           function Assert-Signed([string]$Path, [string]$Publisher) {
