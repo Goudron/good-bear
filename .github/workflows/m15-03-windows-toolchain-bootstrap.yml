@@ -93,6 +93,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $rustInstaller)) { throw 'Rust install.sh is absent after extraction' }
           $mozillaBash = Join-Path $mozillaBin 'bash.exe'
           if (-not (Test-Path -LiteralPath $mozillaBash)) { throw 'MozillaBuild bash.exe is absent' }
+          $env:PATH = $mozillaBin + ';' + $env:PATH
           & $mozillaBash '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc/install.sh' '--prefix=/c/GoodBear/tools/rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
           if ($LASTEXITCODE -ne 0) { throw 'Rust 1.90.0 installation failed' }
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Rust 1.90.0'
