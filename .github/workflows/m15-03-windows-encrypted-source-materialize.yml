@@ -17,7 +17,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $workspace = 'C:\GoodBear\m15-03-private-source'
-          $cipher = Join-Path $workspace 'source-bundle.tar.enc'
+          $cache = 'C:\GoodBear\m15-03-encrypted-cache'
+          $cachedCipher = Join-Path $cache 'source-bundle.tar.enc'
           $bundle = Join-Path $workspace 'source-bundle.tar'
           $keyFile = Join-Path $workspace '.source-passphrase'
           $assetUrl = 'https://github.com/Goudron/good-bear/releases/download/m15-03-windows-source-encrypted-r2-20260914/source-bundle.tar.enc'
@@ -32,16 +33,30 @@ jobs:
             throw 'The encrypted-source Actions secret is absent'
           }
           if (Test-Path -LiteralPath $workspace) {
+            # Recover from a prior interrupted run.  The cache may retain only
+            # ciphertext; plaintext and the passphrase file are never retained.
+            & icacls $workspace /reset /T /C | Out-Null
+            $staleCipher = Join-Path $workspace 'source-bundle.tar.enc'
+            if (Test-Path -LiteralPath $staleCipher) {
+              $staleHash = (Get-FileHash -LiteralPath $staleCipher -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($staleHash -eq $expectedCipher) {
+                New-Item -ItemType Directory -Path $cache -Force | Out-Null
+                Move-Item -LiteralPath $staleCipher -Destination $cachedCipher -Force
+              }
+            }
             Remove-Item -LiteralPath $workspace -Recurse -Force
           }
           New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $cipher = $cachedCipher
           try {
-            Invoke-WebRequest -Uri $assetUrl -OutFile $cipher -UseBasicParsing
+            if (-not (Test-Path -LiteralPath $cipher) -or ((Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedCipher)) {
+              New-Item -ItemType Directory -Path $cache -Force | Out-Null
+              Invoke-WebRequest -Uri $assetUrl -OutFile $cipher -UseBasicParsing
+            }
             $cipherHash = (Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant()
             if ($cipherHash -ne $expectedCipher) { throw 'Encrypted source asset SHA-256 does not match' }
 
             Set-Content -LiteralPath $keyFile -Value $env:GOODBEAR_M15_03_SOURCE_PASSPHRASE -NoNewline -Encoding ascii
-            & icacls $keyFile /inheritance:r /grant:r 'SYSTEM:(R)' | Out-Null
             & $openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
             if ($LASTEXITCODE -ne 0) { throw 'Encrypted source decryption failed' }
           }
