@@ -1,0 +1,147 @@
+name: M13 Windows full-LTO Russian candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Arm the isolated full-LTO job, or collect its candidate after recovery
+        required: true
+        type: choice
+        options: [arm, collect]
+      source_manifest_sha256:
+        description: Exact reviewed Firefox 156 source-manifest SHA-256
+        required: true
+        type: string
+      source_bundle_sha256:
+        description: Exact reviewed source-bundle SHA-256
+        required: true
+        type: string
+      selftest_job_id:
+        description: Arm only - recovered isolation-selftest job ID
+        required: false
+        type: string
+      selftest_job_sha256:
+        description: Arm only - exact recovered isolation-selftest job SHA-256
+        required: false
+        type: string
+      selftest_receipt_sha256:
+        description: Arm only - exact recovered isolation-selftest receipt SHA-256
+        required: false
+        type: string
+      job_id:
+        description: Collect only - full-LTO job ID printed by the arm operation
+        required: false
+        type: string
+      job_sha256:
+        description: Collect only - full-LTO job SHA-256 printed by the arm operation
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-full-lto
+  cancel-in-progress: false
+
+jobs:
+  full-lto:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 30
+    env:
+      GOODBEAR_OPERATION: ${{ inputs.operation }}
+      GOODBEAR_MANIFEST_SHA256: ${{ inputs.source_manifest_sha256 }}
+      GOODBEAR_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+      GOODBEAR_SELFTEST_JOB_ID: ${{ inputs.selftest_job_id }}
+      GOODBEAR_SELFTEST_JOB_SHA256: ${{ inputs.selftest_job_sha256 }}
+      GOODBEAR_SELFTEST_RECEIPT_SHA256: ${{ inputs.selftest_receipt_sha256 }}
+      GOODBEAR_JOB_ID: ${{ inputs.job_id }}
+      GOODBEAR_JOB_SHA256: ${{ inputs.job_sha256 }}
+      GOODBEAR_SUPPLIER_CONTRACT_SHA256: beeed27c0bf33c0b62d24da83c0457480f62d5f0315467724e7cd5ae279b3976
+
+    steps:
+      - name: Validate exact source pins and operation shape
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GOODBEAR_OPERATION -notin @('arm', 'collect')) { throw 'Unknown operation' }
+          foreach ($hash in @($env:GOODBEAR_MANIFEST_SHA256, $env:GOODBEAR_BUNDLE_SHA256)) {
+            if ($hash -notcmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
+          }
+          if ($env:GOODBEAR_OPERATION -eq 'arm') {
+            foreach ($value in @($env:GOODBEAR_SELFTEST_JOB_ID, $env:GOODBEAR_SELFTEST_JOB_SHA256, $env:GOODBEAR_SELFTEST_RECEIPT_SHA256)) {
+              if ([string]::IsNullOrWhiteSpace($value)) { throw 'Arm requires the recovered selftest reference' }
+            }
+            if ($env:GOODBEAR_SELFTEST_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_SELFTEST_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$' -or $env:GOODBEAR_SELFTEST_RECEIPT_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Invalid recovered selftest reference' }
+            if ($env:GOODBEAR_JOB_ID -or $env:GOODBEAR_JOB_SHA256) { throw 'Arm cannot reuse a prior full-LTO job' }
+          } else {
+            if ($env:GOODBEAR_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Collect requires the exact full-LTO job identity and hash' }
+            if ($env:GOODBEAR_SELFTEST_JOB_ID -or $env:GOODBEAR_SELFTEST_JOB_SHA256 -or $env:GOODBEAR_SELFTEST_RECEIPT_SHA256) { throw 'Collect must not replace the saved selftest binding' }
+          }
+          Write-Output 'M13_FULL_LTO_OPERATION_SHAPE_VERIFIED'
+
+      - name: Arm only the full-LTO job with the private supplier input
+        if: inputs.operation == 'arm'
+        shell: powershell
+        env:
+          GOODBEAR_SAFE_BROWSING_API_KEY: ${{ secrets.GOODBEAR_SAFE_BROWSING_API_KEY }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_SAFE_BROWSING_API_KEY)) { throw 'Private Safe Browsing build input is absent' }
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $source = Join-Path $workspace 'source'
+          $script = Join-Path $source 'tools\run_m13_cloud_windows.py'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          foreach ($path in @($script, $manifest, $bundle)) { if (-not (Test-Path -LiteralPath $path)) { throw "Required frozen input is absent: $path" } }
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Bundle hash differs' }
+          $contract = Join-Path $source 'config\m15-12-safebrowsing-build-input.json'
+          if ((Get-FileHash -LiteralPath $contract -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_SUPPLIER_CONTRACT_SHA256) { throw 'Safe Browsing supplier contract hash differs' }
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ([Guid]::NewGuid().ToString('N'))
+          $key = Join-Path $operation 'safebrowsing.key'
+          $cache = Join-Path $operation 'python-cache'
+          try {
+            New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+            [IO.File]::WriteAllText($key, $env:GOODBEAR_SAFE_BROWSING_API_KEY, [Text.ASCIIEncoding]::new($false))
+            New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
+            & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script arm --phase full-lto --timeout-minutes 360 --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_MANIFEST_SHA256 --expected-bundle-sha256 $env:GOODBEAR_BUNDLE_SHA256 --selftest-job-id $env:GOODBEAR_SELFTEST_JOB_ID --selftest-job-sha256 $env:GOODBEAR_SELFTEST_JOB_SHA256 --selftest-receipt-sha256 $env:GOODBEAR_SELFTEST_RECEIPT_SHA256 --safebrowsing-key-file $key --safebrowsing-contract-sha256 $env:GOODBEAR_SUPPLIER_CONTRACT_SHA256
+            if ($LASTEXITCODE -ne 0) { throw 'Full-LTO arm failed; inspect the durable native job state' }
+          }
+          finally {
+            Remove-Item -LiteralPath $operation -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'FULL_LTO_ARMED_NOT_PASSED: collect this exact job after verified reboot recovery'
+
+      - name: Collect only the recovered full-LTO candidate and redacted evidence
+        if: inputs.operation == 'collect'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $script = Join-Path $workspace 'source\tools\run_m13_cloud_windows.py'
+          $job = Join-Path $workspace ('native-offline-jobs\' + $env:GOODBEAR_JOB_ID + '\job.json')
+          if ((Get-FileHash -LiteralPath $job -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_JOB_SHA256) { throw 'Full-LTO job descriptor hash differs' }
+          $descriptor = Get-Content -LiteralPath $job -Raw | ConvertFrom-Json
+          if ($descriptor.phase -cne 'full-lto' -or $descriptor.expected_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $descriptor.expected_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Job is not the requested exact-source full-LTO build' }
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('collect-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          $output = Join-Path $operation 'returned'
+          $cache = Join-Path $operation 'python-cache'
+          New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
+          try {
+            & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script --job $job --job-sha256 $env:GOODBEAR_JOB_SHA256 collect --output $output
+            if ($LASTEXITCODE -ne 0) { throw 'Collection requires successful full-LTO completion and verified reboot recovery' }
+          }
+          finally {
+            Remove-Item -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'FULL_LTO_CANDIDATE_COLLECTED: unsigned local candidate only'
+
+      - name: Return the candidate and redacted native evidence
+        if: inputs.operation == 'collect' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-full-lto-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\collect-${{ github.run_id }}-${{ github.run_attempt }}\returned\*
+          if-no-files-found: error
+          retention-days: 7
