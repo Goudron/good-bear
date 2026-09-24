@@ -54,13 +54,18 @@ jobs:
           }
 
           $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          # The signed 17.14.37628.2 bootstrap executable is a downloader.  The
+          # reviewed installation it resolved on the isolated builder is 17.14.37710.0.
+          # Record both identities: the cache continues to verify the bootstrap bytes,
+          # while acceptance binds the installed component catalog.
+          $expectedVsInstallation = '17.14.37710.0'
           $installedVs = if (Test-Path -LiteralPath $vswhere) { & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion } else { '' }
-          if ($installedVs -eq '17.14.37628.2') {
-            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Visual Studio Build Tools 17.14.37628.2'
+          if ($installedVs -eq $expectedVsInstallation) {
+            Write-Output ('GOOD_BEAR_TOOL_ALREADY_VALID Visual Studio Build Tools installation ' + $expectedVsInstallation)
           } else {
             $vsBootstrap = Get-Pinned 'https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe' 'vs_BuildTools-17.14.37628.2.exe' 'c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425'
             Assert-Signed $vsBootstrap 'Microsoft Corporation'
-            Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') 'Visual Studio Build Tools 17.14.37628.2'
+            Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') ('Visual Studio Build Tools installation ' + $expectedVsInstallation)
           }
 
           if (Test-Path -LiteralPath 'C:\mozilla-build\start-shell.bat') {
@@ -121,7 +126,7 @@ jobs:
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE LLVM 22.1.8'
 
           $actualVs = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
-          if ($actualVs -ne '17.14.37628.2') { throw ("Unexpected Build Tools version: " + $actualVs) }
+          if ($actualVs -ne $expectedVsInstallation) { throw ("Unexpected Build Tools installation version: " + $actualVs) }
           $msvc = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Where-Object { $_.Name -like '14.44.*' } | Select-Object -First 1
           if ($null -eq $msvc) { throw 'MSVC 14.44 is absent' }
           $sdkRc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
