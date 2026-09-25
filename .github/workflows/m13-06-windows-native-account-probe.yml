@@ -57,11 +57,15 @@ jobs:
             $stage = 'existing-account-native-api'
             $existing = Get-ProbeUser 'gbbuild'
             $report.existing_account_visible = [bool]$existing
-            $stage = 'net-user-add'
-            & net.exe user $name $password /add /expires:never /passwordchg:no ('/comment:' + $owner) | Out-Null
-            $report.net_user_add_exit = [int]$LASTEXITCODE
+            $stage = 'net-user-add-basic'
+            & net.exe user $name $password /add | Out-Null
+            $report.net_user_add_basic_exit = [int]$LASTEXITCODE
             if ($LASTEXITCODE -ne 0) { throw 'native account addition failed' }
             $created = $true
+            $stage = 'net-user-comment'
+            & net.exe user $name ('/comment:' + $owner) | Out-Null
+            $report.net_user_comment_exit = [int]$LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw 'native account comment assignment failed' }
             $stage = 'created-account-native-api'
             $createdUser = Get-ProbeUser $name
             $report.created_account_visible = [bool]$createdUser
