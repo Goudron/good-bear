@@ -46,6 +46,19 @@ jobs:
             }
           }
           New-Item -ItemType Directory -Path $workspace -Force | Out-Null
+          $workerGroup = 'GoodBear-Offline-Workers'
+          & cmd.exe /d /c 'net localgroup GoodBear-Offline-Workers >nul 2>nul'
+          if ($LASTEXITCODE -ne 0) {
+            & cmd.exe /d /c 'net localgroup GoodBear-Offline-Workers /add >nul 2>nul'
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot create the offline-worker group' }
+          }
+          & cmd.exe /d /c 'net localgroup GoodBear-Offline-Workers >nul 2>nul'
+          if ($LASTEXITCODE -ne 0) { throw 'Offline-worker group presence is unproven' }
+          try {
+            $workerSid = ([Security.Principal.NTAccount]::new($env:COMPUTERNAME, $workerGroup)).Translate([Security.Principal.SecurityIdentifier]).Value
+          } catch { throw 'Cannot resolve the offline-worker group SID' }
+          & icacls.exe $workspace /grant ('*' + $workerSid + ':(OI)(CI)RX') /deny ('*' + $workerSid + ':(OI)(CI)(WD,AD,WEA,WA,DE,DC,WDAC,WO)') /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot seed offline-worker inherited source ACL' }
           New-Item -ItemType Directory -Path $cache -Force | Out-Null
           Write-Output 'PRIVATE_WORKSPACE_READY'
 
