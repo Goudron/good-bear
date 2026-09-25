@@ -1,0 +1,169 @@
+name: M13 Windows offline isolation selftest
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Arm the bounded selftest, or collect it after reboot recovery
+        required: true
+        type: choice
+        options: [arm, collect]
+      source_manifest_sha256:
+        description: Exact reviewed Firefox 156 source-manifest SHA-256
+        required: true
+        type: string
+      source_bundle_sha256:
+        description: Exact reviewed source-bundle SHA-256
+        required: true
+        type: string
+      job_id:
+        description: Collect only - the job ID printed by the arm operation
+        required: false
+        type: string
+      job_sha256:
+        description: Collect only - the immutable job descriptor hash printed by arm
+        required: false
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-offline-selftest
+  cancel-in-progress: false
+
+jobs:
+  selftest:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 30
+    env:
+      GOODBEAR_OPERATION: ${{ inputs.operation }}
+      GOODBEAR_MANIFEST_SHA256: ${{ inputs.source_manifest_sha256 }}
+      GOODBEAR_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+      GOODBEAR_JOB_ID: ${{ inputs.job_id }}
+      GOODBEAR_JOB_SHA256: ${{ inputs.job_sha256 }}
+    steps:
+      - name: Verify exact source bytes before invoking the native executor
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GOODBEAR_OPERATION -notin @('arm', 'collect')) { throw 'Unknown operation' }
+          foreach ($hash in @($env:GOODBEAR_MANIFEST_SHA256, $env:GOODBEAR_BUNDLE_SHA256)) {
+            if ($hash -notcmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
+          }
+          if ($env:GOODBEAR_OPERATION -eq 'collect') {
+            if ($env:GOODBEAR_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Exact job identity and hash are required' }
+          } elseif ($env:GOODBEAR_JOB_ID -or $env:GOODBEAR_JOB_SHA256) {
+            throw 'An arm operation cannot reuse a previous job'
+          }
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $source = Join-Path $workspace 'source'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Bundle hash differs' }
+          $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+          if ($record.upstream.version -cne '156.0' -or $record.upstream.revision -cne '3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1') { throw 'Wrong Firefox baseline' }
+          $root = [IO.Path]::GetFullPath($source).TrimEnd('\') + '\'
+          $seen = @{}
+          $count = 0
+          foreach ($entry in $record.declared_inputs) {
+            if (-not $entry.path -or [IO.Path]::IsPathRooted($entry.path) -or $entry.path.Contains('\') -or ($entry.path.Split('/') | Where-Object { $_ -in @('', '.', '..') })) { throw 'Unsafe declared source path' }
+            if ($entry.sha256 -notcmatch '^[0-9a-f]{64}$' -or $seen.ContainsKey($entry.path)) { throw 'Invalid or duplicate source input' }
+            $path = [IO.Path]::GetFullPath((Join-Path $source $entry.path))
+            if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Source input escapes workspace' }
+            $item = Get-Item -LiteralPath $path -Force
+            if ($item.PSIsContainer -or $item.Length -ne $entry.size) { throw 'Source input size/type differs' }
+            $ancestor = $item
+            while ($ancestor -and $ancestor.FullName.StartsWith($root.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+              if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse points cannot supply frozen source' }
+              if ($ancestor -is [IO.DirectoryInfo]) { $ancestor = $ancestor.Parent } else { $ancestor = $ancestor.Directory }
+            }
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256) { throw 'Extracted source bytes differ' }
+            $seen[$entry.path] = $true
+            $count++
+            if ($count % 100 -eq 0) { Write-Output ('Verified frozen inputs: ' + $count) }
+          }
+          $requiredPython = @(
+            'tools/run_m13_cloud_windows.py', 'tools/windows_offline_worker.py',
+            'tools/preflight_m15_cloud_windows.py', 'tools/materialize_firefox_source.py',
+            'tools/m15_remote_transport.py', 'tools/host_build_context.py', 'tools/project_temp.py',
+            'tools/verify_m3_04_certificate_supply_chain.py', 'tools/verify_m3_01_certificate_provenance.py',
+            'tools/verify_m3_02_russian_pki_manifest.py', 'tools/verify_firefox_baseline.py',
+            'tools/safebrowsing_build_input.py'
+          )
+          foreach ($required in ($requiredPython + @('build/windows/mozconfig.engine-test', 'config/firefox-baseline.json', 'config/m15-03-windows-toolchain-lock.json'))) {
+            if (-not $seen.ContainsKey($required)) { throw 'Frozen source lacks the reviewed native executor' }
+          }
+          # Enumerate only the import tree, checking directories before descending.
+          # A declared source file must never execute an undeclared sibling module,
+          # native extension, or a timestamp-valid bytecode cache.
+          $pending = New-Object 'System.Collections.Generic.Stack[string]'
+          $pending.Push((Join-Path $source 'tools'))
+          while ($pending.Count -gt 0) {
+            $directory = Get-Item -LiteralPath $pending.Pop() -Force
+            if ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Python import directory is a reparse point' }
+            foreach ($item in Get-ChildItem -LiteralPath $directory.FullName -Force) {
+              if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Python import entry is a reparse point' }
+              if ($item.PSIsContainer) { $pending.Push($item.FullName); continue }
+              if ($item.Extension -in @('.pyc', '.pyo')) { throw 'Source bytecode cannot supply trusted Python' }
+              if ($item.Extension -in @('.py', '.pyd')) {
+                $relative = $item.FullName.Substring($root.Length).Replace('\', '/')
+                if (-not $seen.ContainsKey($relative)) { throw 'Undeclared Python import file' }
+              }
+            }
+          }
+          Write-Output ('SOURCE_BYTES_VERIFIED inputs=' + $count)
+
+      - name: Arm only the isolation selftest
+        if: inputs.operation == 'arm'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $script = Join-Path $workspace 'source\tools\run_m13_cloud_windows.py'
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ([Guid]::NewGuid().ToString('N'))
+          $cache = Join-Path $operation 'python-cache'
+          try {
+            New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+            New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
+            & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script arm --phase isolation-selftest --timeout-minutes 10 --manifest (Join-Path $workspace 'source-manifest.json') --bundle (Join-Path $workspace 'source-bundle.tar') --expected-manifest-sha256 $env:GOODBEAR_MANIFEST_SHA256 --expected-bundle-sha256 $env:GOODBEAR_BUNDLE_SHA256
+            if ($LASTEXITCODE -ne 0) { throw 'Isolation selftest arm failed; inspect the durable native job state' }
+          }
+          finally {
+            Remove-Item -LiteralPath $operation -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'SELFTEST_ARMED_NOT_PASSED: collect this exact job after verified reboot recovery'
+
+      - name: Collect only the recovered selftest evidence
+        if: inputs.operation == 'collect'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $script = Join-Path $workspace 'source\tools\run_m13_cloud_windows.py'
+          $job = Join-Path $workspace ('native-offline-jobs\' + $env:GOODBEAR_JOB_ID + '\job.json')
+          if ((Get-FileHash -LiteralPath $job -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_JOB_SHA256) { throw 'Job descriptor hash differs' }
+          $descriptor = Get-Content -LiteralPath $job -Raw | ConvertFrom-Json
+          if ($descriptor.phase -cne 'isolation-selftest' -or $descriptor.expected_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $descriptor.expected_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Job is not the requested exact-source isolation selftest' }
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('collect-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          $output = Join-Path $operation 'returned'
+          $cache = Join-Path $operation 'python-cache'
+          New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+          New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
+          try {
+            & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script --job $job --job-sha256 $env:GOODBEAR_JOB_SHA256 collect --output $output
+            if ($LASTEXITCODE -ne 0) { throw 'Collection requires verified reboot recovery' }
+          }
+          finally {
+            Remove-Item -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'RECOVERED_SELFTEST_EVIDENCE_COLLECTED: no compilation or product acceptance'
+
+      - name: Return source-free selftest evidence
+        if: inputs.operation == 'collect' && success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-offline-selftest-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\collect-${{ github.run_id }}-${{ github.run_attempt }}\returned\*
+          if-no-files-found: error
+          retention-days: 7
