@@ -24,11 +24,17 @@ jobs:
           $statePath = Join-Path 'C:\GoodBear\m15-03-private-source\native-offline-jobs' (Join-Path $jobId 'state.json')
           if (-not (Test-Path -LiteralPath $statePath)) { throw 'Native state is absent' }
           $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+          $jobPath = Join-Path 'C:\GoodBear\m15-03-private-source\native-offline-jobs' (Join-Path $jobId 'job.json')
+          if (-not (Test-Path -LiteralPath $jobPath)) { throw 'Native job descriptor is absent' }
+          $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
           $allowed = @('status', 'exit_code', 'error', 'cleanup_error', 'recovery_error', 'last_error', 'network_transition_started', 'worker_started', 'network_restored', 'recovery_required', 'original_boot', 'recovered_boot')
           $record = [ordered]@{}
           foreach ($name in $allowed) {
             if ($state.PSObject.Properties.Name -contains $name) { $record[$name] = $state.$name }
           }
+          # Emit only identifiers needed to diagnose native account/task ownership.
+          $record['worker_account'] = [string]$job.worker_account
+          $record['worker_task'] = [string]$job.worker_task
           $taskName = 'GoodBear-Offline-Recovery-' + $jobId
           $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
           if ($task) {
