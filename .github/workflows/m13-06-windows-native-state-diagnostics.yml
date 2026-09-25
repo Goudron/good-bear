@@ -1,0 +1,32 @@
+name: M13 Windows native state diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Exact 32-hex native M13 job identifier
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  state:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Emit the allowlisted native state only
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $jobId = '${{ inputs.job_id }}'
+          if ($jobId -cnotmatch '^[0-9a-f]{32}$') { throw 'Exact 32-hex job ID is required' }
+          $statePath = Join-Path 'C:\GoodBear\m15-03-private-source\native-offline-jobs' (Join-Path $jobId 'state.json')
+          if (-not (Test-Path -LiteralPath $statePath)) { throw 'Native state is absent' }
+          $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+          $allowed = @('status', 'exit_code', 'error', 'cleanup_error', 'recovery_error', 'network_transition_started', 'worker_started', 'network_restored', 'recovery_required', 'original_boot', 'recovered_boot')
+          $record = [ordered]@{}
+          foreach ($name in $allowed) {
+            if ($state.PSObject.Properties.Name -contains $name) { $record[$name] = $state.$name }
+          }
+          $record | ConvertTo-Json -Compress
