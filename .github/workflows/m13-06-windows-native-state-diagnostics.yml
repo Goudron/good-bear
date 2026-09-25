@@ -29,4 +29,18 @@ jobs:
           foreach ($name in $allowed) {
             if ($state.PSObject.Properties.Name -contains $name) { $record[$name] = $state.$name }
           }
+          $taskName = 'GoodBear-Offline-Recovery-' + $jobId
+          $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+          if ($task) {
+            $taskInfo = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction Stop
+            $record['recovery_task'] = [ordered]@{
+              present = $true
+              state = [string]$task.State
+              last_task_result = [int]$taskInfo.LastTaskResult
+              last_run_time = [string]$taskInfo.LastRunTime
+              next_run_time = [string]$taskInfo.NextRunTime
+            }
+          } else {
+            $record['recovery_task'] = [ordered]@{ present = $false }
+          }
           $record | ConvertTo-Json -Compress
