@@ -61,6 +61,12 @@ jobs:
           $bundle = Join-Path $workspace 'source-bundle.tar'
           if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
           if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Bundle hash differs' }
+          if ($env:GOODBEAR_OPERATION -eq 'arm') {
+            $aclReceiptPath = Join-Path $workspace 'm13-06-acl-provisioning-preflight.json'
+            if (-not (Test-Path -LiteralPath $aclReceiptPath)) { throw 'Exact-source ACL provisioning preflight receipt is absent' }
+            $aclReceipt = Get-Content -LiteralPath $aclReceiptPath -Raw | ConvertFrom-Json
+            if ($aclReceipt.schema_version -ne 1 -or $aclReceipt.kind -cne 'windows-acl-provisioning-preflight' -or $aclReceipt.manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $aclReceipt.bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256 -or $aclReceipt.passed -ne $true -or @($aclReceipt.boundaries).Count -ne 5) { throw 'ACL provisioning preflight receipt does not bind the requested selftest source' }
+          }
           $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
           if ($record.upstream.version -cne '156.0' -or $record.upstream.revision -cne '3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1') { throw 'Wrong Firefox baseline' }
           $root = [IO.Path]::GetFullPath($source).TrimEnd('\') + '\'
