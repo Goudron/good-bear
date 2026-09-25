@@ -176,6 +176,20 @@ jobs:
                 recovery_error = $state.recovery_error
               }
               Write-Output ('SELFTEST_DURABLE_STATE=' + ($diagnostic | ConvertTo-Json -Compress))
+              $workerResultPath = Join-Path $descriptor.workspace 'worker-result.json'
+              if (Test-Path -LiteralPath $workerResultPath) {
+                $workerResult = Get-Content -LiteralPath $workerResultPath -Raw | ConvertFrom-Json
+                $workerDiagnostic = [ordered]@{
+                  phase = $workerResult.phase
+                  error = $workerResult.error
+                  completed_utc = $workerResult.completed_utc
+                  native_network_probe = $workerResult.native_network_probe
+                }
+                Write-Output ('SELFTEST_WORKER_RESULT=' + ($workerDiagnostic | ConvertTo-Json -Compress -Depth 4))
+              }
+              else {
+                Write-Output 'SELFTEST_WORKER_RESULT_ABSENT'
+              }
               throw 'Collection requires verified reboot recovery'
             }
           }
