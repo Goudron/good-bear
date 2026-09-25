@@ -1,0 +1,92 @@
+name: M13 Windows native account probe
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Probe native local account lifecycle without private output
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $report = [ordered]@{}
+          $stage = 'initialization'
+          $name = 'gbdiag' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
+          $password = 'GbA1!' + [Guid]::NewGuid().ToString('N')
+          $owner = 'GBN:' + ('a' * 32)
+          $created = $false
+          try {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class GoodBearAccountProbeNative {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct UserInfo1 {
+    public string Name; public string Password; public int PasswordAge;
+    public int Privilege; public string HomeDirectory; public string Comment;
+    public int Flags; public string ScriptPath;
+  }
+  [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)]
+  public static extern int NetUserGetInfo(string servername, string username,
+    int level, out IntPtr buffer);
+  [DllImport("Netapi32.dll")]
+  public static extern int NetApiBufferFree(IntPtr buffer);
+}
+'@
+            function Get-ProbeUser([string]$AccountName) {
+              [IntPtr]$buffer = [IntPtr]::Zero
+              $status = [GoodBearAccountProbeNative]::NetUserGetInfo($env:COMPUTERNAME, $AccountName, 1, [ref]$buffer)
+              if ($status -eq 2221) { return $null }
+              if ($status -ne 0) { throw 'native local user lookup failed' }
+              try {
+                $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][GoodBearAccountProbeNative+UserInfo1])
+                $account = New-Object Security.Principal.NTAccount($env:COMPUTERNAME, $AccountName)
+                $sid = $account.Translate([Security.Principal.SecurityIdentifier]).Value
+                [pscustomobject]@{name=$info.Name; comment=$info.Comment; sid=$sid; enabled=(($info.Flags -band 2) -eq 0)}
+              }
+              finally {
+                if ($buffer -ne [IntPtr]::Zero) { [void][GoodBearAccountProbeNative]::NetApiBufferFree($buffer) }
+              }
+            }
+            $stage = 'existing-account-native-api'
+            $existing = Get-ProbeUser 'gbbuild'
+            $report.existing_account_visible = [bool]$existing
+            $stage = 'net-user-add'
+            & net.exe user $name $password /add /expires:never /passwordchg:no ('/comment:' + $owner) | Out-Null
+            $report.net_user_add_exit = [int]$LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw 'native account addition failed' }
+            $created = $true
+            $stage = 'created-account-native-api'
+            $createdUser = Get-ProbeUser $name
+            $report.created_account_visible = [bool]$createdUser
+            $report.comment_exact = [bool]($createdUser -and $createdUser.comment -ceq $owner)
+            $report.sid_present = [bool]($createdUser -and $createdUser.sid)
+            if (-not $report.created_account_visible -or -not $report.comment_exact -or -not $report.sid_present) { throw 'native account identity is unproven' }
+            $stage = 'net-user-disable'
+            & net.exe user $name /active:no | Out-Null
+            $report.net_user_disable_exit = [int]$LASTEXITCODE
+            if ($LASTEXITCODE -ne 0) { throw 'native account disable failed' }
+            $after = Get-ProbeUser $name
+            $report.disabled_after_net_user = [bool]($after -and -not $after.enabled)
+            if (-not $report.disabled_after_net_user) { throw 'native account remains enabled' }
+            $report.status = 'success'
+          }
+          catch {
+            $report.status = 'failed'
+            $report.failed_stage = $stage
+            $report.error = 'private native account probe error suppressed'
+          }
+          finally {
+            if ($created) {
+              & net.exe user $name /delete | Out-Null
+              $report.net_user_delete_exit = [int]$LASTEXITCODE
+              $report.deleted_after_probe = ($LASTEXITCODE -eq 0)
+            }
+          }
+          $report | ConvertTo-Json -Compress
+          if ($report.status -ne 'success' -or -not $report.deleted_after_probe) { exit 1 }
