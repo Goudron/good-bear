@@ -24,7 +24,7 @@ jobs:
           $statePath = Join-Path 'C:\GoodBear\m15-03-private-source\native-offline-jobs' (Join-Path $jobId 'state.json')
           if (-not (Test-Path -LiteralPath $statePath)) { throw 'Native state is absent' }
           $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
-          $allowed = @('status', 'exit_code', 'error', 'cleanup_error', 'recovery_error', 'network_transition_started', 'worker_started', 'network_restored', 'recovery_required', 'original_boot', 'recovered_boot')
+          $allowed = @('status', 'exit_code', 'error', 'cleanup_error', 'recovery_error', 'last_error', 'network_transition_started', 'worker_started', 'network_restored', 'recovery_required', 'original_boot', 'recovered_boot')
           $record = [ordered]@{}
           foreach ($name in $allowed) {
             if ($state.PSObject.Properties.Name -contains $name) { $record[$name] = $state.$name }
