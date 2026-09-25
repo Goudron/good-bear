@@ -22,22 +22,22 @@ jobs:
           $created = $false
           try {
             Add-Type -TypeDefinition @'
-using System;
-using System.Runtime.InteropServices;
-public static class GoodBearAccountProbeNative {
-  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
-  public struct UserInfo1 {
-    public string Name; public string Password; public int PasswordAge;
-    public int Privilege; public string HomeDirectory; public string Comment;
-    public int Flags; public string ScriptPath;
-  }
-  [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)]
-  public static extern int NetUserGetInfo(string servername, string username,
-    int level, out IntPtr buffer);
-  [DllImport("Netapi32.dll")]
-  public static extern int NetApiBufferFree(IntPtr buffer);
-}
-'@
+            using System;
+            using System.Runtime.InteropServices;
+            public static class GoodBearAccountProbeNative {
+              [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+              public struct UserInfo1 {
+                public string Name; public string Password; public int PasswordAge;
+                public int Privilege; public string HomeDirectory; public string Comment;
+                public int Flags; public string ScriptPath;
+              }
+              [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)]
+              public static extern int NetUserGetInfo(string servername, string username,
+                int level, out IntPtr buffer);
+              [DllImport("Netapi32.dll")]
+              public static extern int NetApiBufferFree(IntPtr buffer);
+            }
+            '@
             function Get-ProbeUser([string]$AccountName) {
               [IntPtr]$buffer = [IntPtr]::Zero
               $status = [GoodBearAccountProbeNative]::NetUserGetInfo($env:COMPUTERNAME, $AccountName, 1, [ref]$buffer)
