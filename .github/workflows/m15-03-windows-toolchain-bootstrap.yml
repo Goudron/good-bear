@@ -129,7 +129,7 @@ jobs:
             if (Test-Path -LiteralPath $RequiredFile) { Write-Output ('GOOD_BEAR_TOOL_ALREADY_VALID ' + (Split-Path -Leaf $RequiredFile)); return }
             $archive = Get-Pinned $Uri $Name $Expected
             $tarPath = Join-Path $download (($Name -replace '\.zst$',''))
-            & $zstdExe '-d' '--force' '--output' $tarPath $archive
+            & $zstdExe '-d' '--force' '-o' $tarPath $archive
             if ($LASTEXITCODE -ne 0) { throw ('Zstandard decompression failed for ' + $Name) }
             & "$env:WINDIR\System32\tar.exe" -xf $tarPath -C $firefoxTools
             if ($LASTEXITCODE -ne 0) { throw ('Tar extraction failed for ' + $Name) }
