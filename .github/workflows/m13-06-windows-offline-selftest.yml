@@ -158,7 +158,26 @@ jobs:
           New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
           try {
             & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script --job $job --job-sha256 $env:GOODBEAR_JOB_SHA256 collect --output $output
-            if ($LASTEXITCODE -ne 0) { throw 'Collection requires verified reboot recovery' }
+            $collectExit = $LASTEXITCODE
+            if ($collectExit -ne 0) {
+              # The selftest has no private build inputs.  Return only bounded state
+              # fields so a failed recovery is diagnosable without returning a job,
+              # source, command line, or any private material.
+              $stateJson = & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script --job $job --job-sha256 $env:GOODBEAR_JOB_SHA256 status
+              if ($LASTEXITCODE -ne 0) { throw 'Collection requires verified reboot recovery; durable state is unreadable' }
+              $state = $stateJson | ConvertFrom-Json
+              $diagnostic = [ordered]@{
+                status = $state.status
+                exit_code = $state.exit_code
+                network_restored = $state.network_restored
+                last_error = $state.last_error
+                error = $state.error
+                cleanup_error = $state.cleanup_error
+                recovery_error = $state.recovery_error
+              }
+              Write-Output ('SELFTEST_DURABLE_STATE=' + ($diagnostic | ConvertTo-Json -Compress))
+              throw 'Collection requires verified reboot recovery'
+            }
           }
           finally {
             Remove-Item -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue
