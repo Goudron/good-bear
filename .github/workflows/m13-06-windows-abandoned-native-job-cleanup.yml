@@ -28,7 +28,9 @@ jobs:
           $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
           $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
           if ($job.id -cne $jobId -or $job.worker_task -cne ('GoodBear-Offline-Worker-' + $jobId) -or $job.watchdog_task -cne ('GoodBear-Offline-Recovery-' + $jobId) -or $job.firewall_rule -cne ('GoodBear-Offline-Deny-' + $jobId)) { throw 'Owned job identity differs' }
-          if ($state.status -cne 'coordinator-failed' -or -not $state.network_transition_started -or $state.network_restored) { throw 'Only a failed, still-pending disconnected job may be cleaned' }
+          $preNetworkFailure = ($state.status -eq 'failed' -and -not $state.network_transition_started -and -not $state.worker_started)
+          $abandonedDisconnected = ($state.status -eq 'coordinator-failed' -and $state.network_transition_started -and -not $state.network_restored)
+          if (-not $preNetworkFailure -and -not $abandonedDisconnected) { throw 'Job is not an eligible failed native cleanup target' }
           if (Get-NetFirewallRule -PolicyStore ActiveStore -Name $job.firewall_rule -ErrorAction SilentlyContinue) { throw 'Owned outbound deny is still active' }
           if (-not ('GoodBearCleanupNative' -as [type])) {
             Add-Type -TypeDefinition @'
@@ -58,10 +60,12 @@ jobs:
             if ($user.Comment -cne ('GBN:' + $jobId)) { throw 'Worker account ownership differs' }
             & net.exe user $job.worker_account /active:no | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Worker account disable failed' }
-            foreach ($path in @((Join-Path $root 'source'), $stage)) {
-              $longPath = '\\?\' + [IO.Path]::GetFullPath($path)
-              & icacls.exe $longPath /remove ('*' + $user.Sid) /T /C /Q 2>$null | Out-Null
-              if ($LASTEXITCODE -ne 0) { throw 'Worker ACL cleanup failed' }
+            if ($abandonedDisconnected) {
+              foreach ($path in @((Join-Path $root 'source'), $stage)) {
+                $longPath = '\\?\' + [IO.Path]::GetFullPath($path)
+                & icacls.exe $longPath /remove ('*' + $user.Sid) /T /C /Q 2>$null | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw 'Worker ACL cleanup failed' }
+              }
             }
             & net.exe user $job.worker_account /delete | Out-Null
             if ($LASTEXITCODE -ne 0) { throw 'Worker account removal failed' }
@@ -72,8 +76,9 @@ jobs:
             }
           }
           if (@(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -in @($job.worker_task, $job.watchdog_task) }).Count) { throw 'Owned task removal is unproven' }
-          $state | Add-Member -NotePropertyName network_restored -NotePropertyValue $true -Force
-          $state | Add-Member -NotePropertyName recovery_mode -NotePropertyValue 'operator-confirmed-already-restored-cleanup-only' -Force
+          if ($abandonedDisconnected) { $state | Add-Member -NotePropertyName network_restored -NotePropertyValue $true -Force }
+          $mode = if ($preNetworkFailure) { 'failed-before-network-cleanup-only' } else { 'operator-confirmed-already-restored-cleanup-only' }
+          $state | Add-Member -NotePropertyName recovery_mode -NotePropertyValue $mode -Force
           $state | Add-Member -NotePropertyName recovery_checks -NotePropertyValue ([ordered]@{ quiescent=$true; account_removed=$true; tasks_removed=$true }) -Force
           $state | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath ($statePath + '.new') -Encoding UTF8 -NoNewline
           Move-Item -LiteralPath ($statePath + '.new') -Destination $statePath -Force
