@@ -60,7 +60,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Worker account disable failed' }
             foreach ($path in @((Join-Path $root 'source'), $stage)) {
               $longPath = '\\?\' + [IO.Path]::GetFullPath($path)
-              & icacls.exe $longPath /remove ('*' + $user.Sid) /T /C /Q | Out-Null
+              & icacls.exe $longPath /remove ('*' + $user.Sid) /T /C /Q 2>$null | Out-Null
               if ($LASTEXITCODE -ne 0) { throw 'Worker ACL cleanup failed' }
             }
             & net.exe user $job.worker_account /delete | Out-Null
