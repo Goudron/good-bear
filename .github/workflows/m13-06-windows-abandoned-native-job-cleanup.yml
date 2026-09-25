@@ -72,9 +72,9 @@ jobs:
             }
           }
           if (@(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -in @($job.worker_task, $job.watchdog_task) }).Count) { throw 'Owned task removal is unproven' }
-          $state.network_restored = $true
-          $state.recovery_mode = 'operator-confirmed-already-restored-cleanup-only'
-          $state.recovery_checks = [ordered]@{ quiescent=$true; account_removed=$true; tasks_removed=$true }
+          $state | Add-Member -NotePropertyName network_restored -NotePropertyValue $true -Force
+          $state | Add-Member -NotePropertyName recovery_mode -NotePropertyValue 'operator-confirmed-already-restored-cleanup-only' -Force
+          $state | Add-Member -NotePropertyName recovery_checks -NotePropertyValue ([ordered]@{ quiescent=$true; account_removed=$true; tasks_removed=$true }) -Force
           $state | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath ($statePath + '.new') -Encoding UTF8 -NoNewline
           Move-Item -LiteralPath ($statePath + '.new') -Destination $statePath -Force
           Write-Output 'ABANDONED_NATIVE_JOB_CLEANED_NO_RECEIPT'
