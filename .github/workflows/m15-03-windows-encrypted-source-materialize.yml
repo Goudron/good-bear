@@ -15,10 +15,10 @@ jobs:
       GOODBEAR_M15_03_SOURCE_PASSPHRASE: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE }}
       GOODBEAR_WORKSPACE: C:\GoodBear\m15-03-private-source
       GOODBEAR_CACHE: C:\GoodBear\m15-03-encrypted-cache
-      GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r23-20260925/source-bundle.tar.enc
-      GOODBEAR_EXPECTED_CIPHER: 30831455862b85ca4e7ef23d39587cea1d5725019264bdf39b2c9aa4228c1aba
-      GOODBEAR_EXPECTED_BUNDLE: 60a3ca8068e2adfa55f32f41171ea067be6aa6c6b78fc6773e4ad63476862fce
-      GOODBEAR_EXPECTED_MANIFEST: b2b007a679946b5ed604d1152f4e5ef5faf8e7e1bcd7061458724ae9d49c434f
+      GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r24-20260925/source-bundle.tar.enc
+      GOODBEAR_EXPECTED_CIPHER: 274b0e58c274242706cf16318256ad6defc54551e546faf34cbb7ad73f8dae50
+      GOODBEAR_EXPECTED_BUNDLE: 07cf6af2583defa9b207efb9268e6f692d0bbab717bd60a310c398b4abf22853
+      GOODBEAR_EXPECTED_MANIFEST: 0adcddf70bb544403b4574d608743c1540ef5597d3277f0210766396fe465914
       GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r23-20260925/pki-input-transport.tar.enc
       GOODBEAR_EXPECTED_PKI_CIPHER: 5a2d53afa2de625de9a1d815ac7a7ccf0df649a40ee1b83f8b64be3252606adb
       GOODBEAR_EXPECTED_PKI_TRANSPORT: bcdbf5fc3fb1e61e59c120f66ccded67738227bded4dd528cfad78d296262f95
