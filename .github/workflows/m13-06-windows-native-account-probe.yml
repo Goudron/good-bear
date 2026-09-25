@@ -17,7 +17,7 @@ jobs:
           $report = [ordered]@{}
           $stage = 'initialization'
           $name = 'gbdiag' + [Guid]::NewGuid().ToString('N').Substring(0, 10)
-          $password = 'GbA1!' + [Guid]::NewGuid().ToString('N')
+          $password = 'Gb1!' + [Guid]::NewGuid().ToString('N').Substring(0, 6)
           $owner = 'GBN:' + ('a' * 32)
           $created = $false
           try {
