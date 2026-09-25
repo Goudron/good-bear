@@ -31,7 +31,12 @@ jobs:
           if ($status -ne 0) { throw 'Native local user lookup failed' }
           try {
             $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][GoodBearStaleUser+UserInfo1])
-            if ($info.Comment -cnotmatch '^GBN:[0-9a-f]{32}$' -or (($info.Flags -band 2) -eq 0)) { throw 'Account is not an owned disabled M13 worker' }
+            $markerValid = $info.Comment -cmatch '^GBN:[0-9a-f]{32}$'
+            $disabled = (($info.Flags -band 2) -ne 0)
+            if (-not $markerValid -or -not $disabled) {
+              Write-Output ('STALE_WORKER_ACCOUNT_REJECTED markerValid={0} disabled={1}' -f $markerValid,$disabled)
+              throw 'Account is not an owned disabled M13 worker'
+            }
           } finally { if ($buffer -ne [IntPtr]::Zero) { [void][GoodBearStaleUser]::NetApiBufferFree($buffer) } }
           & net.exe user $name /delete | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'Stale worker account removal failed' }
