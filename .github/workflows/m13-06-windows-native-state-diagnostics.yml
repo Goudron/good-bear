@@ -35,6 +35,10 @@ jobs:
           # Emit only identifiers needed to diagnose native account/task ownership.
           $record['worker_account'] = [string]$job.worker_account
           $record['worker_task'] = [string]$job.worker_task
+          & net.exe user $job.worker_account *> $null
+          $record['worker_account_present'] = ($LASTEXITCODE -eq 0)
+          & net.exe localgroup 'GoodBear-Offline-Workers' *> $null
+          $record['worker_group_present'] = ($LASTEXITCODE -eq 0)
           $taskName = 'GoodBear-Offline-Recovery-' + $jobId
           $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
           if ($task) {
