@@ -22,7 +22,7 @@ jobs:
             [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)] public static extern int NetUserGetInfo(string servername, string username, int level, out IntPtr buffer);
             [DllImport("Netapi32.dll")] public static extern int NetApiBufferFree(IntPtr buffer);
           }
-'@
+          '@
           }
           $name = 'gbbuild'
           [IntPtr]$buffer = [IntPtr]::Zero
