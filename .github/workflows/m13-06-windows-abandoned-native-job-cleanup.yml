@@ -1,0 +1,79 @@
+name: M13 Windows abandoned native job cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Exact failed 32-hex native M13 job identifier
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 10
+    steps:
+      - name: Remove only an already-restored failed job
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $jobId = '${{ inputs.job_id }}'
+          if ($jobId -cnotmatch '^[0-9a-f]{32}$') { throw 'Exact 32-hex job ID is required' }
+          $root = 'C:\GoodBear\m15-03-private-source'
+          $stage = Join-Path $root ('native-offline-jobs\' + $jobId)
+          $jobPath = Join-Path $stage 'job.json'
+          $statePath = Join-Path $stage 'state.json'
+          $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
+          $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+          if ($job.id -cne $jobId -or $job.worker_task -cne ('GoodBear-Offline-Worker-' + $jobId) -or $job.watchdog_task -cne ('GoodBear-Offline-Recovery-' + $jobId) -or $job.firewall_rule -cne ('GoodBear-Offline-Deny-' + $jobId)) { throw 'Owned job identity differs' }
+          if ($state.status -cne 'coordinator-failed' -or -not $state.network_transition_started -or $state.network_restored) { throw 'Only a failed, still-pending disconnected job may be cleaned' }
+          if (Get-NetFirewallRule -PolicyStore ActiveStore -Name $job.firewall_rule -ErrorAction SilentlyContinue) { throw 'Owned outbound deny is still active' }
+          if (-not ('GoodBearCleanupNative' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class GoodBearCleanupNative {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct UserInfo1 { public string Name; public string Password; public int PasswordAge; public int Privilege; public string HomeDirectory; public string Comment; public int Flags; public string ScriptPath; }
+  [DllImport("Netapi32.dll", CharSet=CharSet.Unicode)] public static extern int NetUserGetInfo(string servername, string username, int level, out IntPtr buffer);
+  [DllImport("Netapi32.dll")] public static extern int NetApiBufferFree(IntPtr buffer);
+}
+'@
+          }
+          function Get-OwnedUser([string]$name) {
+            [IntPtr]$buffer = [IntPtr]::Zero
+            $status = [GoodBearCleanupNative]::NetUserGetInfo($env:COMPUTERNAME, $name, 1, [ref]$buffer)
+            if ($status -eq 2221) { return $null }
+            if ($status -ne 0) { throw 'Native local user lookup failed' }
+            try {
+              $info = [Runtime.InteropServices.Marshal]::PtrToStructure($buffer, [type][GoodBearCleanupNative+UserInfo1])
+              $sid = (New-Object Security.Principal.NTAccount($env:COMPUTERNAME, $name)).Translate([Security.Principal.SecurityIdentifier]).Value
+              [pscustomobject]@{ Sid=$sid; Comment=$info.Comment }
+            } finally { if ($buffer -ne [IntPtr]::Zero) { [void][GoodBearCleanupNative]::NetApiBufferFree($buffer) } }
+          }
+          $user = Get-OwnedUser $job.worker_account
+          if ($user) {
+            if ($user.Comment -cne ('GBN:' + $jobId)) { throw 'Worker account ownership differs' }
+            & net.exe user $job.worker_account /active:no | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Worker account disable failed' }
+            foreach ($path in @((Join-Path $root 'source'), $stage)) {
+              & icacls.exe $path /remove ('*' + $user.Sid) /T /C /Q | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw 'Worker ACL cleanup failed' }
+            }
+            & net.exe user $job.worker_account /delete | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw 'Worker account removal failed' }
+          }
+          foreach ($taskName in @($job.worker_task, $job.watchdog_task)) {
+            if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
+              Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
+            }
+          }
+          if (@(Get-ScheduledTask -ErrorAction Stop | Where-Object { $_.TaskName -in @($job.worker_task, $job.watchdog_task) }).Count) { throw 'Owned task removal is unproven' }
+          $state.network_restored = $true
+          $state.recovery_mode = 'operator-confirmed-already-restored-cleanup-only'
+          $state.recovery_checks = [ordered]@{ quiescent=$true; account_removed=$true; tasks_removed=$true }
+          $state | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath ($statePath + '.new') -Encoding UTF8 -NoNewline
+          Move-Item -LiteralPath ($statePath + '.new') -Destination $statePath -Force
+          Write-Output 'ABANDONED_NATIVE_JOB_CLEANED_NO_RECEIPT'
