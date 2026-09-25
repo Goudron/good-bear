@@ -12,7 +12,7 @@ jobs:
     # room for secure recovery and verification without treating it as failed.
     timeout-minutes: 150
     env:
-      GOODBEAR_M15_03_SOURCE_PASSPHRASE: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE }}
+      GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64 }}
       GOODBEAR_WORKSPACE: C:\GoodBear\m15-03-private-source
       GOODBEAR_CACHE: C:\GoodBear\m15-03-encrypted-cache
       GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r24-20260925/source-bundle.tar.enc
@@ -83,7 +83,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE)) { throw 'The encrypted-source Actions secret is absent' }
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64)) { throw 'The encrypted-source Actions secret is absent' }
           $workspace = $env:GOODBEAR_WORKSPACE
           $cipher = Join-Path $env:GOODBEAR_CACHE 'source-bundle.tar.enc'
           $pkiCipher = Join-Path $env:GOODBEAR_CACHE 'pki-input-transport.tar.enc'
@@ -91,7 +91,7 @@ jobs:
           $pkiTransport = Join-Path $workspace 'pki-input-transport.tar'
           $keyFile = Join-Path $workspace '.source-passphrase'
           try {
-            Set-Content -LiteralPath $keyFile -Value $env:GOODBEAR_M15_03_SOURCE_PASSPHRASE -NoNewline -Encoding ascii
+            [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64))
             & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
             if ($LASTEXITCODE -ne 0) { throw 'Encrypted source decryption failed' }
             & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $pkiCipher -out $pkiTransport
