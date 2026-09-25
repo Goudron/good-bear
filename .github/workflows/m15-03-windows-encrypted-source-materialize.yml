@@ -118,6 +118,7 @@ jobs:
           $verifier = Join-Path $workspace 'source\tools\m15_remote_transport.py'
           $manifest = Join-Path $workspace 'source-manifest.json'
           $bundle = Join-Path $workspace 'source-bundle.tar'
+          $env:PATH = (Split-Path -Parent $env:GOODBEAR_OPENSSL) + ';' + $env:PATH
           & $env:GOODBEAR_PYTHON $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_EXPECTED_MANIFEST --expected-bundle-sha256 $env:GOODBEAR_EXPECTED_BUNDLE
           if ($LASTEXITCODE -ne 0) { throw 'M15-03 source bundle verification failed' }
           $pkiInstall = Join-Path $workspace 'source\artifacts\certificates\build-inputs\current'
