@@ -133,11 +133,11 @@ jobs:
           $workspace = $env:GOODBEAR_WORKSPACE
           $materializer = Join-Path $workspace 'source\tools\materialize_firefox_source.py'
           $baseline = Join-Path $workspace 'source\config\firefox-baseline.json'
-          $archive = Join-Path $workspace 'source\source\firefox-155.0.1.source.tar.xz'
+          $archive = Join-Path $workspace 'source\source\firefox-156.0.source.tar.xz'
           $env:PATH = 'C:\Program Files\Git\cmd;' + $env:PATH
           & $env:GOODBEAR_PYTHON $materializer --config $baseline --archive $archive --baseline-offline
           if ($LASTEXITCODE -ne 0) { throw 'Good Bear source materialization failed' }
-          $worktree = Join-Path $workspace 'source\source\worktrees\firefox-155.0.1'
+          $worktree = Join-Path $workspace 'source\source\worktrees\firefox-156.0'
           if (-not (Test-Path -LiteralPath (Join-Path $worktree '.good-bear-materialization.json'))) { throw 'Materialization provenance marker is absent' }
           Write-Output 'PRIVATE_FIREFOX_WORKTREE_MATERIALIZED'
 
