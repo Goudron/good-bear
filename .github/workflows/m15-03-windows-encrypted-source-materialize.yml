@@ -119,10 +119,10 @@ jobs:
           $manifest = Join-Path $workspace 'source-manifest.json'
           $bundle = Join-Path $workspace 'source-bundle.tar'
           $env:PATH = (Split-Path -Parent $env:GOODBEAR_OPENSSL) + ';' + $env:PATH
-          & $env:GOODBEAR_PYTHON $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_EXPECTED_MANIFEST --expected-bundle-sha256 $env:GOODBEAR_EXPECTED_BUNDLE
+          & $env:GOODBEAR_PYTHON -B $verifier verify-bundle --destination $workspace --root (Join-Path $workspace 'source') --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_EXPECTED_MANIFEST --expected-bundle-sha256 $env:GOODBEAR_EXPECTED_BUNDLE
           if ($LASTEXITCODE -ne 0) { throw 'M15-03 source bundle verification failed' }
           $pkiInstall = Join-Path $workspace 'source\artifacts\certificates\build-inputs\current'
-          & $env:GOODBEAR_PYTHON $verifier stage-pki --destination $workspace --root (Join-Path $workspace 'source') --source-manifest $manifest --source-bundle $bundle --install-pki-dir $pkiInstall
+          & $env:GOODBEAR_PYTHON -B $verifier stage-pki --destination $workspace --root (Join-Path $workspace 'source') --source-manifest $manifest --source-bundle $bundle --install-pki-dir $pkiInstall
           if ($LASTEXITCODE -ne 0) { throw 'M15-03 PKI transport verification failed' }
           Write-Output 'PRIVATE_SOURCE_MANIFEST_VERIFIED'
 
@@ -135,7 +135,7 @@ jobs:
           $baseline = Join-Path $workspace 'source\config\firefox-baseline.json'
           $archive = Join-Path $workspace 'source\source\firefox-156.0.source.tar.xz'
           $env:PATH = 'C:\Program Files\Git\cmd;' + $env:PATH
-          & $env:GOODBEAR_PYTHON $materializer --config $baseline --archive $archive --baseline-offline
+          & $env:GOODBEAR_PYTHON -B $materializer --config $baseline --archive $archive --baseline-offline
           if ($LASTEXITCODE -ne 0) { throw 'Good Bear source materialization failed' }
           $worktree = Join-Path $workspace 'source\source\worktrees\firefox-156.0'
           if (-not (Test-Path -LiteralPath (Join-Path $worktree '.good-bear-materialization.json'))) { throw 'Materialization provenance marker is absent' }
