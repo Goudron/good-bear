@@ -69,29 +69,22 @@ jobs:
             Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') ('Visual Studio Build Tools installation ' + $expectedVsInstallation)
           }
 
-          function Get-MozillaBuildNsis {
-            @(Get-ChildItem -LiteralPath 'C:\mozilla-build' -Directory -ErrorAction SilentlyContinue |
-              ForEach-Object { Join-Path $_.FullName 'makensis.exe' } |
-              Where-Object { Test-Path -LiteralPath $_ })
-          }
-          function Test-MozillaBuildComplete {
+          function Test-MozillaBuildCore {
             $requiredMozilla = @(
               'C:\mozilla-build\start-shell.bat',
-              'C:\mozilla-build\bin\make.exe',
               'C:\mozilla-build\msys2\usr\bin\bash.exe',
               'C:\mozilla-build\msys2\usr\bin\xz.exe',
               'C:\mozilla-build\msys2\usr\bin\openssl.exe'
             )
-            if (@($requiredMozilla | Where-Object { -not (Test-Path -LiteralPath $_) }).Count -ne 0) { return $false }
-            return @(Get-MozillaBuildNsis).Count -eq 1
+            return @($requiredMozilla | Where-Object { -not (Test-Path -LiteralPath $_) }).Count -eq 0
           }
-          if (Test-MozillaBuildComplete) {
-            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID MozillaBuild 4.2.1 complete'
+          if (Test-MozillaBuildCore) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID MozillaBuild 4.2.1 core'
           } else {
             $mozillaBuild = Get-Pinned 'https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe' 'MozillaBuildSetup-4.2.1.exe' '8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8'
             Assert-Signed $mozillaBuild 'Mozilla Corporation'
-            Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1 repair'
-            if (-not (Test-MozillaBuildComplete)) { throw 'MozillaBuild repair did not provide make.exe and one NSIS makensis.exe' }
+            Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
+            if (-not (Test-MozillaBuildCore)) { throw 'MozillaBuild installation lacks required shell utilities' }
           }
 
           $gitExe = 'C:\Program Files\Git\cmd\git.exe'
@@ -125,7 +118,29 @@ jobs:
           if (-not (Test-Path -LiteralPath $rustInstaller)) { throw 'Rust install.sh is absent after extraction' }
           $mozillaBash = Join-Path $mozillaMsysBin 'bash.exe'
           if (-not (Test-Path -LiteralPath $mozillaBash)) { throw 'MozillaBuild bash.exe is absent' }
-          $env:PATH = $mozillaNativeBin + ';' + $mozillaMsysBin + ';' + $env:PATH
+          $zstdArchive = Get-Pinned 'https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-v1.5.7-win64.zip' 'zstd-v1.5.7-win64.zip' 'acb4e8111511749dc7a3ebedca9b04190e37a17afeb73f55d4425dbf0b90fad9'
+          $zstdRoot = Join-Path $tools 'zstd-v1.5.7-win64'
+          $zstdExe = Join-Path $zstdRoot 'zstd.exe'
+          if (-not (Test-Path -LiteralPath $zstdExe)) { Expand-Archive -LiteralPath $zstdArchive -DestinationPath $tools -Force }
+          if (-not (Test-Path -LiteralPath $zstdExe)) { throw 'Pinned zstd.exe is absent after extraction' }
+          $firefoxTools = Join-Path $tools 'firefox156-toolchains'
+          New-Item -ItemType Directory -Force -Path $firefoxTools | Out-Null
+          function Expand-PinnedZstdTar([string]$Uri, [string]$Name, [string]$Expected, [string]$RequiredFile) {
+            if (Test-Path -LiteralPath $RequiredFile) { Write-Output ('GOOD_BEAR_TOOL_ALREADY_VALID ' + (Split-Path -Leaf $RequiredFile)); return }
+            $archive = Get-Pinned $Uri $Name $Expected
+            $tarPath = Join-Path $download (($Name -replace '\.zst$',''))
+            & $zstdExe '-d' '--force' '--output' $tarPath $archive
+            if ($LASTEXITCODE -ne 0) { throw ('Zstandard decompression failed for ' + $Name) }
+            & "$env:WINDIR\System32\tar.exe" -xf $tarPath -C $firefoxTools
+            if ($LASTEXITCODE -ne 0) { throw ('Tar extraction failed for ' + $Name) }
+            if (-not (Test-Path -LiteralPath $RequiredFile)) { throw ('Required Firefox tool is absent after extraction: ' + $RequiredFile) }
+            Write-Output ('GOOD_BEAR_TOOL_INSTALL_DONE ' + $Name)
+          }
+          $mozmakeExe = Join-Path $firefoxTools 'mozmake\mozmake.exe'
+          $makensisExe = Join-Path $firefoxTools 'nsis\makensis.exe'
+          Expand-PinnedZstdTar 'https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/R-T5euokQVyqBQMApzKOUA/artifacts/public/build/mozmake.tar.zst' 'mozmake.tar.zst' '8a7dbefcfdb35cc7e96acc8c10fc91064ad1cadb9a808e9df8b1a708e9aeafe0' $mozmakeExe
+          Expand-PinnedZstdTar 'https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/X5NTJwTcS0eza0ybdOLZQw/artifacts/public/build/nsis.tar.zst' 'nsis.tar.zst' 'ac196429c3161156edc72a1b5d957fa07ad73fb785dcdc64e78f3a42f74c7d90' $makensisExe
+          $env:PATH = (Split-Path -Parent $mozmakeExe) + ';' + (Split-Path -Parent $makensisExe) + ';' + $mozillaNativeBin + ';' + $mozillaMsysBin + ';' + $env:PATH
           & $mozillaBash '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc/install.sh' '--prefix=/c/GoodBear/tools/rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
           if ($LASTEXITCODE -ne 0) { throw 'Rust 1.90.0 installation failed' }
           Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Rust 1.90.0'
@@ -149,14 +164,14 @@ jobs:
           if ($null -eq $msvc) { throw 'MSVC 14.44 is absent' }
           $sdkRc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
           if (-not (Test-Path -LiteralPath $sdkRc)) { throw 'Windows SDK 10.0.26100.0 rc.exe is absent' }
-          $mozillaNsis = @(Get-MozillaBuildNsis)
           $required = @(
             'C:\mozilla-build\start-shell.bat',
-            'C:\mozilla-build\bin\make.exe',
             'C:\mozilla-build\msys2\usr\bin\bash.exe',
             'C:\mozilla-build\msys2\usr\bin\xz.exe',
             'C:\mozilla-build\msys2\usr\bin\openssl.exe',
-            $mozillaNsis[0],
+            $zstdExe,
+            $mozmakeExe,
+            $makensisExe,
             'C:\Program Files\Git\cmd\git.exe',
             'C:\GoodBear\tools\Python312\python.exe',
             'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe',
@@ -173,8 +188,8 @@ jobs:
             node = (& 'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe' --version | Out-String).Trim()
             nasm = (& 'C:\GoodBear\tools\nasm-2.16.01\nasm.exe' -v | Out-String).Trim()
             llvm = (& 'C:\GoodBear\tools\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe' --version | Select-Object -First 1 | Out-String).Trim()
-            mozilla_make = (& 'C:\mozilla-build\bin\make.exe' --version | Select-Object -First 1 | Out-String).Trim()
-            mozilla_makensis = $mozillaNsis[0]
+            firefox_mozmake = (& $mozmakeExe --version | Select-Object -First 1 | Out-String).Trim()
+            firefox_makensis = (& $makensisExe -version | Out-String).Trim()
           }
           $evidence | ConvertTo-Json | Set-Content -LiteralPath 'C:\GoodBear\toolchain-evidence.json' -Encoding utf8
           $evidence | ConvertTo-Json -Compress
