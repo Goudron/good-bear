@@ -48,10 +48,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:GOODBEAR_OPERATION -notin @('arm', 'collect')) { throw 'Unknown operation' }
           foreach ($hash in @($env:GOODBEAR_MANIFEST_SHA256, $env:GOODBEAR_BUNDLE_SHA256)) {
-            if ($hash -notcmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
+            if ($hash -cnotmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
           }
           if ($env:GOODBEAR_OPERATION -eq 'collect') {
-            if ($env:GOODBEAR_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Exact job identity and hash are required' }
+            if ($env:GOODBEAR_JOB_ID -cnotmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Exact job identity and hash are required' }
           } elseif ($env:GOODBEAR_JOB_ID -or $env:GOODBEAR_JOB_SHA256) {
             throw 'An arm operation cannot reuse a previous job'
           }
@@ -68,7 +68,7 @@ jobs:
           $count = 0
           foreach ($entry in $record.declared_inputs) {
             if (-not $entry.path -or [IO.Path]::IsPathRooted($entry.path) -or $entry.path.Contains('\') -or ($entry.path.Split('/') | Where-Object { $_ -in @('', '.', '..') })) { throw 'Unsafe declared source path' }
-            if ($entry.sha256 -notcmatch '^[0-9a-f]{64}$' -or $seen.ContainsKey($entry.path)) { throw 'Invalid or duplicate source input' }
+            if ($entry.sha256 -cnotmatch '^[0-9a-f]{64}$' -or $seen.ContainsKey($entry.path)) { throw 'Invalid or duplicate source input' }
             $path = [IO.Path]::GetFullPath((Join-Path $source $entry.path))
             if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Source input escapes workspace' }
             $item = Get-Item -LiteralPath $path -Force

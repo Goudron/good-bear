@@ -65,16 +65,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           if ($env:GOODBEAR_OPERATION -notin @('arm', 'collect')) { throw 'Unknown operation' }
           foreach ($hash in @($env:GOODBEAR_MANIFEST_SHA256, $env:GOODBEAR_BUNDLE_SHA256)) {
-            if ($hash -notcmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
+            if ($hash -cnotmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
           }
           if ($env:GOODBEAR_OPERATION -eq 'arm') {
             foreach ($value in @($env:GOODBEAR_SELFTEST_JOB_ID, $env:GOODBEAR_SELFTEST_JOB_SHA256, $env:GOODBEAR_SELFTEST_RECEIPT_SHA256)) {
               if ([string]::IsNullOrWhiteSpace($value)) { throw 'Arm requires the recovered selftest reference' }
             }
-            if ($env:GOODBEAR_SELFTEST_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_SELFTEST_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$' -or $env:GOODBEAR_SELFTEST_RECEIPT_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Invalid recovered selftest reference' }
+            if ($env:GOODBEAR_SELFTEST_JOB_ID -cnotmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_SELFTEST_JOB_SHA256 -cnotmatch '^[0-9a-f]{64}$' -or $env:GOODBEAR_SELFTEST_RECEIPT_SHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Invalid recovered selftest reference' }
             if ($env:GOODBEAR_JOB_ID -or $env:GOODBEAR_JOB_SHA256) { throw 'Arm cannot reuse a prior full-LTO job' }
           } else {
-            if ($env:GOODBEAR_JOB_ID -notcmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Collect requires the exact full-LTO job identity and hash' }
+            if ($env:GOODBEAR_JOB_ID -cnotmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Collect requires the exact full-LTO job identity and hash' }
             if ($env:GOODBEAR_SELFTEST_JOB_ID -or $env:GOODBEAR_SELFTEST_JOB_SHA256 -or $env:GOODBEAR_SELFTEST_RECEIPT_SHA256) { throw 'Collect must not replace the saved selftest binding' }
           }
           Write-Output 'M13_FULL_LTO_OPERATION_SHAPE_VERIFIED'
