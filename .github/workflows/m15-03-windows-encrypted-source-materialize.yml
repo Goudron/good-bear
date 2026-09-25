@@ -15,13 +15,13 @@ jobs:
       GOODBEAR_M15_03_SOURCE_PASSPHRASE: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE }}
       GOODBEAR_WORKSPACE: C:\GoodBear\m15-03-private-source
       GOODBEAR_CACHE: C:\GoodBear\m15-03-encrypted-cache
-      GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r20-20260925/source-bundle.tar.enc
-      GOODBEAR_EXPECTED_CIPHER: 5de69e4c8af37dcabe8f5c2e187768d2df1f5927f7c072b6f628fedbe2e39fff
-      GOODBEAR_EXPECTED_BUNDLE: b6028bcec1b8d8e087ba28341d3dd615f8d586504c037bb41d5f17dc16ef96c0
-      GOODBEAR_EXPECTED_MANIFEST: 7244cb0a14f5b5bf29a0d06b039159d410fa3be97d124ed802865972aa1d049d
-      GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r20-20260925/pki-input-transport.tar.enc
-      GOODBEAR_EXPECTED_PKI_CIPHER: 1f227b1eaa1c0152deec6df6cd08884547f55aaad3c97d507265da226e9d3efd
-      GOODBEAR_EXPECTED_PKI_TRANSPORT: 4737669c6c87474ff55f3885b21288bfd341f52144c85fa32cc24a7afab05aa7
+      GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r21-20260925/source-bundle.tar.enc
+      GOODBEAR_EXPECTED_CIPHER: 2c81053cb04d56f9223869646f25e1203f01e7e23e65943c27f67548b47f7f52
+      GOODBEAR_EXPECTED_BUNDLE: 9e45dff269a1beff80c0fcd4f8b8208113447984bf4c41e9f6fb89f835cc5078
+      GOODBEAR_EXPECTED_MANIFEST: 3b8ae90729e6dd78a1edffbba9d9d295f64c8c71c3df738d9424fdf866fa547b
+      GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r21-20260925/pki-input-transport.tar.enc
+      GOODBEAR_EXPECTED_PKI_CIPHER: 942642ecd93f6f7d7bdf556f54dbc9ecebfa8b5ea47bbe61b3207f29c67012aa
+      GOODBEAR_EXPECTED_PKI_TRANSPORT: e7300d6ab2d4658d192d56f340514bab852fd3f97dd753ce1fc6c19020b11fef
       GOODBEAR_PYTHON: C:\GoodBear\tools\Python312\python.exe
       GOODBEAR_OPENSSL: C:\mozilla-build\msys2\usr\bin\openssl.exe
     steps:
