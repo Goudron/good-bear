@@ -56,7 +56,7 @@ jobs:
       GOODBEAR_SELFTEST_RECEIPT_SHA256: ${{ inputs.selftest_receipt_sha256 }}
       GOODBEAR_JOB_ID: ${{ inputs.job_id }}
       GOODBEAR_JOB_SHA256: ${{ inputs.job_sha256 }}
-      GOODBEAR_SUPPLIER_CONTRACT_SHA256: beeed27c0bf33c0b62d24da83c0457480f62d5f0315467724e7cd5ae279b3976
+      GOODBEAR_SUPPLIER_CONTRACT_SHA256: a71599e300f587fd65a149310e71b71dbbeb2069d3d4d6193650bb8e2fd86576
 
     steps:
       - name: Validate exact source pins and operation shape
