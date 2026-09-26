@@ -46,6 +46,7 @@ jobs:
           @'
           import ctypes
           import json
+          import hashlib
           import os
           from pathlib import Path
           import shutil
@@ -64,6 +65,11 @@ jobs:
           
           result = {"task": "GB100-M13-launcher-diagnostic", "network_mutated": False,
                     "phase": "initializing"}
+          result["base_source_files"] = {
+              relative: {"sha256": hashlib.sha256((source_root / relative).read_bytes()).hexdigest(),
+                         "size": (source_root / relative).stat().st_size}
+              for relative in ("tools/preflight_m15_cloud_windows.py", "tools/run_m13_cloud_windows.py",
+                               "tools/windows_offline_worker.py")}
           backend = WindowsBackend()
           identifier = uuid.uuid4().hex
           stage = JOBS_ROOT / identifier
