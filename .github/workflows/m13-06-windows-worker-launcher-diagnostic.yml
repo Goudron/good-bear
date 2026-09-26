@@ -52,6 +52,7 @@ jobs:
           import shutil
           import sys
           import time
+          import uuid
           
           source_root = Path(sys.argv[1])
           operation = Path(sys.argv[2])
@@ -64,7 +65,7 @@ jobs:
           result = {"task": "GB100-M13-launcher-diagnostic", "network_mutated": False,
                     "phase": "initializing"}
           backend = WindowsBackend()
-          identifier = secrets.token_hex(12)
+          identifier = uuid.uuid4().hex
           stage = operation / ("stage-" + identifier)
           worker_workspace = operation / ("workspace-" + identifier)
           job = {"id": identifier, "worker_account": "gbld" + identifier[:12]}
