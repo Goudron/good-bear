@@ -34,7 +34,7 @@ jobs:
           $manifest = Join-Path $workspace 'source-manifest.json'
           $bundle = Join-Path $workspace 'source-bundle.tar'
           $source = Join-Path $workspace 'source'
-          foreach ($item in @($manifest, $bundle, (Join-Path $source 'tools\windows_offline_worker.py'))) {
+          foreach ($item in @($manifest, $bundle, (Join-Path $source 'tools\windows_offline_worker.py'), (Join-Path $source 'tools\run_m13_cloud_windows.py'))) {
             if (-not (Test-Path -LiteralPath $item)) { throw 'Materialized launcher diagnostic input is absent' }
           }
           if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
@@ -47,7 +47,6 @@ jobs:
           import ctypes
           import json
           import os
-          import secrets
           from pathlib import Path
           import shutil
           import sys
@@ -60,26 +59,31 @@ jobs:
           sys.path.insert(0, str(source_root / "tools"))
           from windows_offline_worker import (NativeError, NativeJob, WindowsBackend,
                                               require_native)
+          from run_m13_cloud_windows import JOBS_ROOT, native_worker_password, workspace_for
           import preflight_m15_cloud_windows as preflight
           
           result = {"task": "GB100-M13-launcher-diagnostic", "network_mutated": False,
                     "phase": "initializing"}
           backend = WindowsBackend()
           identifier = uuid.uuid4().hex
-          stage = operation / identifier
-          worker_workspace = operation / ("workspace-" + identifier)
+          stage = JOBS_ROOT / identifier
+          worker_workspace = workspace_for(identifier)
           job = {"id": identifier, "worker_account": "gbpre" + identifier[:12]}
           sid = None
           native = None
-          password = "Gb1!" + secrets.token_hex(5)
+          password = native_worker_password()
           
           def save():
               receipt_path.write_text(json.dumps(result, sort_keys=True), encoding="ascii")
           
           try:
+              result["phase"] = "native-prerequisite"
               require_native()
+              result["phase"] = "stage-create"
               stage.mkdir(parents=True, exist_ok=False)
+              result["phase"] = "stage-protect"
               backend.protect_job(stage)
+              result["phase"] = "workspace-create"
               worker_workspace.mkdir(parents=True, exist_ok=False)
               descriptor = stage / "job.json"
               descriptor.write_text('{"kind":"worker-launcher-diagnostic"}\n', encoding="ascii")
@@ -89,19 +93,29 @@ jobs:
                   "from pathlib import Path\\nimport json,sys\\n"
                   "Path(sys.argv[1]).write_text(json.dumps({'phase':'child-ran'}), encoding='ascii')\\n",
                   encoding="ascii")
+              result["phase"] = "stage-seal"
               backend.seal_new_job(stage)
+              result["phase"] = "account-create"
               sid = backend.create_account(job["worker_account"], password, source_root, worker_workspace, stage,
                                            provision_workspace=False, provision_stage=False,
                                            provision_descriptor=False)
+              result["phase"] = "workspace-acl"
               backend.provision_worker_workspace_acl(worker_workspace, sid)
+              result["phase"] = "stage-acl"
               backend.provision_worker_stage_acl(stage, sid)
+              result["phase"] = "descriptor-acl"
               backend.grant_worker_descriptor_read(stage, sid)
+              result["phase"] = "probe-acl"
               backend.grant_worker_probe_read(worker_probe, sid)
+              result["phase"] = "effective-acl"
               if not backend.verify_provisioning_boundaries(source_root, worker_workspace, stage,
                                                             descriptor, worker_probe, descriptor, sid):
                   raise NativeError("launcher diagnostic ACL verification failed")
+              result["phase"] = "account-enable"
               backend.enable_account(job, sid)
+              result["phase"] = "native-job-create"
               native = NativeJob("Global\\GoodBear-Launcher-Diagnostic-" + identifier)
+              result["phase"] = "native-job-access"
               native.allow_worker_query(sid)
               command = [r"C:\\GoodBear\\tools\\Python312\\python.exe", "-I", "-S", "-B", "-u",
                          str(worker_probe), str(worker_result)]
