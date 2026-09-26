@@ -99,6 +99,8 @@ jobs:
               sid = backend.create_account(job["worker_account"], password, source_root, worker_workspace, stage,
                                            provision_workspace=False, provision_stage=False,
                                            provision_descriptor=False)
+              result["phase"] = "account-disable"
+              backend.disable_account(job, sid)
               result["phase"] = "workspace-acl"
               backend.provision_worker_workspace_acl(worker_workspace, sid)
               result["phase"] = "stage-acl"
