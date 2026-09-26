@@ -135,6 +135,7 @@ jobs:
                       payload = json.loads(worker_result.read_text(encoding="ascii"))
                       result.update(phase="passed", exit_code=code, child_phase=payload.get("phase"))
           except Exception as exc:
+              result["failed_phase"] = result.get("phase", "unknown")
               result.update(phase="controller", error_type=type(exc).__name__, error=str(exc),
                             win32_error=ctypes.get_last_error())
           finally:
