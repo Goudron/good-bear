@@ -102,7 +102,7 @@ jobs:
           $cache = Join-Path $operation 'python-cache'
           try {
             New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
-            [IO.File]::WriteAllText($key, $env:GOODBEAR_SAFE_BROWSING_API_KEY, [Text.ASCIIEncoding]::new($false))
+            [IO.File]::WriteAllText($key, $env:GOODBEAR_SAFE_BROWSING_API_KEY, [Text.Encoding]::ASCII)
             New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
             & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script arm --phase full-lto --timeout-minutes 360 --manifest $manifest --bundle $bundle --expected-manifest-sha256 $env:GOODBEAR_MANIFEST_SHA256 --expected-bundle-sha256 $env:GOODBEAR_BUNDLE_SHA256 --selftest-job-id $env:GOODBEAR_SELFTEST_JOB_ID --selftest-job-sha256 $env:GOODBEAR_SELFTEST_JOB_SHA256 --selftest-receipt-sha256 $env:GOODBEAR_SELFTEST_RECEIPT_SHA256 --safebrowsing-key-file $key --safebrowsing-contract-sha256 $env:GOODBEAR_SUPPLIER_CONTRACT_SHA256
             if ($LASTEXITCODE -ne 0) { throw 'Full-LTO arm failed; inspect the durable native job state' }
