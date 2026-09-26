@@ -1,0 +1,75 @@
+name: M13 Windows native diagnostic
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-native-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnostic:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 10
+    steps:
+      - name: Collect source-free native job and runner status
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $jobsRoot = Join-Path $workspace 'native-offline-jobs'
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('diagnostic-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+          try {
+            $jobs = @()
+            if (Test-Path -LiteralPath $jobsRoot) {
+              foreach ($directory in Get-ChildItem -LiteralPath $jobsRoot -Directory -Force | Sort-Object Name) {
+                $jobPath = Join-Path $directory.FullName 'job.json'
+                $statePath = Join-Path $directory.FullName 'state.json'
+                if (-not (Test-Path -LiteralPath $jobPath) -or -not (Test-Path -LiteralPath $statePath)) { continue }
+                $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
+                $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+                $jobs += [ordered]@{
+                  id = $directory.Name
+                  phase = $job.phase
+                  job_sha256 = (Get-FileHash -LiteralPath $jobPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                  status = $state.status
+                  exit_code = $state.exit_code
+                  network_restored = $state.network_restored
+                  recovery_required = $state.recovery_required
+                  last_error = $state.last_error
+                  recovery_error = $state.recovery_error
+                  updated_utc = $state.updated_utc
+                }
+              }
+            }
+            $runner = Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'actions.runner.Goudron-good-bear.*' } | ForEach-Object {
+              [ordered]@{ name=$_.Name; state=$_.State; start_mode=$_.StartMode; exit_code=$_.ExitCode; process_id=$_.ProcessId }
+            }
+            $adapters = Get-NetAdapter -IncludeHidden | ForEach-Object {
+              [ordered]@{ name=$_.Name; status=$_.Status; if_index=$_.ifIndex; mac=$_.MacAddress }
+            }
+            [ordered]@{
+              schema_version = 1
+              kind = 'm13-windows-native-diagnostic'
+              utc = (Get-Date).ToUniversalTime().ToString('o')
+              native_jobs = $jobs
+              runner_services = @($runner)
+              adapters = @($adapters)
+            } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $operation 'native-diagnostic.json') -Encoding utf8
+            Write-Output ('NATIVE_DIAGNOSTIC_JOBS=' + $jobs.Count)
+          }
+          catch {
+            throw ('Native diagnostic failed: ' + $_.Exception.Message)
+          }
+
+      - name: Return source-free diagnostic
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-native-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\diagnostic-${{ github.run_id }}-${{ github.run_attempt }}\native-diagnostic.json
+          if-no-files-found: error
+          retention-days: 7
