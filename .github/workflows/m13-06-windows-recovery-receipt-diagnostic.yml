@@ -43,6 +43,9 @@ jobs:
             $issues = New-Object 'System.Collections.Generic.List[string]'
             try {
               $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+              $stop = [IO.Path]::GetFullPath($jobsRoot).TrimEnd('\')
+              $target = [IO.Path]::GetFullPath($item.FullName).TrimEnd('\')
+              if (-not ($target.Equals($stop,[StringComparison]::OrdinalIgnoreCase) -or $target.StartsWith($stop+'\',[StringComparison]::OrdinalIgnoreCase))) { $issues.Add('target-escapes-jobs-root'); return @($issues) }
               $first = $true
               while ($item) {
                 if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $issues.Add('reparse-point'); break }
@@ -60,6 +63,7 @@ jobs:
                   elseif ($rights -band 0xD0040) { $issues.Add('ancestor-untrusted-write-ace') }
                 }
                 $first = $false
+                if ($item.FullName.TrimEnd('\').Equals($stop,[StringComparison]::OrdinalIgnoreCase)) { break }
                 if ($item -is [IO.DirectoryInfo]) { $item = $item.Parent } else { $item = $item.Directory }
               }
             } catch { $issues.Add('acl-read-failed') }
