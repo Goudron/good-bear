@@ -29,7 +29,7 @@ jobs:
           $bundle = Join-Path $workspace 'source-bundle.tar'
           if ((Get-FileHash $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:BASE_MANIFEST) { throw 'r37 manifest differs' }
           if ((Get-FileHash $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:BASE_BUNDLE) { throw 'r37 bundle differs' }
-          $keyHash = -join ([Security.Cryptography.SHA256]::HashData([Text.Encoding]::ASCII.GetBytes($env:GOODBEAR_DELTA_KEY)) | ForEach-Object { $_.ToString('x2') })
+          $hasher = [Security.Cryptography.SHA256]::Create(); try { $keyHash = -join ($hasher.ComputeHash([Text.Encoding]::ASCII.GetBytes($env:GOODBEAR_DELTA_KEY)) | ForEach-Object { $_.ToString('x2') }) } finally { $hasher.Dispose() }
           if ($keyHash -ne $env:DELTA_KEY_SHA256) { throw 'overlay secret binding differs' }
           $op = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('source-overlay-r38-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
           New-Item -ItemType Directory -Path $op -ErrorAction Stop | Out-Null
