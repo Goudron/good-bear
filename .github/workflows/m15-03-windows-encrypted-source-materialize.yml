@@ -23,7 +23,7 @@ jobs:
       GOODBEAR_EXPECTED_MANIFEST: 0a6a404aca72192880f6542625d328496bc7ac3099241f55bf60fd42ae8614fd
       GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r37-20260926/pki-input-transport.r37.tar.enc
       GOODBEAR_EXPECTED_PKI_CIPHER: c5a59d298f7f00f85dad88104d5504ac314aee0b94c0a627b347e137dcaf511d
-      GOODBEAR_EXPECTED_PKI_TRANSPORT: b0d24b35379018d0df810eb23d942c047b563768b03337629e064132519962
+      GOODBEAR_EXPECTED_PKI_TRANSPORT: b0d24b35379018d5a7ab585901ce86a9a714e9c6dd405915a5ce3332db894584
       GOODBEAR_PYTHON: C:\GoodBear\tools\Python312\python.exe
       GOODBEAR_OPENSSL: C:\mozilla-build\msys2\usr\bin\openssl.exe
     steps:
