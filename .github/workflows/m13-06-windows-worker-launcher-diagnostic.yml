@@ -90,8 +90,8 @@ jobs:
               worker_probe = stage / "worker-launcher-probe.py"
               worker_result = worker_workspace / "worker-result.json"
               worker_probe.write_text(
-                  "from pathlib import Path\\nimport json,sys\\n"
-                  "Path(sys.argv[1]).write_text(json.dumps({'phase':'child-ran'}), encoding='ascii')\\n",
+                  "result = __import__('sys').argv[1]\\n"
+                  "open(result, 'w', encoding='ascii').write('{\"phase\":\"child-ran\"}')\\n",
                   encoding="ascii")
               result["phase"] = "stage-seal"
               backend.seal_new_job(stage)
