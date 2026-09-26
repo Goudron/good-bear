@@ -70,10 +70,10 @@ jobs:
           $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
           if ($record.upstream.version -cne '156.0' -or $record.upstream.revision -cne '3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1') { throw 'Wrong Firefox baseline' }
           $deltaPath = Join-Path $source '.good-bear-source-delta.json'
-          if ((Get-FileHash -LiteralPath $deltaPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne '8b629af5a43fb4956c08f4fd66bb51671e52ee5b106c073f6046fc6350b5c977') { throw 'Source overlay contract differs' }
+          if ((Get-FileHash -LiteralPath $deltaPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne '6cab7c7b313af95b9db3c4b1c4f76c4e83b8dde169d98180252858d13d2302d5') { throw 'Source overlay contract differs' }
           $delta = Get-Content -LiteralPath $deltaPath -Raw | ConvertFrom-Json
           if ($delta.kind -cne 'goodbear-m15-03-source-overlay' -or $delta.base_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $delta.base_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256 -or $delta.replacements.Count -ne 3) { throw 'Source overlay binding differs' }
-          $overrides = @{'tools/preflight_m15_cloud_windows.py'=@(22931,'3d835c586c606700a823c379a9113aae8d3febdfdf9d2804cb1d158b4f12300c');'tools/run_m13_cloud_windows.py'=@(64559,'b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4');'tools/windows_offline_worker.py'=@(42066,'e9cffab5d12ee92f64b1f722756e160a5b98707387a7e1ea52e38303aaee402e')}
+          $overrides = @{'tools/preflight_m15_cloud_windows.py'=@(22931,'3d835c586c606700a823c379a9113aae8d3febdfdf9d2804cb1d158b4f12300c');'tools/run_m13_cloud_windows.py'=@(64559,'b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4');'tools/windows_offline_worker.py'=@(42062,'4b8c9790efb4cdb09a03939133534fa6d46f3c5d179fb2de412d9118594cb3d6')}
           foreach ($replacement in $delta.replacements) { if (-not $overrides.ContainsKey($replacement.path) -or $replacement.size -ne $overrides[$replacement.path][0] -or $replacement.sha256 -cne $overrides[$replacement.path][1]) { throw 'Source overlay replacement differs' } }
           $root = [IO.Path]::GetFullPath($source).TrimEnd('\') + '\'
           $seen = @{}
