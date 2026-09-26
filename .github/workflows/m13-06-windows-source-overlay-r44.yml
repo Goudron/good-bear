@@ -22,7 +22,7 @@ jobs:
       DELTA_CIPHER: e24717c0fb723bf97f011c848486bbf4bd5b0ec6ce7f64258207725a4d1ae2c5
       DELTA_TAR: 187b7bbe54b3b97f5e6e67e847d1e826247a6e8770208e6ade003082b42f10d8
       DELTA_RECORD: 7377983f7a7a7ae63bb782ce3d666af05311ad2ab5d6fe9eb5b9c78f6f813da2
-      DELTA_KEY_SHA256: da4ce14e2d047fd89fd72ec8bbd64198f8eca5b7f227a84cdb5877e78aec398f
+      DELTA_KEY_SHA256: 29964a554d849924fa598879f6107a329ea48f7030fe9f1739bd5e8abc3f440f
     steps:
       - name: Verify and apply the exact r44 overlay
         shell: powershell
