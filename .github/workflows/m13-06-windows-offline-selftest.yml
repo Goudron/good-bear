@@ -70,10 +70,10 @@ jobs:
           $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
           if ($record.upstream.version -cne '156.0' -or $record.upstream.revision -cne '3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1') { throw 'Wrong Firefox baseline' }
           $deltaPath = Join-Path $source '.good-bear-source-delta.json'
-          if ((Get-FileHash -LiteralPath $deltaPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'e6b4c38ae041ec0bd10edfd24f00bbbaf9ded3387f6f10b2ec503d8946255ea0') { throw 'Source overlay contract differs' }
+          if ((Get-FileHash -LiteralPath $deltaPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'a9ec9afd24cf92d472662c9d3c846d21316b1f8cede39a83a6cfbe9c03c20e41') { throw 'Source overlay contract differs' }
           $delta = Get-Content -LiteralPath $deltaPath -Raw | ConvertFrom-Json
-          if ($delta.kind -cne 'goodbear-m15-03-source-overlay' -or $delta.base_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $delta.base_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256 -or $delta.replacements.Count -ne 2) { throw 'Source overlay binding differs' }
-          $overrides = @{'tools/preflight_m15_cloud_windows.py'=@(22896,'3dd84cdf525856b8d9675ef4b48fb931bdccb4ced5c9b11c3d393aeb772c825c');'tools/windows_offline_worker.py'=@(40439,'1002f3521a5d78f30165e17d9ebd5607271b2fee41baf2b8c81aa063f159b5f7')}
+          if ($delta.kind -cne 'goodbear-m15-03-source-overlay' -or $delta.base_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $delta.base_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256 -or $delta.replacements.Count -ne 3) { throw 'Source overlay binding differs' }
+          $overrides = @{'tools/preflight_m15_cloud_windows.py'=@(22931,'3d835c586c606700a823c379a9113aae8d3febdfdf9d2804cb1d158b4f12300c');'tools/run_m13_cloud_windows.py'=@(64559,'b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4');'tools/windows_offline_worker.py'=@(41048,'0fe68a37f0c39a1066084c9c90915b79df8f38ac753e3bdef7b56a468ebccd21')}
           foreach ($replacement in $delta.replacements) { if (-not $overrides.ContainsKey($replacement.path) -or $replacement.size -ne $overrides[$replacement.path][0] -or $replacement.sha256 -cne $overrides[$replacement.path][1]) { throw 'Source overlay replacement differs' } }
           $root = [IO.Path]::GetFullPath($source).TrimEnd('\') + '\'
           $seen = @{}

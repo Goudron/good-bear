@@ -1,0 +1,91 @@
+name: M13 Windows r39 hash-bound source overlay
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-source-overlay
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 15
+    env:
+      GOODBEAR_DELTA_KEY: ${{ secrets.GOODBEAR_M15_03_SOURCE_DELTA_PASSPHRASE_HEX }}
+      BASE_MANIFEST: 0a6a404aca72192880f6542625d328496bc7ac3099241f55bf60fd42ae8614fd
+      BASE_BUNDLE: 6caf1670fa53a839ec0a0aa2c7953622b134ec56a9ae558b9326c4bdc55b0e8d
+      PREVIOUS_RECORD: e6b4c38ae041ec0bd10edfd24f00bbbaf9ded3387f6f10b2ec503d8946255ea0
+      DELTA_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-delta-r39-20260926/source-overlay.r39.tar.enc
+      DELTA_CIPHER: fb19bdf0e55be4edabf8f87ce45b1d61a4d537efefe6b8ddf166422bea0d2271
+      DELTA_TAR: 7871b92efc7e0c91b29cbf04f3a4ade039308cabb63b53aca20b95b392623cc2
+      DELTA_RECORD: a9ec9afd24cf92d472662c9d3c846d21316b1f8cede39a83a6cfbe9c03c20e41
+      DELTA_KEY_SHA256: 42b63079d7efb4b00c257a28603b68ffed6d07142f77ce19e6e91b7d04845fec
+    steps:
+      - name: Verify and apply the exact r39 overlay
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $source = Join-Path $workspace 'source'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:BASE_MANIFEST) { throw 'base manifest differs' }
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:BASE_BUNDLE) { throw 'base bundle differs' }
+          $previous = Join-Path $source '.good-bear-source-delta.json'
+          if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:PREVIOUS_RECORD) { throw 'r38 overlay contract differs' }
+          $hasher = [Security.Cryptography.SHA256]::Create()
+          try { $keyHash = -join ($hasher.ComputeHash([Text.Encoding]::ASCII.GetBytes($env:GOODBEAR_DELTA_KEY)) | ForEach-Object { $_.ToString('x2') }) }
+          finally { $hasher.Dispose() }
+          if ($keyHash -ne $env:DELTA_KEY_SHA256) { throw 'overlay secret binding differs' }
+          $op = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('source-overlay-r39-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $op -ErrorAction Stop | Out-Null
+          try {
+            $cipher = Join-Path $op 'overlay.tar.enc'
+            $tar = Join-Path $op 'overlay.tar'
+            Invoke-WebRequest -UseBasicParsing -Uri $env:DELTA_URL -OutFile $cipher
+            if ((Get-FileHash -LiteralPath $cipher -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:DELTA_CIPHER) { throw 'overlay ciphertext differs' }
+            $openssl = 'C:\mozilla-build\msys2\usr\bin\openssl.exe'
+            & $openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass ('pass:' + $env:GOODBEAR_DELTA_KEY) -in $cipher -out $tar
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash -LiteralPath $tar -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:DELTA_TAR) { throw 'overlay plaintext differs' }
+            & "$env:WINDIR\System32\tar.exe" -xf $tar -C $op
+            if ($LASTEXITCODE -ne 0) { throw 'overlay extraction failed' }
+            $overlay = Join-Path $op 'overlay'
+            $recordPath = Join-Path $overlay '.good-bear-source-delta.json'
+            if ((Get-FileHash -LiteralPath $recordPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:DELTA_RECORD) { throw 'overlay contract differs' }
+            $record = Get-Content -LiteralPath $recordPath -Raw | ConvertFrom-Json
+            if ($record.base_manifest_sha256 -ne $env:BASE_MANIFEST -or $record.base_bundle_sha256 -ne $env:BASE_BUNDLE -or $record.replacements.Count -ne 3) { throw 'overlay base binding differs' }
+            $current = @{
+              'tools/preflight_m15_cloud_windows.py' = '3dd84cdf525856b8d9675ef4b48fb931bdccb4ced5c9b11c3d393aeb772c825c'
+              'tools/run_m13_cloud_windows.py' = 'd026de5adf3a510ee20b26dad235f84212007ad736d8e64d3d08fcadd6ca730a'
+              'tools/windows_offline_worker.py' = '1002f3521a5d78f30165e17d9ebd5607271b2fee41baf2b8c81aa063f159b5f7'
+            }
+            $allowed = @{
+              'tools/preflight_m15_cloud_windows.py' = @('9f03b07e1b27264610819a369986c2e0cb2bdec315dd687ec49d9d4196380251','3d835c586c606700a823c379a9113aae8d3febdfdf9d2804cb1d158b4f12300c')
+              'tools/run_m13_cloud_windows.py' = @('d026de5adf3a510ee20b26dad235f84212007ad736d8e64d3d08fcadd6ca730a','b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4')
+              'tools/windows_offline_worker.py' = @('5f887cc2c18ab7ad921ec519f19b538fb5058e87ad0e8edfc24cf7b4fa4cce51','0fe68a37f0c39a1066084c9c90915b79df8f38ac753e3bdef7b56a468ebccd21')
+            }
+            foreach ($item in $record.replacements) {
+              if (-not $allowed.ContainsKey($item.path) -or $item.base_sha256 -ne $allowed[$item.path][0] -or $item.sha256 -ne $allowed[$item.path][1]) { throw 'overlay replacement binding differs' }
+              $target = Join-Path $source $item.path
+              $replacement = Join-Path $overlay $item.path
+              if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -ne $current[$item.path]) { throw 'overlay current file differs' }
+              if ((Get-FileHash -LiteralPath $replacement -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.sha256) { throw 'overlay replacement bytes differ' }
+              Copy-Item -LiteralPath $replacement -Destination $target -Force
+              if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() -ne $item.sha256) { throw 'overlay post-apply bytes differ' }
+            }
+            Copy-Item -LiteralPath $recordPath -Destination $previous -Force
+            @{task='GB100-M13-r39';base_manifest_sha256=$env:BASE_MANIFEST;base_bundle_sha256=$env:BASE_BUNDLE;delta_contract_sha256=$env:DELTA_RECORD;applied=$true;source_returned_as_artifact=$false} | ConvertTo-Json -Compress | Set-Content 'C:\GoodBear\m13-r39-source-overlay-evidence.json' -Encoding utf8
+            Write-Output 'M13_R39_HASH_BOUND_SOURCE_OVERLAY_APPLIED'
+          } finally { Remove-Item -LiteralPath $op -Recurse -Force -ErrorAction SilentlyContinue }
+
+      - name: Upload source-free overlay evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-r39-source-overlay-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m13-r39-source-overlay-evidence.json
+          if-no-files-found: error
+          retention-days: 7
