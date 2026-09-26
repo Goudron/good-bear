@@ -68,7 +68,7 @@ jobs:
           identifier = uuid.uuid4().hex
           stage = operation / identifier
           worker_workspace = operation / ("workspace-" + identifier)
-          job = {"id": identifier, "worker_account": "gbeng" + identifier[:12]}
+          job = {"id": identifier, "worker_account": "gbpre" + identifier[:12]}
           sid = None
           native = None
           password = "Gb1!" + secrets.token_hex(5)
