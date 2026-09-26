@@ -119,8 +119,11 @@ jobs:
               native = NativeJob("Global\\GoodBear-Launcher-Diagnostic-" + identifier)
               result["phase"] = "native-job-access"
               native.allow_worker_query(sid)
-              command = [r"C:\\GoodBear\\tools\\Python312\\python.exe", "-I", "-S", "-B", "-u",
-                         str(worker_probe), str(worker_result)]
+              worker_stderr = worker_workspace / "worker-launcher-stderr.txt"
+              python = r"C:\\GoodBear\\tools\\Python312\\python.exe"
+              command = [r"C:\\Windows\\System32\\cmd.exe", "/d", "/c",
+                         python + " -I -S -B -u " + str(worker_probe) + " " + str(worker_result) +
+                         " 1>" + str(worker_stderr) + " 2>&1"]
               environment = preflight.native_environment()
               result["phase"] = "starting"
               launched = False
@@ -169,6 +172,8 @@ jobs:
                   code = native.wait(time.monotonic() + 60, lambda: None)
                   if code != 0:
                       result.update(phase="child-exit", exit_code=code)
+                      if worker_stderr.is_file():
+                          result["child_stderr_tail"] = worker_stderr.read_text(encoding="utf-8", errors="replace")[-2000:]
                   elif not worker_result.is_file():
                       result.update(phase="child-result", exit_code=code)
                   else:
