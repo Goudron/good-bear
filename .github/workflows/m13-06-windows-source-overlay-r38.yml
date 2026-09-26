@@ -17,7 +17,7 @@ jobs:
       DELTA_CIPHER: b86769100b10512d572bcb14dbfe72929ebc1bc04d513e7c80db766d62a17b95
       DELTA_TAR: dbc09dc8168d8aa200247e95ce3709ac381d1921468bbacace0d3a190c61cf88
       DELTA_RECORD: e6b4c38ae041ec0bd10edfd24f00bbbaf9ded3387f6f10b2ec503d8946255ea0
-      DELTA_KEY_SHA256: f9cfa6ac3cd3f0145978b0f6fb8964a171ab5df2dec17afa4956079ce21fbf6f
+      DELTA_KEY_SHA256: fb50a7e3dccc78c4affe39a3639367e47da9a88da42231fa121b2f83fc0783c9
     steps:
       - name: Verify and apply the exact r38 overlay
         shell: powershell
