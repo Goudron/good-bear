@@ -1,0 +1,46 @@
+name: M13 Windows Safe Browsing input fingerprint
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-safebrowsing-fingerprint
+  cancel-in-progress: false
+
+jobs:
+  fingerprint:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    env:
+      GOODBEAR_SAFE_BROWSING_API_KEY: ${{ secrets.GOODBEAR_SAFE_BROWSING_API_KEY }}
+    steps:
+      - name: Return only the exact supplier input digest
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_SAFE_BROWSING_API_KEY)) { throw 'Private Safe Browsing build input is absent' }
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('supplier-fingerprint-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+          try {
+            $bytes = [Text.Encoding]::ASCII.GetBytes($env:GOODBEAR_SAFE_BROWSING_API_KEY)
+            $sha = [Security.Cryptography.SHA256]::Create()
+            try { $digest = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant() }
+            finally { $sha.Dispose() }
+            [ordered]@{
+              schema_version = 1
+              kind = 'm13-safebrowsing-current-input-fingerprint'
+              key_file_sha256 = $digest
+            } | ConvertTo-Json | Set-Content (Join-Path $operation 'supplier-input-fingerprint.json') -Encoding utf8
+          }
+          finally {
+            [Array]::Clear($bytes, 0, $bytes.Length)
+          }
+      - name: Return supplier input fingerprint
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-safebrowsing-fingerprint-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\supplier-fingerprint-${{ github.run_id }}-${{ github.run_attempt }}\supplier-input-fingerprint.json
+          if-no-files-found: error
+          retention-days: 1
