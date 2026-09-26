@@ -1,0 +1,156 @@
+name: M13 Windows worker launcher diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_manifest_sha256:
+        description: Exact materialized source-manifest SHA-256
+        required: true
+        type: string
+      source_bundle_sha256:
+        description: Exact materialized source-bundle SHA-256
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-worker-launcher-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 12
+    env:
+      GOODBEAR_MANIFEST_SHA256: ${{ inputs.source_manifest_sha256 }}
+      GOODBEAR_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+    steps:
+      - name: Exercise the exact contained worker launcher without network mutation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          $source = Join-Path $workspace 'source'
+          foreach ($item in @($manifest, $bundle, (Join-Path $source 'tools\windows_offline_worker.py'))) {
+            if (-not (Test-Path -LiteralPath $item)) { throw 'Materialized launcher diagnostic input is absent' }
+          }
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Bundle hash differs' }
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('launcher-diagnostic-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+          $script = Join-Path $operation 'diagnose_launcher.py'
+          $receipt = Join-Path $operation 'launcher-diagnostic.json'
+          @'
+          import ctypes
+          import json
+          import os
+          from pathlib import Path
+          import secrets
+          import shutil
+          import sys
+          import time
+          
+          source_root = Path(sys.argv[1])
+          operation = Path(sys.argv[2])
+          receipt_path = Path(sys.argv[3])
+          sys.path.insert(0, str(source_root / "tools"))
+          from windows_offline_worker import (NativeError, NativeJob, WindowsBackend,
+                                              require_native)
+          import preflight_m15_cloud_windows as preflight
+          
+          result = {"task": "GB100-M13-launcher-diagnostic", "network_mutated": False,
+                    "phase": "initializing"}
+          backend = WindowsBackend()
+          identifier = secrets.token_hex(12)
+          stage = operation / ("stage-" + identifier)
+          worker_workspace = operation / ("workspace-" + identifier)
+          job = {"id": identifier, "worker_account": "gbld" + identifier[:12]}
+          sid = None
+          native = None
+          password = "Gb!" + secrets.token_hex(20) + "A1"
+          
+          def save():
+              receipt_path.write_text(json.dumps(result, sort_keys=True), encoding="ascii")
+          
+          try:
+              require_native()
+              stage.mkdir(parents=True, exist_ok=False)
+              backend.protect_job(stage)
+              worker_workspace.mkdir(parents=True, exist_ok=False)
+              descriptor = stage / "job.json"
+              descriptor.write_text('{"kind":"worker-launcher-diagnostic"}\n', encoding="ascii")
+              worker_probe = stage / "worker-launcher-probe.py"
+              worker_result = worker_workspace / "worker-result.json"
+              worker_probe.write_text(
+                  "from pathlib import Path\\nimport json,sys\\n"
+                  "Path(sys.argv[1]).write_text(json.dumps({'phase':'child-ran'}), encoding='ascii')\\n",
+                  encoding="ascii")
+              backend.seal_new_job(stage)
+              sid = backend.create_account(job["worker_account"], password, source_root, worker_workspace, stage,
+                                           provision_workspace=False, provision_stage=False,
+                                           provision_descriptor=False)
+              backend.provision_worker_workspace_acl(worker_workspace, sid)
+              backend.provision_worker_stage_acl(stage, sid)
+              backend.grant_worker_descriptor_read(stage, sid)
+              backend.grant_worker_probe_read(worker_probe, sid)
+              if not backend.verify_provisioning_boundaries(source_root, worker_workspace, stage,
+                                                            descriptor, worker_probe, descriptor, sid):
+                  raise NativeError("launcher diagnostic ACL verification failed")
+              backend.enable_account(job, sid)
+              native = NativeJob("Global\\GoodBear-Launcher-Diagnostic-" + identifier)
+              native.allow_worker_query(sid)
+              command = [r"C:\\GoodBear\\tools\\Python312\\python.exe", "-I", "-S", "-B", "-u",
+                         str(worker_probe), str(worker_result)]
+              result["phase"] = "starting"
+              try:
+                  native.start(job["worker_account"], password, command, source_root,
+                               preflight.native_environment())
+              except NativeError as exc:
+                  result.update(phase="launcher", native_error=str(exc), win32_error=ctypes.get_last_error())
+              else:
+                  code = native.wait(time.monotonic() + 60, lambda: None)
+                  if code != 0:
+                      result.update(phase="child-exit", exit_code=code)
+                  elif not worker_result.is_file():
+                      result.update(phase="child-result", exit_code=code)
+                  else:
+                      payload = json.loads(worker_result.read_text(encoding="ascii"))
+                      result.update(phase="passed", exit_code=code, child_phase=payload.get("phase"))
+          except Exception as exc:
+              result.update(phase="controller", error_type=type(exc).__name__, error=str(exc),
+                            win32_error=ctypes.get_last_error())
+          finally:
+              if native is not None:
+                  try:
+                      native.close()
+                  except Exception as exc:
+                      result.setdefault("cleanup_error", type(exc).__name__ + ": " + str(exc))
+              if sid is not None:
+                  try:
+                      backend.disable_account(job, sid)
+                      backend.remove_account(job, sid, source_root, stage)
+                      sid = None
+                  except Exception as exc:
+                      result.setdefault("cleanup_error", type(exc).__name__ + ": " + str(exc))
+              for path in (worker_workspace, stage):
+                  shutil.rmtree(path, ignore_errors=True)
+              password = ""
+              save()
+          
+          if result.get("phase") != "passed":
+              raise SystemExit(1)
+          '@ | Set-Content -LiteralPath $script -Encoding ascii
+          & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u $script $source $operation $receipt
+          if ($LASTEXITCODE -ne 0) { throw 'Contained worker launcher diagnostic failed' }
+          Write-Output 'WORKER_LAUNCHER_DIAGNOSTIC_PASSED_NO_NETWORK_MUTATION'
+      - name: Return source-free launcher diagnostic receipt
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-worker-launcher-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\launcher-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}\launcher-diagnostic.json
+          if-no-files-found: error
+          retention-days: 7
