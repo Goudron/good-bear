@@ -47,8 +47,8 @@ jobs:
           import ctypes
           import json
           import os
-          from pathlib import Path
           import secrets
+          from pathlib import Path
           import shutil
           import sys
           import time
@@ -68,10 +68,10 @@ jobs:
           identifier = uuid.uuid4().hex
           stage = operation / identifier
           worker_workspace = operation / ("workspace-" + identifier)
-          job = {"id": identifier, "worker_account": "gbld" + identifier[:12]}
+          job = {"id": identifier, "worker_account": "gbeng" + identifier[:12]}
           sid = None
           native = None
-          password = "Gb!" + secrets.token_hex(20) + "A1"
+          password = "Gb1!" + secrets.token_hex(5)
           
           def save():
               receipt_path.write_text(json.dumps(result, sort_keys=True), encoding="ascii")
