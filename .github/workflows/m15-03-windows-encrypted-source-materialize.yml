@@ -13,15 +13,16 @@ jobs:
     timeout-minutes: 150
     env:
       GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64: ${{ secrets.GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64 }}
-      GOODBEAR_M15_03_PKI_PASSPHRASE_B64: ${{ secrets.GOODBEAR_M15_03_PKI_PASSPHRASE_B64 }}
+      GOODBEAR_M15_03_PKI_PASSPHRASE_HEX: ${{ secrets.GOODBEAR_M15_03_PKI_PASSPHRASE_HEX }}
+      GOODBEAR_EXPECTED_PKI_KEY_SHA256: 44d7cf7a45e2e244d2992461f24677bdaab2485153692445aa08f6d945c6a081
       GOODBEAR_WORKSPACE: C:\GoodBear\m15-03-private-source
       GOODBEAR_CACHE: C:\GoodBear\m15-03-encrypted-cache
       GOODBEAR_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-source-encrypted-r36-20260926/source-bundle.r36.tar.enc
       GOODBEAR_EXPECTED_CIPHER: 2eeb86ed4340ea87f8599161aa4fc1f3589d220eca32e1d6ee5ce6cdb69d4475
       GOODBEAR_EXPECTED_BUNDLE: 6caf1670fa53a839ec0a0aa2c7953622b134ec56a9ae558b9326c4bdc55b0e8d
       GOODBEAR_EXPECTED_MANIFEST: 0a6a404aca72192880f6542625d328496bc7ac3099241f55bf60fd42ae8614fd
-      GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r36-20260926/pki-input-transport.r36.tar.enc
-      GOODBEAR_EXPECTED_PKI_CIPHER: 65bd8ba1786174c9008d1eb2bc71993391ba211c0471f4ff545b7c5f6eaf85cc
+      GOODBEAR_PKI_ASSET_URL: https://github.com/Goudron/good-bear/releases/download/m15-10-windows-pki-transport-r37-20260926/pki-input-transport.r37.tar.enc
+      GOODBEAR_EXPECTED_PKI_CIPHER: c5a59d298f7f00f85dad88104d5504ac314aee0b94c0a627b347e137dcaf511d
       GOODBEAR_EXPECTED_PKI_TRANSPORT: b0d24b35379018d0df810eb23d942c047b563768b03337629e064132519962
       GOODBEAR_PYTHON: C:\GoodBear\tools\Python312\python.exe
       GOODBEAR_OPENSSL: C:\mozilla-build\msys2\usr\bin\openssl.exe
@@ -97,25 +98,27 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64) -or [string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_PKI_PASSPHRASE_B64)) { throw 'An encrypted transport Actions secret is absent' }
+          if ([string]::IsNullOrWhiteSpace($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64) -or $env:GOODBEAR_M15_03_PKI_PASSPHRASE_HEX -cnotmatch '^[0-9a-f]{64}$') { throw 'An encrypted transport Actions secret is absent or malformed' }
+          $pkiKeyBytes = [Text.Encoding]::ASCII.GetBytes($env:GOODBEAR_M15_03_PKI_PASSPHRASE_HEX)
+          $pkiHasher = [Security.Cryptography.SHA256]::Create()
+          try { $pkiKeyHash = -join ($pkiHasher.ComputeHash($pkiKeyBytes) | ForEach-Object { $_.ToString('x2') }) } finally { $pkiHasher.Dispose() }
+          if ($pkiKeyHash -ne $env:GOODBEAR_EXPECTED_PKI_KEY_SHA256) { throw 'PKI transport secret binding does not match' }
           $workspace = $env:GOODBEAR_WORKSPACE
           $cipher = Join-Path $env:GOODBEAR_CACHE 'source-bundle.tar.enc'
           $pkiCipher = Join-Path $env:GOODBEAR_CACHE 'pki-input-transport.tar.enc'
           $bundle = Join-Path $workspace 'source-bundle.tar'
           $pkiTransport = Join-Path $workspace 'pki-input-transport.tar'
           $keyFile = Join-Path $workspace '.source-passphrase'
-          $pkiKeyFile = Join-Path $workspace '.pki-passphrase'
           try {
             [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String($env:GOODBEAR_M15_03_SOURCE_PASSPHRASE_B64))
-            [IO.File]::WriteAllBytes($pkiKeyFile, [Convert]::FromBase64String($env:GOODBEAR_M15_03_PKI_PASSPHRASE_B64))
             & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$keyFile" -in $cipher -out $bundle
             if ($LASTEXITCODE -ne 0) { throw 'Encrypted source decryption failed' }
-            & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass "file:$pkiKeyFile" -in $pkiCipher -out $pkiTransport
+            $pkiPassArgument = 'pass:' + $env:GOODBEAR_M15_03_PKI_PASSPHRASE_HEX
+            & $env:GOODBEAR_OPENSSL enc -d -aes-256-cbc -salt -pbkdf2 -iter 600000 -md sha512 -pass $pkiPassArgument -in $pkiCipher -out $pkiTransport
             if ($LASTEXITCODE -ne 0) { throw 'Encrypted PKI transport decryption failed' }
           }
           finally {
             if (Test-Path -LiteralPath $keyFile) { Remove-Item -LiteralPath $keyFile -Force }
-            if (Test-Path -LiteralPath $pkiKeyFile) { Remove-Item -LiteralPath $pkiKeyFile -Force }
           }
           $bundleHash = (Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($bundleHash -ne $env:GOODBEAR_EXPECTED_BUNDLE) { throw 'Decrypted source bundle SHA-256 does not match' }
