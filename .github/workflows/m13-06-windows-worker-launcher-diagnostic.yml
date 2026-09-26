@@ -66,7 +66,7 @@ jobs:
                     "phase": "initializing"}
           backend = WindowsBackend()
           identifier = uuid.uuid4().hex
-          stage = operation / ("stage-" + identifier)
+          stage = operation / identifier
           worker_workspace = operation / ("workspace-" + identifier)
           job = {"id": identifier, "worker_account": "gbld" + identifier[:12]}
           sid = None
