@@ -1,0 +1,99 @@
+name: M13 Windows recovered selftest receipt diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Exact isolated selftest job identifier
+        required: true
+        type: string
+      job_sha256:
+        description: Exact immutable isolated selftest job SHA-256
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-recovery-receipt-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  diagnose:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 10
+    env:
+      GOODBEAR_JOB_ID: ${{ inputs.job_id }}
+      GOODBEAR_JOB_SHA256: ${{ inputs.job_sha256 }}
+    steps:
+      - name: Inspect bounded recovery receipt state without source return
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GOODBEAR_JOB_ID -cnotmatch '^[0-9a-f]{32}$' -or $env:GOODBEAR_JOB_SHA256 -cnotmatch '^[0-9a-f]{64}$') { throw 'Exact job identity and hash are required' }
+          $jobsRoot = 'C:\GoodBear\m15-03-private-source\native-offline-jobs'
+          $stage = Join-Path $jobsRoot $env:GOODBEAR_JOB_ID
+          $jobPath = Join-Path $stage 'job.json'
+          if ((Get-FileHash -LiteralPath $jobPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $env:GOODBEAR_JOB_SHA256) { throw 'Job descriptor hash differs' }
+          $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
+          if ($job.phase -cne 'isolation-selftest') { throw 'Job is not an isolation selftest' }
+          $state = Get-Content -LiteralPath (Join-Path $stage 'state.json') -Raw | ConvertFrom-Json
+          function Test-PrivateAcl([string]$Path) {
+            $trusted = @('S-1-5-18', 'S-1-5-32-544')
+            $issues = New-Object 'System.Collections.Generic.List[string]'
+            try {
+              $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+              $first = $true
+              while ($item) {
+                if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { $issues.Add('reparse-point'); break }
+                $acl = Get-Acl -LiteralPath $item.FullName -ErrorAction Stop
+                $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+                if ($owner -notin $trusted) {
+                  if ($first) { $issues.Add('target-untrusted-owner') }
+                  else { $issues.Add('ancestor-untrusted-owner') }
+                }
+                foreach ($rule in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
+                  if ($rule.AccessControlType -ne 'Allow' -or ($rule.PropagationFlags -band 2)) { continue }
+                  if ($rule.IdentityReference.Value -in $trusted) { continue }
+                  $rights = [long]$rule.FileSystemRights
+                  if ($first) { $issues.Add('target-untrusted-ace') }
+                  elseif ($rights -band 0xD0040) { $issues.Add('ancestor-untrusted-write-ace') }
+                }
+                $first = $false
+                if ($item -is [IO.DirectoryInfo]) { $item = $item.Parent } else { $item = $item.Directory }
+              }
+            } catch { $issues.Add('acl-read-failed') }
+            @($issues | Select-Object -Unique)
+          }
+          $workerResult = Join-Path $job.workspace 'worker-result.json'
+          $targets = [ordered]@{
+            stage = $stage
+            selftest_result = (Join-Path $stage 'selftest-result.json')
+            recovered_receipt = (Join-Path $stage 'recovered-selftest.json')
+          }
+          $acl = [ordered]@{}
+          foreach ($name in $targets.Keys) {
+            $path = $targets[$name]
+            $acl[$name] = [ordered]@{ exists = [bool](Test-Path -LiteralPath $path -PathType Any); issues = @(if (Test-Path -LiteralPath $path -PathType Any) { Test-PrivateAcl $path } else { @('absent') }) }
+          }
+          $record = [ordered]@{
+            schema_version = 1
+            kind = 'windows-recovery-receipt-diagnostic'
+            job_sha256 = $env:GOODBEAR_JOB_SHA256
+            phase = $job.phase
+            state = [ordered]@{ status = $state.status; exit_code = $state.exit_code; network_restored = $state.network_restored; worker_started = $state.worker_started; recovery_checks = $state.recovery_checks; last_error = $state.last_error; error = $state.error; cleanup_error = $state.cleanup_error; recovery_error = $state.recovery_error }
+            worker_result_present = [bool](Test-Path -LiteralPath $workerResult -PathType Leaf)
+            receipt_acl = $acl
+          }
+          $out = Join-Path $env:RUNNER_TEMP 'm13-recovery-receipt-diagnostic.json'
+          $record | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $out -Encoding utf8
+          Write-Output ('RECOVERY_RECEIPT_DIAGNOSTIC=' + ($record | ConvertTo-Json -Depth 6 -Compress))
+
+      - name: Return source-free receipt diagnostic
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-recovery-receipt-diagnostic-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}\m13-recovery-receipt-diagnostic.json
+          if-no-files-found: error
+          retention-days: 7
