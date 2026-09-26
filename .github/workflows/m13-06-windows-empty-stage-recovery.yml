@@ -1,0 +1,39 @@
+name: M13 Windows empty native-stage recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage_id:
+        description: Exact empty native-offline-jobs directory to remove
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-native-stage-recovery
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 10
+    env:
+      GOODBEAR_STAGE_ID: ${{ inputs.stage_id }}
+    steps:
+      - name: Remove only an exact empty pre-job stage
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GOODBEAR_STAGE_ID -cnotmatch '^[0-9a-f]{32}$') { throw 'Exact native stage identity is required' }
+          $root = 'C:\GoodBear\m15-03-private-source\native-offline-jobs'
+          $candidate = Join-Path $root $env:GOODBEAR_STAGE_ID
+          $item = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+          if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Candidate is not a plain native-stage directory' }
+          foreach ($reserved in @('job.json', 'state.json')) {
+            if (Test-Path -LiteralPath (Join-Path $candidate $reserved)) { throw 'Candidate contains a native job or state record' }
+          }
+          if (@(Get-ChildItem -LiteralPath $candidate -Force).Count -ne 0) { throw 'Candidate is not empty' }
+          Remove-Item -LiteralPath $candidate -Force -ErrorAction Stop
+          if (Test-Path -LiteralPath $candidate) { throw 'Native-stage removal was not confirmed' }
+          Write-Output ('EMPTY_NATIVE_STAGE_REMOVED=' + $env:GOODBEAR_STAGE_ID)
