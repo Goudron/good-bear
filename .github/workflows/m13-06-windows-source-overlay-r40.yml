@@ -64,7 +64,7 @@ jobs:
             }
             $allowed = @{
               'tools/preflight_m15_cloud_windows.py' = @('9f03b07e1b27264610819a369986c2e0cb2bdec315dd687ec49d9d4196380251','3d835c586c606700a823c379a9113aae8d3febdfdf9d2804cb1d158b4f12300c')
-              'tools/run_m13_cloud_windows.py' = @('b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4','b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4')
+              'tools/run_m13_cloud_windows.py' = @('d026de5adf3a510ee20b26dad235f84212007ad736d8e64d3d08fcadd6ca730a','b9d1b8915fd052a7d384b003bd2e7923535208adfff36becb5824be06eb86bf4')
               'tools/windows_offline_worker.py' = @('5f887cc2c18ab7ad921ec519f19b538fb5058e87ad0e8edfc24cf7b4fa4cce51','e9cffab5d12ee92f64b1f722756e160a5b98707387a7e1ea52e38303aaee402e')
             }
             foreach ($item in $record.replacements) {
