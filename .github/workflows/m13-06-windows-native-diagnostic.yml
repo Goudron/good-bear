@@ -24,15 +24,24 @@ jobs:
           New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
           try {
             $jobs = @()
+            $job_entries = @()
             if (Test-Path -LiteralPath $jobsRoot) {
-              foreach ($directory in Get-ChildItem -LiteralPath $jobsRoot -Directory -Force | Sort-Object Name) {
-                $jobPath = Join-Path $directory.FullName 'job.json'
-                $statePath = Join-Path $directory.FullName 'state.json'
-                if (-not (Test-Path -LiteralPath $jobPath) -or -not (Test-Path -LiteralPath $statePath)) { continue }
+              foreach ($entry in Get-ChildItem -LiteralPath $jobsRoot -Force | Sort-Object Name) {
+                $jobPath = Join-Path $entry.FullName 'job.json'
+                $statePath = Join-Path $entry.FullName 'state.json'
+                $job_entries += [ordered]@{
+                  name = $entry.Name
+                  is_directory = [bool]$entry.PSIsContainer
+                  is_reparse_point = [bool]($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)
+                  has_job = [bool](Test-Path -LiteralPath $jobPath -PathType Leaf)
+                  has_state = [bool](Test-Path -LiteralPath $statePath -PathType Leaf)
+                  child_count = if ($entry.PSIsContainer) { @((Get-ChildItem -LiteralPath $entry.FullName -Force)).Count } else { $null }
+                }
+                if (-not $entry.PSIsContainer -or -not (Test-Path -LiteralPath $jobPath -PathType Leaf) -or -not (Test-Path -LiteralPath $statePath -PathType Leaf)) { continue }
                 $job = Get-Content -LiteralPath $jobPath -Raw | ConvertFrom-Json
                 $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
                 $jobs += [ordered]@{
-                  id = $directory.Name
+                  id = $entry.Name
                   phase = $job.phase
                   job_sha256 = (Get-FileHash -LiteralPath $jobPath -Algorithm SHA256).Hash.ToLowerInvariant()
                   status = $state.status
@@ -56,6 +65,7 @@ jobs:
               kind = 'm13-windows-native-diagnostic'
               utc = (Get-Date).ToUniversalTime().ToString('o')
               native_jobs = $jobs
+              native_job_entries = $job_entries
               runner_services = @($runner)
               adapters = @($adapters)
             } | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $operation 'native-diagnostic.json') -Encoding utf8
