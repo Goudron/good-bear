@@ -57,7 +57,7 @@ jobs:
           operation = Path(sys.argv[2])
           receipt_path = Path(sys.argv[3])
           sys.path.insert(0, str(source_root / "tools"))
-          from windows_offline_worker import (NativeError, NativeJob, WindowsBackend,
+          from windows_offline_worker import (DWORD, NativeError, NativeJob, PROCESSINFO, STARTUPINFO, WindowsBackend,
                                               require_native)
           from run_m13_cloud_windows import JOBS_ROOT, native_worker_password, workspace_for
           import preflight_m15_cloud_windows as preflight
@@ -121,13 +121,51 @@ jobs:
               native.allow_worker_query(sid)
               command = [r"C:\\GoodBear\\tools\\Python312\\python.exe", "-I", "-S", "-B", "-u",
                          str(worker_probe), str(worker_result)]
+              environment = preflight.native_environment()
               result["phase"] = "starting"
+              launched = False
               try:
-                  native.start(job["worker_account"], password, command, source_root,
-                               preflight.native_environment())
+                  native.start(job["worker_account"], password, command, source_root, environment)
+                  launched = True
+                  result["launcher_api"] = "CreateProcessAsUserW"
               except NativeError as exc:
-                  result.update(phase="launcher", native_error=str(exc), win32_error=ctypes.get_last_error())
-              else:
+                  win32_error = ctypes.get_last_error()
+                  if win32_error != 1314:
+                      result.update(phase="launcher", native_error=str(exc), win32_error=win32_error)
+                  else:
+                      result["phase"] = "CreateProcessWithLogonW-fallback"
+                      startup, info = STARTUPINFO(), PROCESSINFO()
+                      startup.cb = ctypes.sizeof(startup)
+                      block = ctypes.create_unicode_buffer("\0".join(k + "=" + v for k, v in sorted(environment.items())) + "\0\0")
+                      command_line = ctypes.create_unicode_buffer(__import__("subprocess").list2cmdline(command))
+                      native.advapi.CreateProcessWithLogonW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_wchar_p,
+                          DWORD, ctypes.c_wchar_p, ctypes.c_wchar_p, DWORD, ctypes.c_void_p, ctypes.c_wchar_p,
+                          ctypes.POINTER(STARTUPINFO), ctypes.POINTER(PROCESSINFO)]
+                      native.advapi.CreateProcessWithLogonW.restype = ctypes.c_int
+                      try:
+                          if not native.advapi.CreateProcessWithLogonW(job["worker_account"], ".", password, 0,
+                                  command[0], command_line, 0x4 | 0x400 | 0x08000000, block, str(source_root),
+                                  ctypes.byref(startup), ctypes.byref(info)):
+                              result.update(phase="logon-fallback", native_error="CreateProcessWithLogonW failed",
+                                            win32_error=ctypes.get_last_error())
+                          elif not native.kernel.AssignProcessToJobObject(native.handle, info.process):
+                              native.kernel.TerminateProcess(info.process, 1)
+                              result.update(phase="logon-fallback", native_error="Job Object assignment failed",
+                                            win32_error=ctypes.get_last_error())
+                          else:
+                              native.process = info.process
+                              if native.kernel.ResumeThread(info.thread) == 0xFFFFFFFF:
+                                  result.update(phase="logon-fallback", native_error="thread resume failed",
+                                                win32_error=ctypes.get_last_error())
+                              else:
+                                  launched = True
+                                  result["launcher_api"] = "CreateProcessWithLogonW"
+                      finally:
+                          if info.thread:
+                              native.kernel.CloseHandle(info.thread)
+                          if info.process and not native.process:
+                              native.kernel.CloseHandle(info.process)
+              if launched:
                   code = native.wait(time.monotonic() + 60, lambda: None)
                   if code != 0:
                       result.update(phase="child-exit", exit_code=code)
