@@ -69,6 +69,12 @@ jobs:
           }
           $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
           if ($record.upstream.version -cne '156.0' -or $record.upstream.revision -cne '3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1') { throw 'Wrong Firefox baseline' }
+          $deltaPath = Join-Path $source '.good-bear-source-delta.json'
+          if ((Get-FileHash -LiteralPath $deltaPath -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'e6b4c38ae041ec0bd10edfd24f00bbbaf9ded3387f6f10b2ec503d8946255ea0') { throw 'Source overlay contract differs' }
+          $delta = Get-Content -LiteralPath $deltaPath -Raw | ConvertFrom-Json
+          if ($delta.kind -cne 'goodbear-m15-03-source-overlay' -or $delta.base_manifest_sha256 -cne $env:GOODBEAR_MANIFEST_SHA256 -or $delta.base_bundle_sha256 -cne $env:GOODBEAR_BUNDLE_SHA256 -or $delta.replacements.Count -ne 2) { throw 'Source overlay binding differs' }
+          $overrides = @{'tools/preflight_m15_cloud_windows.py'=@(22896,'3dd84cdf525856b8d9675ef4b48fb931bdccb4ced5c9b11c3d393aeb772c825c');'tools/windows_offline_worker.py'=@(40439,'1002f3521a5d78f30165e17d9ebd5607271b2fee41baf2b8c81aa063f159b5f7')}
+          foreach ($replacement in $delta.replacements) { if (-not $overrides.ContainsKey($replacement.path) -or $replacement.size -ne $overrides[$replacement.path][0] -or $replacement.sha256 -cne $overrides[$replacement.path][1]) { throw 'Source overlay replacement differs' } }
           $root = [IO.Path]::GetFullPath($source).TrimEnd('\') + '\'
           $seen = @{}
           $count = 0
@@ -78,13 +84,15 @@ jobs:
             $path = [IO.Path]::GetFullPath((Join-Path $source $entry.path))
             if (-not $path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { throw 'Source input escapes workspace' }
             $item = Get-Item -LiteralPath $path -Force
-            if ($item.PSIsContainer -or $item.Length -ne $entry.size) { throw 'Source input size/type differs' }
+            $expectedSize = $entry.size; $expectedHash = $entry.sha256
+            if ($overrides.ContainsKey($entry.path)) { $expectedSize = $overrides[$entry.path][0]; $expectedHash = $overrides[$entry.path][1] }
+            if ($item.PSIsContainer -or $item.Length -ne $expectedSize) { throw 'Source input size/type differs' }
             $ancestor = $item
             while ($ancestor -and $ancestor.FullName.StartsWith($root.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
               if ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Reparse points cannot supply frozen source' }
               if ($ancestor -is [IO.DirectoryInfo]) { $ancestor = $ancestor.Parent } else { $ancestor = $ancestor.Directory }
             }
-            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $entry.sha256) { throw 'Extracted source bytes differ' }
+            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) { throw 'Extracted source bytes differ' }
             $seen[$entry.path] = $true
             $count++
             if ($count % 100 -eq 0) { Write-Output ('Verified frozen inputs: ' + $count) }
