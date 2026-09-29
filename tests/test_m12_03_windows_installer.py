@@ -29,7 +29,7 @@ class WindowsInstallerContractTest(unittest.TestCase):
         self.assertEqual(installer["format"], "NSIS full offline installer (.exe)")
         self.assertEqual(installer["architecture"], "x64")
         self.assertEqual(installer["release_locale"], "ru")
-        self.assertEqual(installer["filename"], "GoodBear Setup 1.0 x64 ru.exe")
+        self.assertEqual(installer["filename"], "GoodBear Setup 1.0+firefox156.0 x64 ru.exe")
         self.assertEqual(installer["build_steps"][-1], ["./mach", "build", "installers-ru"])
 
     def test_source_owner_pins_match_the_reviewed_tree(self) -> None:

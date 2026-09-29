@@ -96,7 +96,7 @@ def load_contract(path: Path = DEFAULT_CONTRACT) -> dict[str, Any]:
     windows = contract.get("windows", {})
     require(windows.get("artifact") is None and
             windows.get("candidate_status") == "not built; no local candidate exists" and
-            windows.get("filename") == "GoodBear Setup 1.0 x64 ru.exe",
+            windows.get("filename") == "GoodBear Setup 1.0+firefox156.0 x64 ru.exe",
             "Windows metadata must not invent a local installer")
     check_signing(windows.get("signing"), "Windows")
     public = contract.get("public_release", {})

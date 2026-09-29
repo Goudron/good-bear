@@ -47,7 +47,7 @@
         "format": "NSIS full offline installer (.exe)",
         "architecture": "x64",
         "release_locale": "ru",
-        "filename": "GoodBear Setup 1.0 x64 ru.exe",
+        "filename": "GoodBear Setup 1.0+firefox156.0 x64 ru.exe",
         "build_steps": [
           [
             "./mach",
@@ -62,7 +62,7 @@
         "source_owner_pins": [
           {
             "path": "browser/installer/windows/nsis/installer.nsi",
-            "sha256": "154ff6b272254daae4cf8b83793912cbeb459f207a7f11b24a09d5f06d4d336a"
+            "sha256": "c89ebb670a6624d958cca6b9f8e335b39c3c7ab5a3a98a6d817b6b61ca5e6351"
           },
           {
             "path": "browser/installer/windows/nsis/defines.nsi.in",

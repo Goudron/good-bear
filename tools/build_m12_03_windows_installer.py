@@ -62,7 +62,7 @@ def load_contract(path: Path = LOCK) -> dict:
     require(installer.get("format") == FORMAT, "Windows installer must use the pinned NSIS full offline format")
     require(installer.get("architecture") == "x64", "Windows installer must be x64")
     require(installer.get("release_locale") == "ru", "Windows installer must be Russian-only")
-    require(installer.get("filename") == "GoodBear Setup 1.0 x64 ru.exe", "Windows installer filename drift")
+    require(installer.get("filename") == "GoodBear Setup 1.0+firefox156.0 x64 ru.exe", "Windows installer filename drift")
     require(installer.get("build_steps") == [["./mach", "build"], ["./mach", "build", "installers-ru"]],
             "Windows installer must use the pinned Russian repack steps")
     pins = installer.get("source_owner_pins")
@@ -167,7 +167,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("preflight", "build"))
     parser.add_argument("--lock", type=Path, default=LOCK)
-    parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "m12-03-windows-candidates" / "GoodBear Setup 1.0 x64 ru.exe")
+    parser.add_argument("--output", type=Path, default=ROOT / "artifacts" / "m12-03-windows-candidates" / "GoodBear Setup 1.0+firefox156.0 x64 ru.exe")
     args = parser.parse_args()
     try:
         contract = load_contract(args.lock)

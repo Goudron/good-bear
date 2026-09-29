@@ -76,7 +76,7 @@ class GitHubDownloadSnapshotTest(unittest.TestCase):
                 "tag_name": "v1.0.0",
                 "draft": False,
                 "assets": [
-                    {"id": 202, "name": "GoodBear Setup 1.0 x64 ru.exe",
+                    {"id": 202, "name": "GoodBear Setup 1.0+firefox156.0 x64 ru.exe",
                      "updated_at": "2026-09-15T11:00:00Z", "download_count": 7},
                     {"id": 201, "name": "goodbear-browser_1.0-1_amd64.deb",
                      "updated_at": "2026-09-15T10:00:00Z", "download_count": 5},

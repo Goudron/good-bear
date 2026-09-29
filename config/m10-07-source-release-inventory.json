@@ -28,7 +28,7 @@
     "patch_set": {
       "series": "patches/series",
       "manifest_algorithm": "sha256 of sha256sum-format lines for series followed by its ordered patches",
-      "manifest_sha256": "742bba8194afb610ad781e529cf65d5959d2fd76c3f8c9156e9115f181be9642",
+      "manifest_sha256": "2a23ce2176344cdb2afc70b98c31359d758775f36e3ae90435c82a89d62b42cf",
       "entries": [
         "0001-good-bear-product-identity.patch",
         "0002-good-bear-about-dialog-attribution.patch",
@@ -82,7 +82,8 @@
         "0050-good-bear-typed-tls-session-cache.patch",
         "0051-good-bear-safe-browsing-v5-attributes.patch",
         "0052-good-bear-safe-browsing-supplier-notice.patch",
-        "0053-good-bear-google-verdict-freshness.patch"
+        "0053-good-bear-google-verdict-freshness.patch",
+        "0054-good-bear-nsis-navigation-button-contrast.patch"
       ]
     },
     "overlay": {

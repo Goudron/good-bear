@@ -48,7 +48,9 @@ REQUIRED_FROZEN = {*preflight.REQUIRED_PYTHON_OWNERS,
                    "config/m15-12-safebrowsing-build-input.json"}
 EXPORTED_FILES = ("job.json", "state.json", "controller.log", "context.log", "configure.log", "build.log", "repack.log",
                   "worker-result.json", "selftest-result.json", "recovered-selftest.json")
-WINDOWS_CANDIDATE_FILENAME = "GoodBear Setup 1.0 x64 ru.exe"
+# Keep the user-facing Windows candidate aligned with the canonical Good Bear /
+# Firefox version pair used by the Linux package and product identity.
+WINDOWS_CANDIDATE_FILENAME = "GoodBear Setup 1.0+firefox156.0 x64 ru.exe"
 
 
 class RouteError(RuntimeError):

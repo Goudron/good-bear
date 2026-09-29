@@ -27,7 +27,7 @@
   },
   "windows": {
     "artifact": null,
-    "filename": "GoodBear Setup 1.0 x64 ru.exe",
+    "filename": "GoodBear Setup 1.0+firefox156.0 x64 ru.exe",
     "candidate_status": "not built; no local candidate exists",
     "signing": {
       "approved_authority": "not supplied",

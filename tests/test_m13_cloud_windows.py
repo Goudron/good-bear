@@ -741,7 +741,7 @@ class NativeCloudRouteTest(unittest.TestCase):
         returned = output / "candidate" / ROUTE.WINDOWS_CANDIDATE_FILENAME
         self.assertEqual(returned.read_bytes(), installer.read_bytes())
         products = ROUTE.preflight.load(output / "sha256.json")["product_artifacts"]
-        self.assertEqual(products, [{"path": "candidate/GoodBear Setup 1.0 x64 ru.exe",
+        self.assertEqual(products, [{"path": "candidate/GoodBear Setup 1.0+firefox156.0 x64 ru.exe",
                                      "sha256": ROUTE.preflight.sha256(installer),
                                      "bytes": installer.stat().st_size,
                                      "kind": "windows-nsis-full-installer"}])
