@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M3-05",
+  "observed_at": "2026-09-01T15:14:11Z",
+  "policy": {
+    "discovery_authorizes_trust": false,
+    "new_trust_anchors": false,
+    "global_trust": false,
+    "runtime_certificate_download": false,
+    "string_based_recognition": false,
+    "require_existing_exact_root": true,
+    "coverage_claim": "bounded_snapshot_not_exhaustive"
+  },
+  "discovery_sources": [
+    {
+      "id": "tlscc-ca-issuers",
+      "kind": "certificate_transparency",
+      "url": "https://ct.tlscc.ru/ca-issuers",
+      "trust_authority": false
+    },
+    {
+      "id": "precert-current-statistics",
+      "kind": "current_issuer_statistics",
+      "url": "https://precert.ru/stat/",
+      "trust_authority": false
+    }
+  ],
+  "accepted_issuers": [
+    {
+      "id": "russian_trusted_sub_ca_rsa_2022",
+      "role": "intermediate",
+      "status": "accepted_reviewed",
+      "provenance_id": "russian_trusted_sub_ca_rsa_2022",
+      "official_source_url": "https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer",
+      "identity": {
+        "certificate_der_sha256": "bbbde2103e790b999ec62bd03cf625a5a2e7c316e10afe6a490eedead8b3fd9b",
+        "spki_der_sha256": "0447aa4b18c48b9e8db16e91809286dd27efd6a50ba80d3084eb9e70ba8e1dca"
+      },
+      "chains_to_anchor_identity": {
+        "certificate_der_sha256": "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31",
+        "spki_der_sha256": "02b8220c070728db771d9ac59e54521c4eddad21a783bb26cfdf19c1db0fae37"
+      },
+      "discovery_references": [
+        {
+          "source_id": "tlscc-ca-issuers",
+          "reference": "caID=2"
+        }
+      ],
+      "artifact_observations": [
+        {
+          "retrieval_url": "http://company.rt.ru/cdp/subca_ssl_rsa2022.crt",
+          "certificate_der_sha256": "bbbde2103e790b999ec62bd03cf625a5a2e7c316e10afe6a490eedead8b3fd9b"
+        },
+        {
+          "retrieval_url": "http://reestr-pki.ru/cdp/subca_ssl_rsa2022.crt",
+          "certificate_der_sha256": "bbbde2103e790b999ec62bd03cf625a5a2e7c316e10afe6a490eedead8b3fd9b"
+        }
+      ]
+    },
+    {
+      "id": "russian_trusted_sub_ca_rsa_2024",
+      "role": "intermediate",
+      "status": "accepted_reviewed",
+      "provenance_id": "russian_trusted_sub_ca_rsa_2024",
+      "official_source_url": "http://nuc-cdp.digital.gov.ru/cdp/subca_ssl_rsa2024.crt",
+      "identity": {
+        "certificate_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2",
+        "spki_der_sha256": "37b95ae1738dc4c69661144715669fdb9c93e7adb3363422deb61c0f3acf65c1"
+      },
+      "chains_to_anchor_identity": {
+        "certificate_der_sha256": "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31",
+        "spki_der_sha256": "02b8220c070728db771d9ac59e54521c4eddad21a783bb26cfdf19c1db0fae37"
+      },
+      "discovery_references": [
+        {
+          "source_id": "tlscc-ca-issuers",
+          "reference": "caID=8"
+        },
+        {
+          "source_id": "precert-current-statistics",
+          "reference": "Russian Trusted Sub CA current issuer row"
+        }
+      ],
+      "artifact_observations": [
+        {
+          "retrieval_url": "http://nuc-cdp.digital.gov.ru/cdp/subca_ssl_rsa2024.crt",
+          "certificate_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2"
+        },
+        {
+          "retrieval_url": "http://nuc-cdp.voskhod.ru/cdp/subca_ssl_rsa2024.crt",
+          "certificate_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2"
+        }
+      ]
+    }
+  ],
+  "live_chain_observations": [
+    {
+      "endpoint": "edu.gov.ru:443",
+      "observed_at": "2026-09-01T15:14:11Z",
+      "hostname_verified": true,
+      "leaf_der_sha256": "927d905657f9cebc82a760747103104dc2a6cb0d5632041aa6a4d56bf9066f00",
+      "issuer_id": "russian_trusted_sub_ca_rsa_2024",
+      "issuer_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2",
+      "anchor_der_sha256": "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"
+    },
+    {
+      "endpoint": "invest2.sovcombank.ru:443",
+      "observed_at": "2026-09-01T15:14:11Z",
+      "hostname_verified": true,
+      "leaf_der_sha256": "3701e4b366020e438791748266042cd942e7105ce2adc4def19809641656bc73",
+      "issuer_id": "russian_trusted_sub_ca_rsa_2024",
+      "issuer_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2",
+      "anchor_der_sha256": "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31"
+    }
+  ],
+  "bounded_conclusion": {
+    "status": "no_additional_exact_issuer_discovered",
+    "accepted_issuer_ids": [
+      "russian_trusted_sub_ca_rsa_2022",
+      "russian_trusted_sub_ca_rsa_2024"
+    ],
+    "new_issuer_ids_added": [],
+    "internet_coverage": "bounded_snapshot_not_exhaustive"
+  }
+}

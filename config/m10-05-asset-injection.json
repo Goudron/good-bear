@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "milestone": "GB100-M10-05",
+  "selected_variant_id": "workshop-beacon",
+  "release_mode": "public_release",
+  "release_gate": {
+    "fail_closed": true,
+    "development_placeholders_allowed": true,
+    "public_release_placeholders_allowed": false,
+    "firefox_or_mozilla_derived_art_allowed": false,
+    "unapproved_art_allowed": false,
+    "required_locale": "ru",
+    "required_shipped_locales": ["ru"]
+  },
+  "approved_source_assets": {
+    "master": "0dfae224ccc75f66992f7206ca5a10a1e147a61fa1fb8ddaf8d7cd7c7daef386",
+    "neutral_welcome": "40d1f3cc6bbb222c401b273713a1ed876a8fa53f58d64ac35be79f5b3a457cc3",
+    "thinking_setup": "65166fd3731c5591e29622833aef15312af483809db976a1e32881a47c7e21e2",
+    "concerned_generic_error": "f17e11a1ccb799ddf81bcbcd66c3d6ed8dd51dc97e702c799b505ec06b974887",
+    "success": "58ecf0c325e2267efd1cbef066281ad583667234ecdcf565152f00527661641f",
+    "devices_sync": "ada368d169f5bde3704a6f1304eaf5cc9497f74e582f56b60b706ffcf2c3236b",
+    "backup_restore": "eb5ae0d52516f4c9a5dd335868fd174cce8cc89074784184b3209b2db60040c0",
+    "empty_state": "26b11fcbcb0137f5d43d93f9a720ddc7f7eeed16c4e32aab2202c12e4f8e9bdc",
+    "import_setup": "8803bcbf8e7ae2aeaed1709ebd9a0fabe8538b6c2b69798864e30ddc225c3ffd",
+    "gratitude": "f9f74bc4fabf58a715f682794c96f458b71d93cb4b66b3875bde535537ae6fed",
+    "first_run_animation": "c566d9c65a56d18a64991cdc940a222cb4a830eac650bb784b801a9517a098b0",
+    "first_run_static_frame": "26876c8cb1b53ba54516195fc225717405c650206328d63bdc13ea19dde395f9"
+  },
+  "ubuntu_icons": {
+    "16": "dcefaad058c95a132f4819ac6972557d2cebb3ffc1ec63e388908d434e16b323",
+    "32": "fa45134794de3cc4b45d889cf6a5249936bab717b25d7672fbfd0b9a5b9b167b",
+    "48": "79619e0d5085ffceadef12068e3848cdfb4cf19b625ee042ffeb2a1813212dc9",
+    "64": "7d669dd48538c1d17891687fb33c3c313de2ed717aefaa031ee7ed7b2dca9383",
+    "128": "e8fcbe9cb5cce8e30464bf1fa26be6eedbd7efa485fcf128e4fda849d93953a3"
+  },
+  "injected_surface_assets": {
+    "overlay/browser/components/aboutwelcome/assets/goodbear-welcome.png": "40d1f3cc6bbb222c401b273713a1ed876a8fa53f58d64ac35be79f5b3a457cc3",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving.gif": "c566d9c65a56d18a64991cdc940a222cb4a830eac650bb784b801a9517a098b0",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving-static.png": "26876c8cb1b53ba54516195fc225717405c650206328d63bdc13ea19dde395f9",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-backup-restore.png": "eb5ae0d52516f4c9a5dd335868fd174cce8cc89074784184b3209b2db60040c0",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-success.png": "58ecf0c325e2267efd1cbef066281ad583667234ecdcf565152f00527661641f",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-import-setup.png": "8803bcbf8e7ae2aeaed1709ebd9a0fabe8538b6c2b69798864e30ddc225c3ffd",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-devices-sync.png": "ada368d169f5bde3704a6f1304eaf5cc9497f74e582f56b60b706ffcf2c3236b",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-thinking-setup.png": "65166fd3731c5591e29622833aef15312af483809db976a1e32881a47c7e21e2",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-generic-error.png": "f17e11a1ccb799ddf81bcbcd66c3d6ed8dd51dc97e702c799b505ec06b974887",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-gratitude.png": "f9f74bc4fabf58a715f682794c96f458b71d93cb4b66b3875bde535537ae6fed",
+    "overlay/browser/components/aboutwelcome/assets/goodbear-empty-state.png": "26b11fcbcb0137f5d43d93f9a720ddc7f7eeed16c4e32aab2202c12e4f8e9bdc",
+    "overlay/toolkit/themes/shared/illustrations/goodbear-no-connection.png": "1e50d99ea715190e5aefeb52ede3c1b8213d1c51a7cc068d2544a34c597c2ab6",
+    "overlay/toolkit/themes/shared/illustrations/goodbear-security-error.png": "1e50d99ea715190e5aefeb52ede3c1b8213d1c51a7cc068d2544a34c597c2ab6",
+    "overlay/browser/themes/shared/privatebrowsing/goodbear-private-browsing.png": "26b11fcbcb0137f5d43d93f9a720ddc7f7eeed16c4e32aab2202c12e4f8e9bdc",
+    "overlay/browser/themes/shared/fxa/goodbear-avatar.png": "40d1f3cc6bbb222c401b273713a1ed876a8fa53f58d64ac35be79f5b3a457cc3",
+    "overlay/browser/themes/shared/fxa/goodbear-avatar-circle.png": "40d1f3cc6bbb222c401b273713a1ed876a8fa53f58d64ac35be79f5b3a457cc3"
+  }
+}

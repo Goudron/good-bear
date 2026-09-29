@@ -1,0 +1,521 @@
+# Firefox 156 keeps the product-display version and the Gecko compatibility
+# version separate.  Show both explicitly in Good Bear's About dialog, and
+# state the Ubuntu package-manager delivery boundary instead of presenting a
+# disabled Firefox self-updater.
+diff --git a/browser/base/content/aboutDialog.js b/browser/base/content/aboutDialog.js
+index 86f8f05..6054b74 100644
+--- a/browser/base/content/aboutDialog.js
++++ b/browser/base/content/aboutDialog.js
+@@ -55,6 +55,8 @@ function init() {
+   let versionIdKey = "base";
+   let versionAttributes = {
+     version: AppConstants.MOZ_APP_VERSION_DISPLAY,
++    goodBearVersion: AppConstants.MOZ_APP_VERSION_DISPLAY,
++    firefoxVersion: Services.appinfo.version,
+   };
+ 
+   let arch = Services.sysinfo.get("arch");
+@@ -83,7 +85,7 @@ function init() {
+ 
+   document.l10n.setAttributes(
+     versionField,
+-    versionIdMap.get(versionIdKey),
++    "goodbear-about-version",
+     versionAttributes
+   );
+ 
+diff --git a/dev/shm/goodbear-series-rebase-50176lvn/after/browser/base/content/aboutDialog.js.orig b/browser/base/content/aboutDialog.js.orig
+new file mode 100644
+index 0000000..86f8f05
+--- /dev/null
++++ b/browser/base/content/aboutDialog.js.orig
+@@ -0,0 +1,184 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++/* import-globals-from aboutDialog-appUpdater.js */
++/* import-globals-from utilityOverlay.js */
++
++// Services = object with smart getters for common XPCOM services
++var { AppConstants } = ChromeUtils.importESModule(
++  "resource://gre/modules/AppConstants.sys.mjs"
++);
++
++const lazy = {};
++ChromeUtils.defineESModuleGetters(lazy, {
++  Referrals: "resource:///modules/referrals/Referrals.sys.mjs",
++});
++
++if (AppConstants.MOZ_UPDATER) {
++  Services.scriptloader.loadSubScript(
++    "chrome://browser/content/aboutDialog-appUpdater.js",
++    this
++  );
++}
++
++function init() {
++  let defaults = Services.prefs.getDefaultBranch(null);
++  let distroId = defaults.getCharPref("distribution.id", "");
++  let distroAbout = defaults.getStringPref("distribution.about", "");
++  // Only show distribution info when there is about text. An id-only
++  // distribution is used for attribution and is shown in about:support.
++  if (distroId && distroAbout) {
++    let distroField = document.getElementById("distribution");
++    distroField.value = distroAbout;
++    distroField.style.display = "block";
++
++    let distroVersion = defaults.getCharPref("distribution.version", "");
++    if (distroVersion) {
++      distroId += " - " + distroVersion;
++    }
++
++    let distroIdField = document.getElementById("distributionId");
++    distroIdField.value = distroId;
++    distroIdField.style.display = "block";
++  }
++
++  // Include the build ID and display warning if this is an "a#" (nightly or aurora) build
++  let versionIdMap = new Map([
++    ["base", "aboutDialog-version"],
++    ["base-nightly", "aboutDialog-version-nightly"],
++    ["base-arch", "aboutdialog-version-arch"],
++    ["base-arch-nightly", "aboutdialog-version-arch-nightly"],
++  ]);
++  let versionIdKey = "base";
++  let versionAttributes = {
++    version: AppConstants.MOZ_APP_VERSION_DISPLAY,
++  };
++
++  let arch = Services.sysinfo.get("arch");
++  if (["x86", "x86-64"].includes(arch)) {
++    versionAttributes.bits = Services.appinfo.is64Bit ? 64 : 32;
++  } else {
++    versionIdKey += "-arch";
++    versionAttributes.arch = arch;
++  }
++
++  let version = Services.appinfo.version;
++  if (/a\d+$/.test(version)) {
++    versionIdKey += "-nightly";
++    let buildID = Services.appinfo.appBuildID;
++    let year = buildID.slice(0, 4);
++    let month = buildID.slice(4, 6);
++    let day = buildID.slice(6, 8);
++    versionAttributes.isodate = `${year}-${month}-${day}`;
++
++    document.getElementById("experimental").hidden = false;
++    document.getElementById("communityDesc").hidden = true;
++  }
++
++  // Use Fluent arguments for append version and the architecture of the build
++  let versionField = document.getElementById("version");
++
++  document.l10n.setAttributes(
++    versionField,
++    versionIdMap.get(versionIdKey),
++    versionAttributes
++  );
++
++  // Show a release notes link if we have a URL.
++  let relNotesLink = document.getElementById("releasenotes");
++  let relNotesPrefType = Services.prefs.getPrefType(
++    "app.releaseNotesURL.aboutDialog"
++  );
++  if (relNotesPrefType != Services.prefs.PREF_INVALID) {
++    let relNotesURL = Services.urlFormatter.formatURLPref(
++      "app.releaseNotesURL.aboutDialog"
++    );
++    if (relNotesURL != "about:blank") {
++      relNotesLink.href = relNotesURL;
++      relNotesLink.hidden = false;
++    }
++  }
++
++  if (AppConstants.MOZ_UPDATER) {
++    gAppUpdater = new appUpdater({ buttonAutoFocus: true });
++
++    let channelLabel = document.getElementById("currentChannelText");
++    let channelAttrs = document.l10n.getAttributes(channelLabel);
++    let channel = UpdateUtils.UpdateChannel;
++    document.l10n.setAttributes(channelLabel, channelAttrs.id, { channel });
++    if (
++      /^release($|\-)/.test(channel) ||
++      Services.sysinfo.getProperty("isPackagedApp")
++    ) {
++      channelLabel.hidden = true;
++    }
++  }
++
++  // contributeDescReferrals contains the Share Firefox link, so we
++  // toggle which description based on the referrals config flag
++  let referralsEnabled = Services.prefs.getBoolPref(
++    "browser.referrals.enabled",
++    false
++  );
++  document.getElementById("contributeDesc").hidden = referralsEnabled;
++  let contributeDescReferrals = document.getElementById(
++    "contributeDescReferrals"
++  );
++  contributeDescReferrals.hidden = !referralsEnabled;
++
++  if (referralsEnabled) {
++    contributeDescReferrals.addEventListener(
++      "click",
++      event => {
++        if (
++          event.target.closest('[data-l10n-name="helpus-shareFirefoxLink"]')
++        ) {
++          event.preventDefault();
++          lazy.Referrals.openReferralsTab(window, "about_dialog");
++        }
++      },
++      true
++    );
++  }
++
++  if (AppConstants.IS_ESR) {
++    document.getElementById("release").hidden = false;
++  }
++
++  document
++    .getElementById("aboutDialogEscapeKey")
++    .addEventListener("command", () => {
++      window.close();
++    });
++  if (AppConstants.MOZ_UPDATER) {
++    document
++      .getElementById("aboutDialogHelpLink")
++      .addEventListener("click", () => {
++        openHelpLink("firefox-help");
++      });
++    document
++      .getElementById("submit-feedback")
++      .addEventListener("click", openFeedbackPage);
++    document
++      .getElementById("checkForUpdatesButton")
++      .addEventListener("command", () => {
++        gAppUpdater.checkForUpdates();
++      });
++    document
++      .getElementById("downloadAndInstallButton")
++      .addEventListener("command", () => {
++        gAppUpdater.startDownload();
++      });
++    document.getElementById("updateButton").addEventListener("command", () => {
++      gAppUpdater.buttonRestartAfterDownload();
++    });
++    window.addEventListener("unload", e => {
++      onUnload(e);
++    });
++  }
++}
++
++init();
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+index 08eb0f4..ac6a0a5 100644
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -53,6 +53,8 @@
+                  href="https://habr.com/ru/users/Goudron/articles/"
+                  data-l10n-id="goodbear-about-author-habr"/>
+         </hbox>
++        <description id="goodbearUpdateInfo" class="text-blurb"
++                     data-l10n-id="goodbear-about-update-terminal"/>
+ #endif
+ 
+         <label id="distribution" class="text-blurb"/>
+diff --git a/dev/shm/goodbear-series-rebase-50176lvn/after/browser/base/content/aboutDialog.xhtml.orig b/browser/base/content/aboutDialog.xhtml.orig
+new file mode 100644
+index 0000000..08eb0f4
+--- /dev/null
++++ b/browser/base/content/aboutDialog.xhtml.orig
+@@ -0,0 +1,153 @@
++<?xml version="1.0"?>
++
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++<?csp default-src chrome: resource:; object-src 'none'; ?>
++
++<window xmlns:html="http://www.w3.org/1999/xhtml"
++        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
++        id="aboutDialog"
++        windowtype="Browser:About"
++#ifndef XP_MACOSX
++        data-l10n-id="aboutDialog-title"
++#endif
++        role="dialog"
++        aria-describedby="version distribution distributionId communityDesc trademark"
++        >
++#ifdef XP_MACOSX
++#include macWindow.inc.xhtml
++#else
++  <script src="chrome://browser/content/utilityOverlay.js"/>
++#endif
++
++  <linkset>
++    <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
++    <html:link
++      rel="stylesheet"
++      href="chrome://browser/content/aboutDialog.css"
++    />
++    <html:link
++      rel="stylesheet"
++      href="chrome://branding/content/aboutDialog.css"
++    />
++
++    <html:link rel="localization" href="branding/brand.ftl"/>
++    <html:link rel="localization" href="browser/aboutDialog.ftl"/>
++  </linkset>
++
++  <html:div id="aboutDialogContainer">
++    <hbox id="clientBox">
++      <vbox id="leftBox" flex="1"/>
++      <vbox id="rightBox">
++        <label id="release" hidden="true">
++        <!-- This string is explicitly not translated -->
++          Extended Support Release
++        </label>
++#ifndef MOZ_UPDATER
++        <!-- This HBOX is duplicated below with class="update" -->
++        <hbox align="baseline">
++          <label id="version"/>
++          <label id="goodbearAuthorHabrLink" is="text-link"
++                 href="https://habr.com/ru/users/Goudron/articles/"
++                 data-l10n-id="goodbear-about-author-habr"/>
++        </hbox>
++#endif
++
++        <label id="distribution" class="text-blurb"/>
++        <label id="distributionId" class="text-blurb"/>
++
++        <vbox id="detailsBox">
++          <hbox id="updateBox">
++#ifdef MOZ_UPDATER
++            <html:img id="updateIcon" role="presentation"/>
++            <vbox id="updateInfo">
++              <deck id="updateDeck" orient="vertical">
++                <description id="checkForUpdates">
++                  <button id="checkForUpdatesButton"
++                          data-l10n-id="update-checkForUpdatesButton"/>
++                </description>
++                <description id="downloadAndInstall">
++                  <button id="downloadAndInstallButton"/>
++                </description>
++                <description id="apply">
++                  <button id="updateButton"
++                          data-l10n-id="update-updateButton"/>
++                </description>
++                <description id="checkingForUpdates" data-l10n-id="update-checkingForUpdates"/>
++                <description id="downloading" data-l10n-id="aboutdialog-update-downloading" data-l10n-args='{"transfer":""}'>
++                  <label data-l10n-name="download-status"/>
++                </description>
++                <description id="applying" data-l10n-id="update-applying"/>
++                <description id="downloadFailed" data-l10n-id="update-failed">
++                  <label id="failedLink" is="text-link" data-l10n-name="failed-link"/>
++                </description>
++                <description id="policyDisabled" data-l10n-id="update-policy-disabled"/>
++                <description id="noUpdatesFound" data-l10n-id="update-noUpdatesFound"/>
++                <description id="checkingFailed" data-l10n-id="aboutdialog-update-checking-failed"/>
++                <description id="otherInstanceHandlingUpdates" data-l10n-id="update-otherInstanceHandlingUpdates"/>
++                <description id="manualUpdate" data-l10n-id="aboutdialog-update-manual-with-link" data-l10n-args='{"displayUrl":""}'>
++                  <label class="manualLink" is="text-link" data-l10n-name="manual-link"/>
++                </description>
++                <description id="unsupportedSystem" data-l10n-id="update-unsupported">
++                  <label id="unsupportedLink" is="text-link" data-l10n-name="unsupported-link"/>
++                </description>
++                <description id="restarting" data-l10n-id="update-restarting"/>
++                <description id="internalError" data-l10n-id="update-internal-error2" data-l10n-args='{"displayUrl":""}'>
++                  <label class="manualLink" is="text-link" data-l10n-name="manual-link"/>
++                </description>
++                <description id="noUpdater"/>
++              </deck>
++              <!-- This HBOX is duplicated above without class="update" -->
++              <hbox align="baseline">
++                <label id="version" class="update"/>
++                <label id="goodbearAuthorHabrLink" is="text-link"
++                       href="https://habr.com/ru/users/Goudron/articles/"
++                       data-l10n-id="goodbear-about-author-habr"/>
++              </hbox>
++              <description class="text-blurb">
++                <label id="aboutDialogHelpLink" is="text-link" data-l10n-id="aboutdialog-help-user"/>
++                <label id="submit-feedback" is="text-link" data-l10n-id="aboutdialog-submit-feedback"/>
++              </description>
++            </vbox>
++#endif
++          </hbox>
++
++#ifdef MOZ_UPDATER
++          <description class="text-blurb" id="currentChannelText"
++                       data-l10n-id="aboutdialog-channel-description"
++                       data-l10n-attrs="{&quot;channel&quot;: &quot;&quot;}">
++            <label id="currentChannel" data-l10n-name="current-channel"/>
++          </description>
++#endif
++          <vbox id="experimental" hidden="true">
++            <description class="text-blurb" id="warningDesc" data-l10n-id="warningDesc-version"></description>
++            <description class="text-blurb" id="communityExperimentalDesc" data-l10n-id="community-exp">
++              <label is="text-link" href="https://www.mozilla.org/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="community-exp-mozillaLink"/>
++              <label is="text-link" useoriginprincipal="true" href="about:credits" data-l10n-name="community-exp-creditsLink"/>
++            </description>
++          </vbox>
++          <description class="text-blurb" id="communityDesc" data-l10n-id="goodbear-about-description"></description>
++          <description class="text-blurb" id="contributeDesc" hidden="true"></description>
++          <description class="text-blurb" id="contributeDescReferrals" hidden="true"></description>
++
++        </vbox>
++      </vbox>
++    </hbox>
++    <vbox id="bottomBox">
++      <hbox id="goodbearAuthorLinks" pack="center">
++        <label id="goodbearAuthorSupportLink" is="text-link" class="bottom-link" href="https://boosty.to/goodbear" data-l10n-id="goodbear-about-author-support"/>
++        <label id="goodbearAuthorHireLink" is="text-link" class="bottom-link" href="https://hh.ru/resume/08072c72ff0c8e15930039ed1f73616e327262" data-l10n-id="goodbear-about-author-hire"/>
++        <label id="goodbearAuthorProjectsLink" is="text-link" class="bottom-link" href="https://github.com/Goudron" data-l10n-id="goodbear-about-author-projects"/>
++      </hbox>
++      <description id="trademark" data-l10n-id="trademarkInfo"></description>
++    </vbox>
++  </html:div>
++
++  <keyset>
++    <key id="aboutDialogEscapeKey" keycode="VK_ESCAPE"/>
++  </keyset>
++
++  <script src="chrome://browser/content/aboutDialog.js"/>
++</window>
+diff --git a/browser/locales/en-US/browser/aboutDialog.ftl b/browser/locales/en-US/browser/aboutDialog.ftl
+index 1b30273..7ba7577 100644
+--- a/browser/locales/en-US/browser/aboutDialog.ftl
++++ b/browser/locales/en-US/browser/aboutDialog.ftl
+@@ -93,6 +93,7 @@ bottom-links-privacy = Privacy Notice
+ #   $version (String): version of Firefox, e.g. 66.0.1
+ #   $bits (Number): bits of the architecture (32 or 64)
+ aboutDialog-version = { $version } ({ $bits }-bit)
++goodbear-about-version = Good Bear { $goodBearVersion } (Firefox { $firefoxVersion })
+ 
+ # Example of resulting string: 66.0a1 (2019-01-16) (64-bit)
+ # Variables:
+diff --git a/dev/shm/goodbear-series-rebase-50176lvn/after/browser/locales/en-US/browser/aboutDialog.ftl.orig b/browser/locales/en-US/browser/aboutDialog.ftl.orig
+new file mode 100644
+index 0000000..1b30273
+--- /dev/null
++++ b/browser/locales/en-US/browser/aboutDialog.ftl.orig
+@@ -0,0 +1,115 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++aboutDialog-title =
++    .title = About { -brand-full-name }
++
++releaseNotes-link = What’s new
++
++update-checkForUpdatesButton =
++    .label = Check for updates
++    .accesskey = C
++
++update-updateButton =
++    .label = Restart to update { -brand-shorter-name }
++    .accesskey = R
++
++update-checkingForUpdates = Checking for updates…
++settings-update-checking-for-updates =
++    .label = Checking for updates…
++
++## Variables:
++##   $transfer (string) - Transfer progress.
++
++settings-update-downloading-2 =
++    .label = Downloading update — { $transfer }
++aboutdialog-update-downloading = Downloading update — <label data-l10n-name="download-status">{ $transfer }</label>
++
++##
++
++update-applying = Applying update…
++settings-update-applying =
++    .label = Applying update…
++
++update-failed = Update failed. <label data-l10n-name="failed-link">Download the latest version</label>
++update-failed-main =
++    Update failed. <a data-l10n-name="failed-link-main">Download the latest version</a>
++
++update-policy-disabled = Updates disabled by your organization
++settings-update-policy-disabled =
++    .label = Updates disabled by your organization
++update-noUpdatesFound = { -brand-short-name } is up to date
++settings-update-no-updates-found =
++    .label = { -brand-short-name } is up to date
++aboutdialog-update-checking-failed = Failed to check for updates.
++settings-update-checking-failed =
++    .label = Failed to check for updates.
++update-otherInstanceHandlingUpdates = { -brand-short-name } is being updated by another instance
++settings-update-other-instance-handling-updates =
++    .label = { -brand-short-name } is being updated by another instance
++
++## Variables:
++##   $displayUrl (String): URL to page with download instructions. Example: www.mozilla.org/firefox/nightly/
++
++aboutdialog-update-manual-with-link = Updates available at <label data-l10n-name="manual-link">{ $displayUrl }</label>
++settings-update-manual-with-link = Updates available at <a data-l10n-name="manual-link">{ $displayUrl }</a>
++
++update-unsupported = You can not perform further updates on this system. <label data-l10n-name="unsupported-link">Learn more</label>
++settings-update-unsupported = You can not perform further updates on this system. <a data-l10n-name="unsupported-link">Learn more</a>
++
++update-restarting = Restarting…
++settings-update-restarting =
++    .label = Restarting…
++
++update-internal-error2 = Unable to check for updates due to internal error. Updates available at <label data-l10n-name="manual-link">{ $displayUrl }</label>
++settings-update-internal-error = Unable to check for updates due to internal error. Updates available at <a data-l10n-name="manual-link">{ $displayUrl }</a>
++
++##
++
++# Variables:
++#   $channel (String): description of the update channel (e.g. "release", "beta", "nightly" etc.)
++aboutdialog-channel-description = You are currently on the <label data-l10n-name="current-channel">{ $channel }</label> update channel.
++
++warningDesc-version = { -brand-short-name } is experimental and may be unstable.
++
++aboutdialog-help-user = { -brand-product-name } Help
++aboutdialog-submit-feedback = Submit Feedback
++
++community-exp = <label data-l10n-name="community-exp-mozillaLink">{ -vendor-short-name }</label> is a <label data-l10n-name="community-exp-creditsLink">global community</label> working together to keep the Web open, public and accessible to all.
++
++community-2 = { -brand-short-name } is designed by <label data-l10n-name="community-mozillaLink">{ -vendor-short-name }</label>, a <label data-l10n-name="community-creditsLink">global community</label> working together to keep the Web open, public and accessible to all.
++
++helpus = Want to help? <label data-l10n-name="helpus-donateLink">Make a donation</label> or <label data-l10n-name="helpus-getInvolvedLink">get involved!</label>
++
++helpus-referrals2 = Want to help? <label data-l10n-name="helpus-donateLink">Make a donation</label>, <label data-l10n-name="helpus-shareFirefoxLink">share { -brand-product-name }</label>, or <label data-l10n-name="helpus-getInvolvedLink">get involved!</label>
++
++bottomLinks-license = Licensing Information
++bottom-links-terms = Terms of Use
++bottom-links-privacy = Privacy Notice
++
++# Example of resulting string: 66.0.1 (64-bit)
++# Variables:
++#   $version (String): version of Firefox, e.g. 66.0.1
++#   $bits (Number): bits of the architecture (32 or 64)
++aboutDialog-version = { $version } ({ $bits }-bit)
++
++# Example of resulting string: 66.0a1 (2019-01-16) (64-bit)
++# Variables:
++#   $version (String): version of Firefox for Nightly builds, e.g. 66.0a1
++#   $isodate (String): date in ISO format, e.g. 2019-01-16
++#   $bits (Number): bits of the architecture (32 or 64)
++aboutDialog-version-nightly = { $version } ({ $isodate }) ({ $bits }-bit)
++
++# Example of resulting string: 131.0a1 (aarch64)
++# Variables:
++#   $version (String): version of Firefox, e.g. 66.0.1
++#   $arch (String): name of the architecture (arm, aarch64, etc.)
++aboutdialog-version-arch = { $version } ({ $arch })
++
++# Example of resulting string: 131.0a1 (2024-08-27) (aarch64)
++# Variables:
++#   $version (String): version of Firefox for Nightly builds, e.g. 66.0a1
++#   $isodate (String): date in ISO format, e.g. 2019-01-16
++#   $arch (String): name of the architecture (arm, aarch64, etc.)
++aboutdialog-version-arch-nightly = { $version } ({ $isodate }) ({ $arch })

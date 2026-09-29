@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M11-04",
+  "firefox_version": "156.0",
+  "private_browsing_policy": "blocked",
+  "private_browsing_rule": "A privateBrowsingId other than zero must retain ordinary TLS validation and cannot receive the RussianPKI trust domain.",
+  "zero_rtt_policy": "disabled_globally",
+  "zero_rtt_rule": "SSL_ENABLE_0RTT_DATA remains false at initialization and after a security.tls.enable_0rtt_data preference change.",
+  "zero_rtt_packet_test": "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js",
+  "private_scope_owners": [
+    "security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp",
+    "security/manager/ssl/GoodBearRussianPKIContainerScope.h",
+    "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp"
+  ],
+  "ui_owners": [
+    "browser/base/content/browser-siteIdentity.js",
+    "browser/base/content/browser-trustPanel.js",
+    "browser/themes/shared/controlcenter/panel.css",
+    "browser/locales/en-US/browser/browser.ftl",
+    "../../firefox-l10n/ru/browser/browser/browser.ftl"
+  ],
+  "required_russian_messages": [
+    "identity-goodbear-russian-pki-label",
+    "identity-goodbear-russian-pki-description",
+    "goodbear-russian-pki-interstitial-open-isolated",
+    "goodbear-russian-pki-interstitial-go-back",
+    "goodbear-russian-pki-interstitial-view-certificate"
+  ],
+  "runtime_probe": "tools/run_m11_04_ui_private_early_probe.py"
+}

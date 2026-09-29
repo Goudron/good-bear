@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M4-03",
+  "firefox_version": "156.0",
+  "patch": "patches/0005-good-bear-container-scoped-russian-pki.patch",
+  "owner": "security/manager/ssl/GoodBearRussianPKIContainerScope.h",
+  "test_owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+  "channel_origin_attributes_owner": "security/manager/ssl/SSLServerCertVerification.h",
+  "fixture_matrix": "config/m2-05-pki-fixture-matrix.json",
+  "fixture_index": "artifacts/m2-05-pki-fixtures/fixture-index.json",
+  "test_chain": {
+    "root": "artifacts/m2-05-pki-fixtures/pki/russian-root.pem",
+    "intermediate": "artifacts/m2-05-pki-fixtures/pki/russian-intermediate.pem",
+    "leaf": "artifacts/m2-05-pki-fixtures/pki/russian-leaf.pem",
+    "ordinary_root": "artifacts/m2-05-pki-fixtures/pki/standard-root.pem",
+    "exact_anchor_der_sha256": "53d3f75a600a902732fae876cc0215acd53ac1c32b58e3c38a2caa01eeb83fab"
+  },
+  "scope_rule": "Alternate Russian PKI acceptance requires an enabled policy, a present non-default dedicated userContextId, and the real channel OriginAttributes.mUserContextId to equal the current dedicated id before and after alternate verification.",
+  "disable_and_recreation_rule": "Disabled, missing, deleted, recreated, stale, ordinary, and other-container contexts retain the standard error and GoodBearTrustDomain::Invalid; they never gain ordinary trust.",
+  "standard_first_rule": "A successful standard verification returns Standard before consulting scope or alternate trust.",
+  "follow_up_boundary": "GB100-M4-04 owns the complete alternate X.509 validator behind the exact-anchor callback; M4-03 neither recreates nor bypasses it."
+}

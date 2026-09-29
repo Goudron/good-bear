@@ -1,0 +1,243 @@
+From: Good Bear Maintainers
+Subject: [PATCH] Respect Safe Browsing V5 non-enforcing and unknown attributes
+
+diff --git a/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp b/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
+--- a/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
++++ b/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
+@@ -987,6 +987,14 @@
+     nsAutoCString tableNames;
+ 
+     for (auto& fullHashDetail : fullHash.full_hash_details()) {
++      // This completion callback has no frame context. Never promote a
++      // frame-only signal to an unrestricted unsafe-URL classification.
++      // CANARY is non-enforcing, and unspecified/future attributes require
++      // ignoring the entire detail under the V5 forward-compatibility rule.
++      // Thus no currently defined attribute permits this generic callback.
++      if (fullHashDetail.attributes_size() != 0) {
++        continue;
++      }
+       const auto& threatType = fullHashDetail.threat_type();
+ 
+       nsresult rv = ConvertThreatTypeToListNamesV5(threatType, tableNames);
+@@ -996,9 +1004,11 @@
+       }
+     }
+ 
+-    aCallback->OnCompleteHashFound(
+-        nsDependentCString(hash.c_str(), hash.length()), tableNames,
+-        cacheDurationSec);
++    if (!tableNames.IsEmpty()) {
++      aCallback->OnCompleteHashFound(
++          nsDependentCString(hash.c_str(), hash.length()), tableNames,
++          cacheDurationSec);
++    }
+   }
+ 
+   // In V5, the hashes::search API use the single cache duration for all. There
+diff --git a/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp b/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp
+new file mode 100644
+--- /dev/null
++++ b/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp
+@@ -0,0 +1,191 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#include "Common.h"
++#include "chromium/safebrowsing_v5.pb.h"
++#include "mozilla/RefPtr.h"
++#include "nsUrlClassifierUtils.h"
++
++namespace {
++namespace gbv5 = mozilla::safebrowsing::v5;
++
++class GoodBearV5Callback final
++    : public nsIUrlClassifierParseFindFullHashCallback {
++ public:
++  NS_DECL_ISUPPORTS
++
++  NS_IMETHOD OnCompleteHashFound(const nsACString& aHash,
++                                 const nsACString& aTables,
++                                 uint32_t aDuration) override {
++    mHashes.AppendElement(nsCString(aHash));
++    mTables.AppendElement(nsCString(aTables));
++    mDurations.AppendElement(aDuration);
++    return NS_OK;
++  }
++
++  NS_IMETHOD OnResponseParsed(uint32_t aWait, uint32_t aDuration) override {
++    ++mResponses;
++    mWait = aWait;
++    mNegativeDuration = aDuration;
++    return NS_OK;
++  }
++
++  nsTArray<nsCString> mHashes;
++  nsTArray<nsCString> mTables;
++  nsTArray<uint32_t> mDurations;
++  uint32_t mResponses = 0;
++  uint32_t mWait = UINT32_MAX;
++  uint32_t mNegativeDuration = UINT32_MAX;
++
++ private:
++  ~GoodBearV5Callback() = default;
++};
++
++NS_IMPL_ISUPPORTS(GoodBearV5Callback, nsIUrlClassifierParseFindFullHashCallback)
++
++static gbv5::FullHash* AddGoodBearV5Hash(
++    gbv5::SearchHashesResponse& aResponse) {
++  auto* hash = aResponse.add_full_hashes();
++  hash->set_full_hash("01234567890123456789012345678901");
++  aResponse.mutable_cache_duration()->set_seconds(123);
++  return hash;
++}
++
++static RefPtr<GoodBearV5Callback> ParseGoodBearV5(
++    const gbv5::SearchHashesResponse& aResponse) {
++  std::string wire;
++  EXPECT_TRUE(aResponse.SerializeToString(&wire));
++  RefPtr<GoodBearV5Callback> callback = new GoodBearV5Callback();
++  EXPECT_EQ(NS_OK,
++            nsUrlClassifierUtils::GetInstance()->ParseFindFullHashResponseV5(
++                nsDependentCString(wire.data(), wire.size()), callback));
++  EXPECT_EQ(1u, callback->mResponses);
++  EXPECT_EQ(0u, callback->mWait);
++  EXPECT_EQ(123u, callback->mNegativeDuration);
++  return callback;
++}
++
++static nsCString GoodBearV5Tables(gbv5::ThreatType aType) {
++  nsCString tables;
++  EXPECT_EQ(NS_OK,
++            nsUrlClassifierUtils::GetInstance()->ConvertThreatTypeToListNamesV5(
++                aType, tables));
++  return tables;
++}
++}  // namespace
++
++TEST(GoodBearSafeBrowsingV5, AttributeFreeThreatIsPreserved)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response)->add_full_hash_details()->set_threat_type(
++      gbv5::MALWARE);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(
++      callback->mHashes[0].EqualsLiteral("01234567890123456789012345678901"));
++  EXPECT_TRUE(callback->mTables[0].Equals(GoodBearV5Tables(gbv5::MALWARE)));
++  EXPECT_EQ(123u, callback->mDurations[0]);
++}
++
++TEST(GoodBearSafeBrowsingV5, CanaryNeverBecomesAnEnforcingMatch)
++{
++  gbv5::SearchHashesResponse response;
++  auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++  detail->set_threat_type(gbv5::MALWARE);
++  detail->add_attributes(gbv5::CANARY);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, FrameOnlyNeverBecomesAnUnrestrictedMatch)
++{
++  gbv5::SearchHashesResponse response;
++  auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++  detail->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  detail->add_attributes(gbv5::FRAME_ONLY);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownAttributeDiscardsEntireDetail)
++{
++  for (int attribute : {0, 999, -1}) {
++    gbv5::SearchHashesResponse response;
++    auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++    detail->set_threat_type(gbv5::MALWARE);
++    detail->add_attributes(static_cast<gbv5::ThreatAttribute>(attribute));
++    EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++  }
++}
++
++TEST(GoodBearSafeBrowsingV5, NonEnforcingDetailsDoNotHideIndependentThreat)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  auto* canary = hash->add_full_hash_details();
++  canary->set_threat_type(gbv5::MALWARE);
++  canary->add_attributes(gbv5::CANARY);
++  canary->add_attributes(static_cast<gbv5::ThreatAttribute>(999));
++  hash->add_full_hash_details()->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(
++      callback->mTables[0].Equals(GoodBearV5Tables(gbv5::SOCIAL_ENGINEERING)));
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownThreatDoesNotHideIndependentThreat)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  hash->add_full_hash_details()->set_threat_type(
++      static_cast<gbv5::ThreatType>(999));
++  hash->add_full_hash_details()->set_threat_type(gbv5::MALWARE);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(callback->mTables[0].Equals(GoodBearV5Tables(gbv5::MALWARE)));
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownThreatAloneDoesNotProduceMatch)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response)->add_full_hash_details()->set_threat_type(
++      static_cast<gbv5::ThreatType>(999));
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, AllAttributeFreeThreatsArePreserved)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  hash->add_full_hash_details()->set_threat_type(gbv5::MALWARE);
++  hash->add_full_hash_details()->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  nsCString expected = GoodBearV5Tables(gbv5::MALWARE);
++  expected.AppendLiteral(",");
++  expected.Append(GoodBearV5Tables(gbv5::SOCIAL_ENGINEERING));
++  EXPECT_TRUE(callback->mTables[0].Equals(expected));
++}
++
++TEST(GoodBearSafeBrowsingV5, EmptyDetailsPreserveNegativeCacheOnly)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, EmptyResponsePreservesNegativeCache)
++{
++  gbv5::SearchHashesResponse response;
++  response.mutable_cache_duration()->set_seconds(123);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, MalformedWireProducesNoCallbacks)
++{
++  RefPtr<GoodBearV5Callback> callback = new GoodBearV5Callback();
++  EXPECT_EQ(NS_ERROR_FAILURE,
++            nsUrlClassifierUtils::GetInstance()->ParseFindFullHashResponseV5(
++                nsCString("\x0a\xff", 2), callback));
++  EXPECT_TRUE(callback->mHashes.IsEmpty());
++  EXPECT_EQ(0u, callback->mResponses);
++}
+diff --git a/toolkit/components/url-classifier/tests/gtest/moz.build b/toolkit/components/url-classifier/tests/gtest/moz.build
+--- a/toolkit/components/url-classifier/tests/gtest/moz.build
++++ b/toolkit/components/url-classifier/tests/gtest/moz.build
+@@ -17,6 +17,7 @@
+     "TestClassifier.cpp",
+     "TestFailUpdate.cpp",
+     "TestFindFullHash.cpp",
++    "TestGoodBearV5Response.cpp",
+     "TestLookupCacheV4.cpp",
+     "TestPerProviderDirectory.cpp",
+     "TestPrefixSet.cpp",

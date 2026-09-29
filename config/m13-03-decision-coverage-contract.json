@@ -1,0 +1,767 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M13-03",
+  "firefox_version": "156.0",
+  "firefox_revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+  "evidence_scope": "declaration_only_runtime_results_required_separately",
+  "native_test_owner_sha256": {
+    "browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js": "5addedc13c1d12c4414b92c3e88808e34bc27aac335e2fe31f294f57aa8d0514",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js": "7cb1faaec6676e5b15076acfb1c8dd73623bcccb7f53e18928483d3d25a5b3b6",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js": "f640e04fc3c6505ccf39a20b1bd3808a505a93e1b64e293b81b49ab15a825ca8",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js": "6ca74059c29972cb166f133354d3d6944955f441505f72e9616d52d7ea8df7ef",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js": "827c2854523435678b76ebb9e8ae5cbb72331db2936c4d7b7102bf016678744b",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js": "26691d6ed7abf445221b4562ed163fec559e4055da100959c965d34b3face166",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js": "ab75270bc0bcd37ac2f6f3b7fb941942baf0dfa76ebd84e3de5060b5cac20da0",
+    "browser/components/preferences/tests/browser_goodbear_russian_pki.js": "9d510d3f41ccd34d5adb0732c693f6d1ce1a1e8befde04810a471a1d2b9c2b70",
+    "netwerk/test/gtest/TestSSLTokensCache.cpp": "6b071d7e6dc6db0f7b8edd0f5b72cde92326d31dbfe1489b8b977ed711e7b842",
+    "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js": "8137d0fa0e7d9005ca62a4186799b5532394f7fdcdb1ac87006d470d9cef10d5",
+    "netwerk/test/unit/test_goodbear_user_agent.js": "91cd9d9aeecc201f50968a3acc295aa24cec305f0cbf308b76e54509fcb002b1",
+    "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp": "3a2eecd9e7a6af0e416898df6710a516861b49c362830813608f9e4642979d77",
+    "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp": "e5033de5f6212237c8c0c176e7fbed0d1c7ba109eaa352f21a060815e4a94197",
+    "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp": "bee2e539dee9b140f2312c8d9dc9e2ee626a2c573075e37b0b0003ec38f75b9a",
+    "security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp": "3d872c34b2f6b6eb0f6fb9b19cb1574b0102331c62c370fb308cbcc18c2c8a00",
+    "toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp": "69abfa6fc76b3a51b966067dd9b6000d1bc5eb74c83cc5252b22f82ed3e36794",
+    "toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp": "cd3bc435cb25f875e1cd3441d05dde7243adf5470107b3bc65499d9ecfe92e38",
+    "browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js": "50cd212b39f2614d7da33653a5f171a9409e92efb180799454b36963f4d352e0"
+  },
+  "decision_surface": {
+    "series": "patches/series",
+    "declared_decision_count": 52,
+    "decisions": [
+      {
+        "id": "GB100-D001",
+        "patch": "0001-good-bear-product-identity.patch",
+        "title": "Public product identity is Good Bear and not an official Mozilla service.",
+        "positive": {
+          "owner": "tests/test_product_identity.py",
+          "selector": "test_repository_contract_is_consistent"
+        },
+        "negative": {
+          "owner": "tests/test_product_identity.py",
+          "selector": "test_rejects_mozilla_service_endpoint"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D002",
+        "patch": "0002-good-bear-about-dialog-attribution.patch",
+        "title": "About identifies the creator without presenting a Mozilla project link.",
+        "positive": {
+          "owner": "tests/test_product_identity.py",
+          "selector": "test_about_dialog_names_the_creator_without_mozilla_project_links"
+        },
+        "negative": {
+          "owner": "tests/test_m10_04_public_rebranding.py",
+          "selector": "test_rejects_erased_upstream_attribution"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D003",
+        "patch": "0003-good-bear-typed-trust-domain.patch",
+        "title": "The native typed trust domain survives immutable and persistent transport boundaries.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp",
+          "selector": "TypedValuesSurviveImmutableSecurityInfo"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp",
+          "selector": "RussianPKIRoutingHintSurvivesSerializationWithoutGrantingTrust"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D004",
+        "patch": "0004-good-bear-standard-first-classification.patch",
+        "title": "Only an unknown issuer reaches alternate validation; ordinary success remains ordinary.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp",
+          "selector": "StandardSuccessReturnsImmediately"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp",
+          "selector": "NonEligibleFailuresNeverRunSecondaryVerification"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D005",
+        "patch": "0005-good-bear-container-scoped-russian-pki.patch",
+        "title": "An exact Russian chain is usable only in the live dedicated container.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "SameValidRussianChainIsAcceptedOnlyInDedicatedContainer"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "DisabledOrMissingContainerNeverRunsAlternateVerification"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D006",
+        "patch": "0006-good-bear-complete-x509-tls-validation.patch",
+        "title": "Alternate verification preserves the complete upstream X.509/TLS decision set.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "CompleteUpstreamValidationAcceptsExactAnchorOnlyInScopedFlow"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "SameNameFakeRootDoesNotMatchExactAnchor"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D007",
+        "patch": "0007-good-bear-trust-results-performance.patch",
+        "title": "A local verifier cache may reuse upstream work but never a TLS decision.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "SecondaryCheckCountersDoNotGrantOrReuseTrust"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "EmptyAnchorSetFailsClosed"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D008",
+        "patch": "0008-good-bear-managed-russian-pki-container.patch",
+        "title": "The managed container is a real native identity and ambiguous purpose fails closed.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js",
+          "selector": "test_managed_russian_pki_container_uses_native_identity"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js",
+          "selector": "test_ambiguous_managed_purpose_fails_closed"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D009",
+        "patch": "0009-good-bear-local-russian-repack.patch",
+        "title": "The release repack follows one local base package and ships only Russian.",
+        "positive": {
+          "owner": "tests/test_build_host_russian.py",
+          "selector": "test_stages_and_uses_exactly_one_internal_base_package"
+        },
+        "negative": {
+          "owner": "tests/test_russian_release_archive.py",
+          "selector": "test_release_verifier_requires_ru_and_rejects_en_us"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D010",
+        "patch": "0010-good-bear-russian-pki-scope-authority.patch",
+        "title": "The live native scope authority is the only Russian PKI authorization source.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "OnlyThePublishedRealUserContextIdIsAllowed"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "InvalidPublicationClearsPreviousAuthorization"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D011",
+        "patch": "0011-good-bear-russian-pki-certificate-error-routing.patch",
+        "title": "Routing candidates come from native classification, never error-page text.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_native_russian_pki_flag_routes_independent_of_error_ui"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_native_russian_pki_flag_routes_independent_of_error_ui"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D012",
+        "patch": "0012-good-bear-trust-history-and-transitions.patch",
+        "title": "Trust transitions require atomic explicit consent and history has no trust authority.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_confirmed_transition_commits_as_one_decision"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_transition_commit_fails_closed_and_rolls_back"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D013",
+        "patch": "0013-good-bear-privacy-safe-diagnostics.patch",
+        "title": "Diagnostics expose fixed verification identifiers and no sensitive payload.",
+        "positive": {
+          "owner": "tests/test_m9_06_privacy_diagnostics.py",
+          "selector": "test_secondary_identifiers_follow_native_verifier_outcomes"
+        },
+        "negative": {
+          "owner": "tests/test_m9_06_privacy_diagnostics.py",
+          "selector": "test_patch_contains_no_sensitive_diagnostic_payload_surface"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D014",
+        "patch": "0014-good-bear-mascot-artwork-system.patch",
+        "title": "The approved mascot system replaces mapped Firefox artwork without security-state claims.",
+        "positive": {
+          "owner": "tests/test_m10_03_artwork_system.py",
+          "selector": "test_selected_original_artwork_system_is_complete"
+        },
+        "negative": {
+          "owner": "tests/test_m10_03_artwork_system.py",
+          "selector": "test_circle_or_security_state_claim_cannot_enter_the_mascot_contract"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D015",
+        "patch": "0015-good-bear-strict-russian-release-locale.patch",
+        "title": "The release packaging path is Russian-only while en-US stays an internal build input.",
+        "positive": {
+          "owner": "tests/test_build_host_russian.py",
+          "selector": "test_release_locale_boundary_is_enabled_only_for_russian_repack"
+        },
+        "negative": {
+          "owner": "tests/test_russian_release_archive.py",
+          "selector": "test_release_verifier_requires_ru_and_rejects_en_us"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D016",
+        "patch": "0016-good-bear-public-product-rebranding.patch",
+        "title": "Package, executable, desktop, attribution, and compatibility identities have distinct reviewed ownership.",
+        "positive": {
+          "owner": "tests/test_m10_04_public_rebranding.py",
+          "selector": "test_package_executable_and_desktop_ids_are_independent"
+        },
+        "negative": {
+          "owner": "tests/test_m10_04_public_rebranding.py",
+          "selector": "test_rejects_a_firefox_public_executable_name"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D017",
+        "patch": "0017-good-bear-approved-asset-injection.patch",
+        "title": "Only approved, complete artwork assets enter the public build path.",
+        "positive": {
+          "owner": "tests/test_m10_05_asset_injection.py",
+          "selector": "test_active_source_accepts_the_complete_injection_contract"
+        },
+        "negative": {
+          "owner": "tests/test_m10_05_asset_injection.py",
+          "selector": "test_rejects_an_unapproved_mascot_asset_digest"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D018",
+        "patch": "0018-good-bear-about-author-links.patch",
+        "title": "The author link and Russian label have exact reviewed targets.",
+        "positive": {
+          "owner": "tests/test_m10_06_about_author_links.py",
+          "selector": "test_about_author_link_contract"
+        },
+        "negative": {
+          "owner": "tests/test_m10_06_about_author_links.py",
+          "selector": "test_rejects_an_inexact_author_target"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D019",
+        "patch": "0019-good-bear-fstec-native-scope-regression.patch",
+        "title": "A reviewed FSTEC chain is accepted only by the exact native scoped verifier path.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "ProductionRSA2024IssuerCompletesFSTECMissingIntermediateChain"
+        },
+        "negative": {
+          "owner": "tests/test_run_m11_fstec_live_russian_pki.py",
+          "selector": "test_runner_uses_project_owned_temp_and_rejects_certificate_overrides"
+        },
+        "evidence_kind": "psm-gtest-and-live-runner"
+      },
+      {
+        "id": "GB100-D020",
+        "patch": "0020-good-bear-first-run-animation-binding.patch",
+        "title": "The approved first-run animation is bound only to the permitted onboarding state.",
+        "positive": {
+          "owner": "browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js",
+          "selector": "test_splash_passes_only_loading_screen"
+        },
+        "negative": {
+          "owner": "browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js",
+          "selector": "test_enabled_false_is_hard_opt_out"
+        },
+        "evidence_kind": "xpcshell"
+      },
+      {
+        "id": "GB100-D021",
+        "patch": "0021-good-bear-native-russian-pki-error-routing.patch",
+        "title": "A first visit commits only after a native managed Russian PKI response.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_only_native_managed_russian_response_commits"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_only_native_managed_russian_response_commits"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D022",
+        "patch": "0022-good-bear-trustpanel-mascot-artwork.patch",
+        "title": "Trust-panel artwork retains its neutral layout and cannot express a security state.",
+        "positive": {
+          "owner": "tests/test_m10_03_artwork_system.py",
+          "selector": "test_error_artwork_cannot_drop_the_reserved_layout_contract"
+        },
+        "negative": {
+          "owner": "tests/test_m10_03_artwork_system.py",
+          "selector": "test_circle_or_security_state_claim_cannot_enter_the_mascot_contract"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D023",
+        "patch": "0023-good-bear-live-fstec-auto-route-window.patch",
+        "title": "The live FSTEC route waits for native assignment before a repeat visit.",
+        "positive": {
+          "owner": "tests/test_run_m11_fstec_live_russian_pki.py",
+          "selector": "test_runner_waits_for_the_first_visit_assignment_before_repeating"
+        },
+        "negative": {
+          "owner": "tests/test_run_m11_fstec_live_russian_pki.py",
+          "selector": "test_success_requires_dedicated_container_and_native_domain"
+        },
+        "evidence_kind": "live-runner"
+      },
+      {
+        "id": "GB100-D024",
+        "patch": "0024-good-bear-trust-panel-russian-pki-ru-badge.patch",
+        "title": "The Russian PKI badge is a visible native trust-panel control with non-color Russian text.",
+        "positive": {
+          "owner": "tests/test_m11_04_ui_private_early_coverage.py",
+          "selector": "test_russian_ui_uses_native_trust_domain_and_localized_noncolor_text"
+        },
+        "negative": {
+          "owner": "tests/test_run_m11_fstec_live_russian_pki.py",
+          "selector": "test_production_badge_is_a_visible_trust_panel_control"
+        },
+        "evidence_kind": "project-unittest-and-live-runner"
+      },
+      {
+        "id": "GB100-D025",
+        "patch": "0025-good-bear-repeat-assigned-origin-routing.patch",
+        "title": "An assigned origin reopens in the managed context and does not retain ordinary state.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_assigned_origin_reopens_from_any_ordinary_tab"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js",
+          "selector": "test_network_state_is_never_transferred"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D026",
+        "patch": "0026-good-bear-https-only-default.patch",
+        "title": "HTTPS-Only is enabled by default before certificate-error routing can be offered.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_good_bear_enables_https_only_by_default"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+          "selector": "test_native_russian_pki_flag_routes_independent_of_error_ui"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D027",
+        "patch": "0027-good-bear-russian-pki-panel-copy.patch",
+        "title": "Trust-panel copy is Russian, native-result-derived, and non-color dependent.",
+        "positive": {
+          "owner": "tests/test_m11_04_ui_private_early_coverage.py",
+          "selector": "test_russian_ui_uses_native_trust_domain_and_localized_noncolor_text"
+        },
+        "negative": {
+          "owner": "tests/test_m9_05_russian_localization.py",
+          "selector": "test_interstitial_and_prompt_have_no_hard_coded_user_text"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D028",
+        "patch": "0028-good-bear-navigation-network-evidence.patch",
+        "title": "The cross-container navigation boundary transfers no ordinary cookie, referrer, opener, or body.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js",
+          "selector": "test_network_state_is_never_transferred"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js",
+          "selector": "test_network_state_is_never_transferred"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D029",
+        "patch": "0029-good-bear-russian-pki-credential-isolation.patch",
+        "title": "Profile-global saved-login and autofill stores fail closed in the managed context.",
+        "positive": {
+          "owner": "tests/test_m11_03_storage_credential_coverage.py",
+          "selector": "test_profile_global_credential_surfaces_fail_closed_in_the_native_context"
+        },
+        "negative": {
+          "owner": "tests/test_m11_03_storage_credential_coverage.py",
+          "selector": "test_live_probe_exercises_runtime_and_not_a_ui_marker"
+        },
+        "evidence_kind": "project-unittest-and-runtime-probe"
+      },
+      {
+        "id": "GB100-D030",
+        "patch": "0030-good-bear-russian-pki-proxy-auth-isolation.patch",
+        "title": "Proxy authentication isolation is keyed by the native managed-container authority.",
+        "positive": {
+          "owner": "tests/test_m11_03_storage_credential_coverage.py",
+          "selector": "test_proxy_auth_uses_the_native_scope_authority_only_for_the_managed_context"
+        },
+        "negative": {
+          "owner": "tests/test_m11_03_storage_credential_coverage.py",
+          "selector": "test_live_probe_exercises_runtime_and_not_a_ui_marker"
+        },
+        "evidence_kind": "project-unittest-and-runtime-probe"
+      },
+      {
+        "id": "GB100-D031",
+        "patch": "0031-good-bear-private-browsing-fail-closed.patch",
+        "title": "Private Browsing never receives alternate Russian PKI trust.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "OnlyThePublishedRealUserContextIdIsAllowed"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "PrivateBrowsingNeverReceivesAlternateRussianPKITrust"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D032",
+        "patch": "0032-good-bear-0rtt-packet-evidence.patch",
+        "title": "Ordinary request markers are never accepted as TLS 1.3 early data.",
+        "positive": {
+          "owner": "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js",
+          "selector": "test_goodbear_never_sends_ordinary_request_data_as_0rtt"
+        },
+        "negative": {
+          "owner": "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js",
+          "selector": "test_goodbear_never_sends_ordinary_request_data_as_0rtt"
+        },
+        "evidence_kind": "xpcshell"
+      },
+      {
+        "id": "GB100-D033",
+        "patch": "0034-good-bear-certificate-override-containment.patch",
+        "title": "A per-host certificate override cannot resume an ordinary channel after exact Russian-PKI classification.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp",
+          "selector": "ExistingCertificateOverrideCannotResumeRussianPKIRequiredChannel"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp",
+          "selector": "ExistingCertificateOverrideCannotResumeRussianPKIRequiredChannel"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D034",
+        "patch": "0035-good-bear-mar-public-cert-binding.patch",
+        "title": "The Good Bear MAR channel selects only the pinned Good Bear public certificates, never Mozilla release certificates.",
+        "positive": {
+          "owner": "tests/test_m15_08_native_update.py",
+          "selector": "test_goodbear_mar_uses_pinned_public_certificates"
+        },
+        "negative": {
+          "owner": "tests/test_m15_08_native_update.py",
+          "selector": "test_goodbear_mar_rejects_mozilla_or_swapped_certificates"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D035",
+        "patch": "0036-good-bear-spellcheck-default.patch",
+        "title": "Fresh Good Bear profiles enable spell checking without locking the Russian or English dictionary choice.",
+        "positive": {
+          "owner": "tests/test_m15_07_spellcheck_defaults.py",
+          "selector": "test_repository_contract_is_complete"
+        },
+        "negative": {
+          "owner": "tests/test_m15_07_spellcheck_defaults.py",
+          "selector": "test_missing_or_locked_fresh_profile_default_fails_closed"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D036",
+        "patch": "0037-good-bear-hosted-service-boundary.patch",
+        "title": "Firefox and Mozilla hosted telemetry stay disabled while the Good Bear metrics preference remains a zero-network inactive placeholder.",
+        "positive": {
+          "owner": "tests/test_m15_12_hosted_service_boundary.py",
+          "selector": "test_repository_contract_passes"
+        },
+        "negative": {
+          "owner": "tests/test_m15_12_hosted_service_boundary.py",
+          "selector": "test_enabled_user_default_does_not_open_unconfigured_transport"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D037",
+        "patch": "0038-good-bear-remove-fxa-sync-ui.patch",
+        "title": "The Firefox Account and Sync promotion controls remain absent from the Good Bear application menu.",
+        "positive": {
+          "owner": "tests/test_m15_12_hosted_service_boundary.py",
+          "selector": "test_repository_contract_passes"
+        },
+        "negative": {
+          "owner": "tests/test_m15_12_hosted_service_boundary.py",
+          "selector": "test_firefox_account_ui_enforcement_patch_is_required"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D038",
+        "patch": "0039-good-bear-assigned-origin-newline-delimiter.patch",
+        "title": "Every newline-separated assigned origin is blocked outside the managed Russian PKI container and remains usable inside it.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "EveryNewlineSeparatedOriginIsBlockedOutsideTheManagedContainer"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "EveryNewlineSeparatedOriginIsBlockedOutsideTheManagedContainer"
+        },
+        "evidence_kind": "psm-gtest"
+      },
+      {
+        "id": "GB100-D039",
+        "patch": "0040-good-bear-trust-panel-hosted-service-guard.patch",
+        "title": "The Firefox 156 Trust Panel keeps local site and certificate information available when Good Bear disables Monitor independently of the retained security-settings endpoint.",
+        "positive": {
+          "owner": "tests/test_m11_04_ui_private_early_coverage.py",
+          "selector": "test_trust_panel_remains_local_when_mozilla_remote_settings_is_closed"
+        },
+        "negative": {
+          "owner": "tests/test_m15_12_hosted_service_boundary.py",
+          "selector": "test_repository_contract_passes"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D040",
+        "patch": "0041-good-bear-about-version-and-ubuntu-update-notice.patch",
+        "title": "About Good Bear displays both the Good Bear and Firefox compatibility versions and states the Ubuntu terminal-update boundary.",
+        "positive": {
+          "owner": "tests/test_m15_04_about_version_and_update_notice.py",
+          "selector": "test_about_shows_the_good_bear_and_firefox_version_pair"
+        },
+        "negative": {
+          "owner": "tests/test_m15_09_update_delivery.py",
+          "selector": "test_privilege_escalation_before_checksum_is_rejected"
+        },
+        "evidence_kind": "project-unittest"
+      },
+      {
+        "id": "GB100-D041",
+        "patch": "0042-good-bear-russian-pki-settings.patch",
+        "title": "Russian PKI settings expose live enablement and exact-origin assignments; only confirmed successful resets change routing state.",
+        "positive": {
+          "owner": "browser/components/preferences/tests/browser_goodbear_russian_pki.js",
+          "selector": "test_goodbear_settings_single_reset_confirm_and_cancel"
+        },
+        "negative": {
+          "owner": "browser/components/preferences/tests/browser_goodbear_russian_pki.js",
+          "selector": "test_goodbear_settings_reset_failure_keeps_isolation"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D042",
+        "patch": "0043-good-bear-localized-russian-pki-prompts.patch",
+        "title": "Address-only trust-change prompts resolve Fluent text before consent; missing localization cannot open a destination.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_localized_address_only_prompt_choices"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_prompt_localization_failure_never_opens_destination"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D043",
+        "patch": "0044-good-bear-russian-pki-scope-override-containment.patch",
+        "title": "Scope revocation before or during alternate verification cannot resume the rejected channel through a saved exception; ordinary upstream exception policy remains available.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "OrdinaryInvalidCertificatesRetainUpstreamOverridePolicy"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+          "selector": "ScopeRevocationCannotResumeThroughExistingCertificateOverride"
+        },
+        "evidence_kind": "psm-gtest-and-actual-header-policy-unit"
+      },
+      {
+        "id": "GB100-D044",
+        "patch": "0045-good-bear-firefox-user-agent-compatibility.patch",
+        "title": "HTTP and navigator retain Firefox compatibility independently of Good Bear product branding, including after removal of a temporary UA override.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js",
+          "selector": "test_navigator_user_agent_matches_native_firefox_token"
+        },
+        "negative": {
+          "owner": "netwerk/test/unit/test_goodbear_user_agent.js",
+          "selector": "test_clearing_override_never_restores_goodbear_product_token"
+        },
+        "evidence_kind": "xpcshell-and-browser-mochitest"
+      },
+      {
+        "id": "GB100-D045",
+        "patch": "0046-good-bear-russian-pki-live-scope-leases.patch",
+        "title": "A parent-published scope lease survives read-only IPC and is rechecked before asynchronous certificate completion and socket reuse; disabling or recreating the container never revives an older lease.",
+        "positive": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "ReadOnlyLeaseMappingObservesParentRevocationAndRecreation"
+        },
+        "negative": {
+          "owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp",
+          "selector": "QueuedRussianResultCannotCompleteAfterScopeRevocation"
+        },
+        "evidence_kind": "psm-gtest-and-actual-header-policy-unit"
+      },
+      {
+        "id": "GB100-D046",
+        "patch": "0047-good-bear-russian-pki-security-details.patch",
+        "title": "The localized container marker remains independent of TLS trust; verified-path Russian PKI details clear on missing, ordinary or stale security state and cannot open a stale certificate viewer.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js",
+          "selector": "test_goodbear_marker_is_independent_of_standard_trust"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js",
+          "selector": "test_goodbear_verified_details_and_stale_viewer"
+        },
+        "evidence_kind": "browser-mochitest-with-explicit-ui-fixture-boundary"
+      },
+      {
+        "id": "GB100-D047",
+        "patch": "0048-good-bear-maintained-javascript-quality.patch",
+        "title": "Maintained JavaScript owners retain their behavior and the 0-RTT fixture requires genuine TLS session resumption while the peer observes no ordinary request bytes as early data.",
+        "positive": {
+          "owner": "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js",
+          "selector": "test_goodbear_never_sends_ordinary_request_data_as_0rtt"
+        },
+        "negative": {
+          "owner": "netwerk/test/unit/test_goodbear_russian_pki_0rtt.js",
+          "selector": "test_goodbear_never_sends_ordinary_request_data_as_0rtt"
+        },
+        "evidence_kind": "xpcshell-packet-fixture"
+      },
+      {
+        "id": "GB100-D048",
+        "patch": "0049-good-bear-blocking-russian-pki-interstitial.patch",
+        "title": "The blocking interstitial separates address-only consent from certificate viewing; navigation or scope changes revoke consent and upload presence never permits automatic request replay.",
+        "positive": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_interstitial_certificate_view_selects_native_viewer_without_consent"
+        },
+        "negative": {
+          "owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+          "selector": "test_interstitial_navigation_and_scope_changes_revoke_consent"
+        },
+        "evidence_kind": "browser-mochitest"
+      },
+      {
+        "id": "GB100-D049",
+        "patch": "0050-good-bear-typed-tls-session-cache.patch",
+        "title": "An explicitly classified Standard TLS session preserves its type through cache persistence and reconstruction; untyped, legacy, unknown and Russian PKI records require fresh verification while ordinary exceptions remain Invalid.",
+        "positive": {
+          "owner": "netwerk/test/gtest/TestSSLTokensCache.cpp",
+          "selector": "StandardTrustDomainSurvivesPersistenceAndRebuild"
+        },
+        "negative": {
+          "owner": "netwerk/test/gtest/TestSSLTokensCache.cpp",
+          "selector": "LegacyUnknownAndRussianMetadataCannotResume"
+        },
+        "evidence_kind": "native-gtest-and-production-record-parser-unit"
+      },
+      {
+        "id": "GB100-D050",
+        "patch": "0051-good-bear-safe-browsing-v5-attributes.patch",
+        "title": "Safe Browsing V5 details with CANARY, FRAME_ONLY, unspecified, or future attributes never become unrestricted enforcing matches; independent ordinary details remain effective.",
+        "positive": {
+          "owner": "toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp",
+          "selector": "AttributeFreeThreatIsPreserved"
+        },
+        "negative": {
+          "owner": "toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp",
+          "selector": "UnknownAttributeDiscardsEntireDetail"
+        },
+        "evidence_kind": "url-classifier-native-gtest"
+      },
+      {
+        "id": "GB100-D051",
+        "patch": "0052-good-bear-safe-browsing-supplier-notice.patch",
+        "title": "Google Safe Browsing and download reputation remain unavailable until the localized pre-use notice renders and the user continues; close, failure, default, and locked preferences fail closed.",
+        "positive": {
+          "owner": "browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js",
+          "selector": "test_supplier_notice_new_and_existing_profiles"
+        },
+        "negative": {
+          "owner": "browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js",
+          "selector": "test_supplier_notice_close_does_not_enable_service"
+        },
+        "evidence_kind": "browser-chrome-native-runtime"
+      },
+      {
+        "id": "GB100-D052",
+        "patch": "0053-good-bear-google-verdict-freshness.patch",
+        "title": "Google Safe Browsing positive results enforce only for 30 minutes or less with both clocks advancing; stale, missing, or rolled-back freshness never confirms while server cache lifetimes and non-Google behavior remain intact.",
+        "positive": {
+          "owner": "toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp",
+          "selector": "FreshPositiveAndStalePositivePreserveServerCache"
+        },
+        "negative": {
+          "owner": "toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp",
+          "selector": "UnknownOldMetadataAndFullLengthPrefixNeedResponse"
+        },
+        "evidence_kind": "url-classifier-native-gtest"
+      }
+    ]
+  },
+  "explicit_nondecision_exclusions": [
+    {
+      "patch": "0033-good-bear-quality-format.patch",
+      "reason": "M13-01 clang-format-only correction; every hunk must preserve its non-whitespace token stream."
+    }
+  ]
+}

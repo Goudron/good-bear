@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M3-01",
+  "retrieved_at": "2026-09-01T10:15:37Z",
+  "scope": {
+    "product_version": "Good Bear 1.0",
+    "certificate_family": "Russian Trusted CA RSA TLS hierarchy",
+    "supported_algorithms": [
+      "rsaEncryption",
+      "sha256WithRSAEncryption"
+    ],
+    "excluded_from_product": [
+      "GOST certificates",
+      "GOST cryptography"
+    ]
+  },
+  "official_source_evidence": {
+    "distribution_page": "https://www.gosuslugi.ru/crt",
+    "role_confirmation_page": "https://cdn.dom.gosuslugi.ru/webhelp/topics/login/administrative_body/t_add_main_certs-reg.html",
+    "role_confirmation": "The official Gosuslugi help page directs users to install both the root and issuing certificates and links to the Gosuslugi certificate distribution page.",
+    "retrieval_transport": "HTTPS with normal platform certificate verification; redirects and TLS verification bypasses are forbidden. The single reviewed RSA-2024 issuing-certificate CDP endpoint is HTTP-only; it is accepted solely by its exact URL plus source-byte, DER, SPKI, role, validity, and chain-to-exact-root pins before build-input promotion.",
+    "asset_host": "gu-st.ru",
+    "asset_host_relationship": "Static certificate download host used by the official Gosuslugi certificate distribution surface"
+  },
+  "certificates": [
+    {
+      "id": "russian_trusted_root_ca_rsa_2022",
+      "role": "trust_anchor",
+      "source_url": "https://gu-st.ru/content/Other/doc/russian_trusted_root_ca.cer",
+      "source_media_type": "application/octet-stream",
+      "source_last_modified": "2024-11-07T14:30:15Z",
+      "source_payload_sha256": "936a43fea6e8e525bcc0f81acd9c3d21b4fc4b9b68acea7906d698005afc6504",
+      "certificate_der_sha256": "d26d2d0231b7c39f92cc738512ba54103519e4405d68b5bd703e9788ca8ecf31",
+      "spki_der_sha256": "02b8220c070728db771d9ac59e54521c4eddad21a783bb26cfdf19c1db0fae37",
+      "serial_number_hex": "1000",
+      "serial_number_decimal": 4096,
+      "subject_rfc2253": "CN=Russian Trusted Root CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "issuer_rfc2253": "CN=Russian Trusted Root CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "not_before": "2022-03-01T21:04:15Z",
+      "not_after": "2032-02-27T21:04:15Z",
+      "basic_constraints": {
+        "critical": true,
+        "ca": true,
+        "path_length": 4
+      },
+      "key_usage": [
+        "digitalSignature",
+        "keyCertSign",
+        "cRLSign"
+      ]
+    },
+    {
+      "id": "russian_trusted_sub_ca_rsa_2022",
+      "role": "intermediate",
+      "source_url": "https://gu-st.ru/content/Other/doc/russian_trusted_sub_ca.cer",
+      "source_media_type": "application/octet-stream",
+      "source_last_modified": "2022-10-11T10:00:45Z",
+      "source_payload_sha256": "f0ae589f36774f29ef3648f7984b08d42fcce6f1ffeeb6236d773daeb2744ea6",
+      "certificate_der_sha256": "bbbde2103e790b999ec62bd03cf625a5a2e7c316e10afe6a490eedead8b3fd9b",
+      "spki_der_sha256": "0447aa4b18c48b9e8db16e91809286dd27efd6a50ba80d3084eb9e70ba8e1dca",
+      "serial_number_hex": "1002",
+      "serial_number_decimal": 4098,
+      "subject_rfc2253": "CN=Russian Trusted Sub CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "issuer_rfc2253": "CN=Russian Trusted Root CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "not_before": "2022-03-02T11:25:19Z",
+      "not_after": "2027-03-06T11:25:19Z",
+      "basic_constraints": {
+        "critical": true,
+        "ca": true,
+        "path_length": 0
+      },
+      "key_usage": [
+        "digitalSignature",
+        "keyCertSign",
+        "cRLSign"
+      ],
+      "chains_to": "russian_trusted_root_ca_rsa_2022"
+    },
+    {
+      "id": "russian_trusted_sub_ca_rsa_2024",
+      "role": "intermediate",
+      "source_url": "http://nuc-cdp.digital.gov.ru/cdp/subca_ssl_rsa2024.crt",
+      "source_media_type": "application/x-x509-ca-cert",
+      "source_last_modified": "2026-09-01T10:14:45Z",
+      "source_payload_sha256": "6f9d829c8e6712444fce3624658d8788672849c5d5b7b53fd9cf7e83eac4193e",
+      "certificate_der_sha256": "2155785036c900dbb5f1bb2a1569c80c55595bd6bf94867a29bbddbc7d88a3f2",
+      "spki_der_sha256": "37b95ae1738dc4c69661144715669fdb9c93e7adb3363422deb61c0f3acf65c1",
+      "serial_number_hex": "1005",
+      "serial_number_decimal": 4101,
+      "subject_rfc2253": "CN=Russian Trusted Sub CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "issuer_rfc2253": "CN=Russian Trusted Root CA,O=The Ministry of Digital Development and Communications,C=RU",
+      "not_before": "2024-07-15T12:50:41Z",
+      "not_after": "2029-07-19T12:50:41Z",
+      "basic_constraints": {
+        "critical": true,
+        "ca": true,
+        "path_length": 0
+      },
+      "key_usage": [
+        "digitalSignature",
+        "keyCertSign",
+        "cRLSign"
+      ],
+      "chains_to": "russian_trusted_root_ca_rsa_2022"
+    }
+  ],
+  "redistribution": {
+    "status": "approved_for_binary_redistribution",
+    "evidence_reviewed_at": "2026-09-01T10:15:37Z",
+    "evidence_urls": [
+      "https://www.gosuslugi.ru/crt",
+      "https://cdn.dom.gosuslugi.ru/webhelp/topics/login/administrative_body/t_add_main_certs-reg.html"
+    ],
+    "evidence_finding": "The official surfaces provide the certificates for user download and installation. The Good Bear project owner has completed the legal review and authorizes inclusion of the exact pinned certificate bytes in Good Bear binary distributions; the source repository continues not to commit certificate bytes.",
+    "explicit_third_party_redistribution_grant_found": true,
+    "legal_conclusion": "Project-owner legal decision: the exact pinned certificate bytes may be included in Good Bear binary distributions. Certificate source, hash, identity, role, validity, and chain controls remain mandatory."
+  },
+  "disposition": {
+    "mode": "controlled_official_source_import_with_binary_bundle",
+    "bundle_certificate_bytes": true,
+    "commit_certificate_bytes": false,
+    "runtime_download": false,
+    "official_source_only": true,
+    "require_source_payload_sha256": true,
+    "require_certificate_der_sha256": true,
+    "require_spki_der_sha256": true,
+    "require_role_and_chain_validation": true,
+    "promotion": "A later deterministic acquisition task may download into quarantine during a controlled build/preparation stage and promote only after every pin, identity, validity, role, and chain check succeeds.",
+    "failure_policy": "Any source, transport, byte, identity, role, validity, or chain mismatch fails before compilation; no cached unverified bytes and no runtime fallback are permitted."
+  }
+}

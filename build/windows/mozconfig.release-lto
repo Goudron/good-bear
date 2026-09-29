@@ -1,0 +1,20 @@
+# Native Windows x64 release configuration for the one M13-06 Good Bear LTO
+# candidate.  The caller supplies only frozen guest-local paths; this file
+# never permits an upstream Mozilla brand or a non-LTO fallback.
+
+. "$topsrcdir/build/goodbear/mozconfig"
+
+ac_add_options --target=x86_64-pc-windows-msvc
+. "$topsrcdir/build/mozconfig.clang-cl"
+
+# The release boundary is intentionally explicit: intermediate candidates use
+# --disable-release, while M13-06 is the sole full-LTO release build.
+ac_add_options --enable-release
+export MOZ_LTO=full
+
+# The only product locale is repacked from this already-frozen, guest-local
+# l10n input.  The orchestration refuses an absent path instead of falling
+# back to en-US or downloading a locale.
+ac_add_options --with-l10n-base="$GOODBEAR_L10N_BASE"
+mk_add_options MOZ_CO_LOCALES=ru
+mk_add_options MOZ_PARALLEL_BUILD=4

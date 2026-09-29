@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M2-03",
+  "firefox_version": "156.0",
+  "allowed_classifications": [
+    "partitioned",
+    "disabled",
+    "guard_required"
+  ],
+  "unknown_policy": {
+    "classification": "blocked",
+    "rule": "Any state without positive source and executable evidence must remain unavailable in the Russian PKI context.",
+    "implementation_owner_required": true,
+    "test_owner_required": true
+  },
+  "states": [
+    {
+      "id": "password_and_autofill",
+      "classification": "guard_required",
+      "finding": "Saved logins, addresses, and payment records are profile-global. Generated-password memory is keyed by principal origin, but the persisted login deliberately uses the base origin without userContextId.",
+      "required_guard": "Disable login lookup/autofill, generated-password autosave, password-save prompts, address autofill/save, and payment autofill/save in the Russian PKI context until a container-aware store exists.",
+      "implementation_owner": "GB100-M8-03",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "toolkit/components/passwordmgr/LoginManagerParent.sys.mjs",
+        "toolkit/components/passwordmgr/test/unit/test_LoginManagerParent_getGeneratedPassword.js",
+        "toolkit/components/formautofill/FormAutofillParent.sys.mjs",
+        "toolkit/components/formautofill/default/FormAutofillStorage.sys.mjs"
+      ]
+    },
+    {
+      "id": "http_auth",
+      "classification": "guard_required",
+      "finding": "Origin-server Basic/Digest cache keys include the complete network OriginAttributes suffix and private mode uses a separate cache. Proxy authentication keeps Firefox's shared cache for ordinary contexts, but the native managed Russian PKI context now receives its complete network OriginAttributes suffix on every proxy cache lookup and store path.",
+      "required_guard": "Keep origin and managed-Russian-container proxy auth OriginAttributes partitioning under adversarial coverage; the managed branch must be gated only by the native runtime scope authority.",
+      "implementation_owner": "GB100-M8-04",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "netwerk/protocol/http/nsHttpChannelAuthProvider.cpp",
+        "netwerk/protocol/http/nsHttpAuthCache.cpp"
+      ]
+    },
+    {
+      "id": "tls_client_auth",
+      "classification": "partitioned",
+      "finding": "Remembered client-certificate decisions and TLS resumption tokens are keyed by the complete OriginAttributes suffix; private decisions use private storage.",
+      "required_guard": "Preserve the full-OA key and add bidirectional Russian-context tests before release.",
+      "implementation_owner": "GB100-M8-04",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "security/manager/ssl/nsClientAuthRemember.h",
+        "security/manager/ssl/nsClientAuthRemember.cpp",
+        "security/manager/ssl/NSSSocketControl.cpp",
+        "security/manager/ssl/tests/unit/test_client_auth_remember_service_read.js"
+      ]
+    },
+    {
+      "id": "connection_reuse",
+      "classification": "partitioned",
+      "finding": "HTTP connection-pool/coalescing keys and TLS session peer IDs include the complete OriginAttributes suffix, including userContextId and privateBrowsingId.",
+      "required_guard": "Preserve OA in every connection clone/serialization path and add cross-trust/container coalescing tests.",
+      "implementation_owner": "GB100-M8-05",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "netwerk/protocol/http/nsHttpConnectionInfo.cpp",
+        "security/manager/ssl/NSSSocketControl.cpp",
+        "netwerk/test/unit/test_separate_connections.js",
+        "security/manager/ssl/tests/unit/test_session_resumption.js"
+      ]
+    },
+    {
+      "id": "zero_rtt",
+      "classification": "guard_required",
+      "finding": "TLS early data is enabled by default and an idempotent request may enter 0-RTT before the new trust-domain classifier can finish.",
+      "required_guard": "Disable early data globally or at least for every unknown or Russian-assigned origin before any request bytes can be read by the 0-RTT path.",
+      "implementation_owner": "GB100-M8-05",
+      "test_owner": "GB100-M11-04",
+      "source_evidence": [
+        "modules/libpref/init/StaticPrefList.yaml",
+        "netwerk/protocol/http/TlsHandshaker.cpp",
+        "netwerk/protocol/http/nsHttpTransaction.cpp",
+        "netwerk/test/unit/test_retry_0rtt.js"
+      ]
+    },
+    {
+      "id": "service_workers",
+      "classification": "partitioned",
+      "finding": "Registration and control lookup use the principal origin including the complete OriginAttributes suffix; upstream tests exercise independent same-scope registrations in two containers.",
+      "required_guard": "Preserve principal ownership and add bidirectional registration/control/update/interception coverage for the Russian context.",
+      "implementation_owner": "GB100-M8-02",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "dom/serviceworkers/ServiceWorkerManager.cpp",
+        "dom/serviceworkers/test/browser_unregister_with_containers.js"
+      ]
+    },
+    {
+      "id": "caches",
+      "classification": "partitioned",
+      "finding": "Cache API/quota origins, HTTP memory/disk cache keys, image cache behavior, and OCSP cache keys retain OriginAttributes. Private Cache API is enabled and its storage is private/encrypted upstream.",
+      "required_guard": "Preserve complete-OA keys and add Russian-context tests for Cache API, HTTP memory/disk cache, image cache, and security caches.",
+      "implementation_owner": "GB100-M8-02",
+      "test_owner": "GB100-M11-03",
+      "source_evidence": [
+        "dom/cache/CacheStorage.cpp",
+        "dom/quota/PrincipalUtils.cpp",
+        "netwerk/cache2/CacheFileUtils.cpp",
+        "netwerk/test/unit/test_cache_jar.js",
+        "security/manager/ssl/tests/gtest/OCSPCacheTest.cpp"
+      ]
+    },
+    {
+      "id": "private_browsing_plus_user_context",
+      "classification": "partitioned",
+      "finding": "OriginAttributes serializes userContextId and privateBrowsingId together, and an upstream browser test creates a private window whose content principal has both values set to 1.",
+      "required_guard": "Russian PKI remains unavailable in Private Browsing if the combined-ID browser probe or any state-specific private probe fails.",
+      "implementation_owner": "GB100-M8-01",
+      "test_owner": "GB100-M11-04",
+      "source_evidence": [
+        "caps/OriginAttributes.cpp",
+        "browser/components/contextualidentity/test/browser/browser_usercontextid_new_window.js",
+        "dom/serviceworkers/test/browser_pbm_cleanup.js"
+      ]
+    }
+  ]
+}

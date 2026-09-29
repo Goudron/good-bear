@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M11-02",
+  "firefox_version": "156.0",
+  "browser_tests": [
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_sticky_assignment.js",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js",
+    "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_history.js"
+  ],
+  "network_evidence": {
+    "test_owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js",
+    "server_probe": "browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs",
+    "required_assertions": [
+      "http-on-modify-request-before-cookies",
+      "http-on-modify-request",
+      "the ordinary request is cancelled before it can be sent with cookies",
+      "has no ordinary-context cookie at the network boundary",
+      "has no ordinary-context referrer at the network boundary",
+      "the isolated document has no ordinary opener",
+      "the managed request and its redirect were sent"
+    ]
+  },
+  "coverage": {
+    "first_known": "browser_goodbear_russian_pki_first_visit.js",
+    "sticky_reset": "browser_goodbear_russian_pki_sticky_assignment.js",
+    "transition": "browser_goodbear_russian_pki_trust_change.js",
+    "persistence": "browser_goodbear_russian_pki_trust_history.js",
+    "network_redirect_referrer_opener": "browser_goodbear_russian_pki_navigation_network.js"
+  }
+}

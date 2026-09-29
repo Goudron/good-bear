@@ -1,0 +1,159 @@
+# M11: route repeat ordinary visits to assigned origins before the cookie phase.
+
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+index 8afbb9d..824ed48 100644
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -145,6 +145,18 @@ function getBrowserWindow(browser) {
+   return window && !window.closed ? window : null;
+ }
+ 
++function topLevelDocumentBrowser(loadInfo) {
++  if (
++    loadInfo?.externalContentPolicyType !== Ci.nsIContentPolicy.TYPE_DOCUMENT
++  ) {
++    return null;
++  }
++  const browsingContext = BrowsingContext.get(loadInfo.browsingContextID);
++  return browsingContext?.top === browsingContext
++    ? browsingContext.embedderElement
++    : null;
++}
++
+ export const GoodBearRussianPKINavigationPolicy = {
+   _started: false,
+   _scheduledTopLevelNavigations: new Set(),
+@@ -312,9 +324,29 @@ export const GoodBearRussianPKINavigationPolicy = {
+       originAttributes.userContextId,
+       { isPrivateBrowsing: originAttributes.privateBrowsingId !== 0 }
+     );
+-    if (decision.type !== "ordinary") {
+-      channel.cancel(Cr.NS_ERROR_BLOCKED_BY_POLICY);
++    if (decision.type === "ordinary") {
++      return;
+     }
++
++    // The HTTP observer is the first place that has an actual request method.
++    // Only GET/HEAD may become an automatic address-only navigation.  A body
++    // request stays blocked pending the explicit no-replay choice.
++    const browser = topLevelDocumentBrowser(channel.loadInfo);
++    const method = channel.requestMethod;
++    if (getBrowserWindow(browser) && typeof method === "string") {
++      const isSafeAddressOnlyMethod = method === "GET" || method === "HEAD";
++      this._scheduleAddressOnlyOpen(
++        browser,
++        uri.spec,
++        decision.userContextId,
++        {
++          closeSourceTab: true,
++          hasRequestBody: !isSafeAddressOnlyMethod,
++          autoOpen: isSafeAddressOnlyMethod,
++        }
++      );
++    }
++    channel.cancel(Cr.NS_ERROR_BLOCKED_BY_POLICY);
+   },
+ 
+   shouldLoad(contentLocation, loadInfo) {
+@@ -338,13 +370,7 @@ export const GoodBearRussianPKINavigationPolicy = {
+       return Ci.nsIContentPolicy.ACCEPT;
+     }
+ 
+-    const browsingContext = BrowsingContext.get(loadInfo.browsingContextID);
+-    const browser =
+-      loadInfo.externalContentPolicyType ===
+-        Ci.nsIContentPolicy.TYPE_DOCUMENT &&
+-      browsingContext?.top === browsingContext
+-        ? browsingContext.embedderElement
+-        : null;
++    const browser = topLevelDocumentBrowser(loadInfo);
+     if (!getBrowserWindow(browser)) {
+       console.warn(
+         "Good Bear: ресурс Российской PKI заблокирован вне выделенного контейнера."
+@@ -352,12 +378,11 @@ export const GoodBearRussianPKINavigationPolicy = {
+       return Ci.nsIContentPolicy.REJECT_POLICY;
+     }
+ 
+-    this._scheduleAddressOnlyOpen(
+-      browser,
+-      contentLocation.spec,
+-      decision.userContextId
+-    );
+-    return Ci.nsIContentPolicy.REJECT_POLICY;
++    // Let only a top-level document reach http-on-modify-request-before-cookies.
++    // That observer can read the real method before it cancels the ordinary
++    // request, preserving the no-body-replay rule while allowing known GET/HEAD
++    // origins to reopen automatically in their dedicated container.
++    return Ci.nsIContentPolicy.ACCEPT;
+   },
+ 
+   shouldProcess() {
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+index 4b72676..cc5948a 100644
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -258,7 +258,7 @@ add_task(
+   }
+ );
+ 
+-add_task(async function test_assigned_origin_uses_the_real_browser_window() {
++add_task(async function test_assigned_origin_reopens_from_any_ordinary_tab() {
+   const policy = GoodBearRussianPKINavigationPolicy;
+   const managedContainer = ChromeUtils.importESModule(
+     "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
+@@ -279,15 +279,48 @@ add_task(async function test_assigned_origin_uses_the_real_browser_window() {
+     policy._scheduleAddressOnlyOpen = originalSchedule;
+   });
+ 
++  const loadInfo = {
++    originAttributes: { privateBrowsingId: 0, userContextId: 0 },
++    browsingContextID: browser.browsingContext.id,
++    externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++  };
+   is(
+-    policy.shouldLoad(Services.io.newURI(origin), {
+-      originAttributes: { privateBrowsingId: 0, userContextId: 0 },
+-      browsingContextID: browser.browsingContext.id,
+-      externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
+-    }),
+-    Ci.nsIContentPolicy.REJECT_POLICY,
+-    "an ordinary request to an assigned origin is stopped before loading"
++    policy.shouldLoad(Services.io.newURI(origin), loadInfo),
++    Ci.nsIContentPolicy.ACCEPT,
++    "the top-level request reaches the early HTTP barrier where its method is available"
++  );
++  const cancellations = [];
++  policy._cancelIfOrdinaryAssignedRequest(
++    {
++      URI: Services.io.newURI(origin),
++      requestMethod: "GET",
++      loadInfo,
++      cancel(reason) {
++        cancellations.push(reason);
++      },
++    },
++    Services.io.newURI(origin),
++    loadInfo.originAttributes
+   );
++  is(cancellations.length, 1, "the ordinary GET is stopped before cookies");
+   is(calls.length, 1, "the real browser is available for isolated recovery");
+   is(calls[0][0], browser, "recovery uses the original top-level browser");
++  ok(calls[0][3].autoOpen, "a known ordinary GET reopens automatically");
++  ok(calls[0][3].closeSourceTab, "the blocked technical tab is removed");
++
++  policy._cancelIfOrdinaryAssignedRequest(
++    {
++      URI: Services.io.newURI(origin),
++      requestMethod: "POST",
++      loadInfo,
++      cancel(reason) {
++        cancellations.push(reason);
++      },
++    },
++    Services.io.newURI(origin),
++    loadInfo.originAttributes
++  );
++  is(cancellations.length, 2, "the ordinary POST is also stopped before cookies");
++  ok(!calls[1][3].autoOpen, "a body request never auto-reopens");
++  ok(calls[1][3].hasRequestBody, "the explicit body-safe choice remains required");
+ });

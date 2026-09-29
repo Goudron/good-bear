@@ -1,0 +1,346 @@
+# Good Bear M5-02: fail-closed native Russian PKI scope authority
+#
+# Keep the managed container's ID only in parent-process runtime memory. A
+# persistent preference could expose a stale ID before the native container is
+# validated. The enablement preference gates every lookup independently.
+
+--- a/modules/libpref/init/StaticPrefList.yaml
++++ b/modules/libpref/init/StaticPrefList.yaml
+@@ -18839,6 +18839,14 @@
+   value: true
+   mirror: always
+ 
++# Controls only the Good Bear Russian PKI alternate trust domain. The native
++# scope authority also requires a runtime-published managed userContextId, so
++# this preference alone can never make an anchor applicable.
++- name: security.goodbear.russian_pki.enabled
++  type: RelaxedAtomicBool
++  value: true
++  mirror: always
++
+ 
+ # Whether or not to enable the test trust anchor list when verifying PDF signatures
+ - name: security.pdf_signature_verification.enable_test_trust_anchors
+--- a/security/manager/ssl/moz.build
++++ b/security/manager/ssl/moz.build
+@@ -100,6 +100,7 @@ UNIFIED_SOURCES += [
+     "DataStorageManager.cpp",
+     "EnterpriseRoots.cpp",
+     "FIPSUtils.cpp",
++    "GoodBearRussianPKIScopeAuthority.cpp",
+     "IPCClientCertsChild.cpp",
+     "IPCClientCertsParent.cpp",
+     "md4.c",
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -7,6 +7,7 @@ SOURCES += [
+     "CoseTest.cpp",
+     "DeserializeCertTest.cpp",
+     "GoodBearRussianPKIClassificationTest.cpp",
++    "GoodBearRussianPKIScopeAuthorityTest.cpp",
+     "GoodBearRussianPKIVerifierTest.cpp",
+     "GoodBearTrustDomainTest.cpp",
+     "HMACTest.cpp",
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -42,5 +42,6 @@ LOCAL_INCLUDES += [
++    "/netwerk/base",
+     "/security/certverifier",
+     "/security/manager/ssl",
+     "/third_party/rust/cose-c/include",
+ ]
+ 
+
+--- /dev/null
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.h
+@@ -0,0 +1,61 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearRussianPKIScopeAuthority_h
++#define GoodBearRussianPKIScopeAuthority_h
++
++#include <stdint.h>
++
++#include "mozilla/DataMutex.h"
++#include "mozilla/Maybe.h"
++#include "mozilla/OriginAttributes.h"
++#include "nsString.h"
++#include "nsTArray.h"
++
++namespace mozilla::psm {
++
++// Parent-process authority for the one managed Russian PKI container. The
++// identity is deliberately runtime-only: persisting a userContextId in a
++// preference would let a stale ID authorize a connection before the managed
++// contextual identity has been validated during startup.
++class GoodBearRussianPKIScopeAuthority final {
++ public:
++  GoodBearRussianPKIScopeAuthority();
++
++  // A caller must first validate that this ID belongs to the unique native
++  // contextual identity with the Good Bear managed purpose. An invalid update
++  // clears any previous ID instead of preserving stale authorization.
++  bool SetManagedContainer(uint32_t aUserContextId);
++  void ClearManagedContainer();
++
++  // This reads the live static preference for every check. Therefore
++  // disablement wins even if a cached runtime ID has not yet been cleared by
++  // the parent-process manager.
++  bool Allows(const OriginAttributes& aOriginAttributes) const;
++
++  // The parent process publishes only canonical host:port assignment keys.
++  // These keys are routing state, not trust anchors: an assigned origin must
++  // be retried in the managed container rather than silently accepted by an
++  // ordinary connection.
++  void SetAssignedOriginKeys(const nsACString& aOriginKeys);
++  bool ShouldBlockOrdinaryRequest(const nsACString& aOriginKey,
++                                  const OriginAttributes& aOriginAttributes)
++      const;
++
++  Maybe<uint32_t> DedicatedUserContextId() const;
++
++ private:
++  struct ScopeSnapshot final {
++    Maybe<uint32_t> mDedicatedUserContextId;
++    nsTArray<nsCString> mAssignedOriginKeys;
++  };
++
++  mutable DataMutex<ScopeSnapshot> mScope;
++};
++
++GoodBearRussianPKIScopeAuthority& GetGoodBearRussianPKIScopeAuthority();
++
++}  // namespace mozilla::psm
++
++#endif  // GoodBearRussianPKIScopeAuthority_h
+--- /dev/null
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+@@ -0,0 +1,103 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#include "GoodBearRussianPKIScopeAuthority.h"
++
++#include "mozilla/StaticPrefs_security.h"
++#include "nsIScriptSecurityManager.h"
++#include "nsXULAppAPI.h"
++
++namespace mozilla::psm {
++
++GoodBearRussianPKIScopeAuthority::GoodBearRussianPKIScopeAuthority()
++    : mScope("GoodBearRussianPKIScopeAuthority::mScope") {}
++
++bool GoodBearRussianPKIScopeAuthority::SetManagedContainer(
++    uint32_t aUserContextId) {
++  if (!XRE_IsParentProcess()) {
++    return false;
++  }
++
++  auto scope = mScope.Lock();
++  if (aUserContextId == nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
++    scope->mDedicatedUserContextId.reset();
++    return false;
++  }
++
++  scope->mDedicatedUserContextId = Some(aUserContextId);
++  return true;
++}
++
++void GoodBearRussianPKIScopeAuthority::ClearManagedContainer() {
++  if (!XRE_IsParentProcess()) {
++    return;
++  }
++
++  auto scope = mScope.Lock();
++  scope->mDedicatedUserContextId.reset();
++}
++
++void GoodBearRussianPKIScopeAuthority::SetAssignedOriginKeys(
++    const nsACString& aOriginKeys) {
++  if (!XRE_IsParentProcess()) {
++    return;
++  }
++
++  nsTArray<nsCString> assignedOriginKeys;
++  ParseString(aOriginKeys, '\\n', assignedOriginKeys);
++  assignedOriginKeys.RemoveElementsBy(
++      [](const nsCString& aOriginKey) { return aOriginKey.IsEmpty(); });
++
++  auto scope = mScope.Lock();
++  scope->mAssignedOriginKeys = std::move(assignedOriginKeys);
++}
++
++bool GoodBearRussianPKIScopeAuthority::ShouldBlockOrdinaryRequest(
++    const nsACString& aOriginKey,
++    const OriginAttributes& aOriginAttributes) const {
++  if (!XRE_IsParentProcess() || aOriginAttributes.mPrivateBrowsingId != 0 ||
++      !StaticPrefs::security_goodbear_russian_pki_enabled()) {
++    return false;
++  }
++
++  auto scope = mScope.Lock();
++  if (scope->mDedicatedUserContextId.isSome() &&
++      aOriginAttributes.mUserContextId ==
++          scope->mDedicatedUserContextId.ref()) {
++    return false;
++  }
++  return scope->mAssignedOriginKeys.Contains(nsCString(aOriginKey));
++}
++bool GoodBearRussianPKIScopeAuthority::Allows(
++    const OriginAttributes& aOriginAttributes) const {
++  if (!XRE_IsParentProcess()) {
++    return false;
++  }
++
++  if (!StaticPrefs::security_goodbear_russian_pki_enabled()) {
++    return false;
++  }
++
++  auto scope = mScope.Lock();
++  return scope->mDedicatedUserContextId.isSome() &&
++         aOriginAttributes.mUserContextId ==
++             scope->mDedicatedUserContextId.ref();
++}
++
++Maybe<uint32_t> GoodBearRussianPKIScopeAuthority::DedicatedUserContextId()
++    const {
++  if (!XRE_IsParentProcess()) {
++    return Nothing();
++  }
++
++  auto scope = mScope.Lock();
++  return scope->mDedicatedUserContextId;
++}
++
++GoodBearRussianPKIScopeAuthority& GetGoodBearRussianPKIScopeAuthority() {
++  static GoodBearRussianPKIScopeAuthority scopeAuthority;
++  return scopeAuthority;
++}
++
++}  // namespace mozilla::psm
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+@@ -0,0 +1,120 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#include "GoodBearRussianPKIScopeAuthority.h"
++#include "gtest/gtest.h"
++#include "mozilla/Preferences.h"
++#include "mozilla/StaticPrefs_security.h"
++
++using namespace mozilla;
++using namespace mozilla::psm;
++
++namespace {
++
++constexpr auto kEnabledPref = "security.goodbear.russian_pki.enabled";
++
++OriginAttributes AttributesFor(uint32_t aUserContextId) {
++  OriginAttributes attributes;
++  attributes.mUserContextId = aUserContextId;
++  return attributes;
++}
++
++class AutoRestoreEnabledPref final {
++ public:
++  AutoRestoreEnabledPref()
++      : mHadUserValue(Preferences::HasUserValue(kEnabledPref)),
++        mValue(Preferences::GetBool(kEnabledPref)) {}
++
++  ~AutoRestoreEnabledPref() {
++    if (mHadUserValue) {
++      MOZ_ALWAYS_SUCCEEDS(Preferences::SetBool(kEnabledPref, mValue));
++    } else {
++      MOZ_ALWAYS_SUCCEEDS(Preferences::ClearUser(kEnabledPref));
++    }
++  }
++
++ private:
++  bool mHadUserValue;
++  bool mValue;
++};
++
++class GoodBearRussianPKIScopeAuthorityTest : public ::testing::Test {
++ protected:
++  void SetUp() override {
++    GetGoodBearRussianPKIScopeAuthority().ClearManagedContainer();
++  }
++
++  void TearDown() override {
++    GetGoodBearRussianPKIScopeAuthority().ClearManagedContainer();
++  }
++};
++
++}  // namespace
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       DefaultRuntimeScopeIsFailClosed) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(StaticPrefs::security_goodbear_russian_pki_enabled());
++  ASSERT_FALSE(authority.DedicatedUserContextId().isSome());
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       OnlyThePublishedRealUserContextIdIsAllowed) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_EQ(Some(17U), authority.DedicatedUserContextId());
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.Allows(AttributesFor(0)));
++  ASSERT_FALSE(authority.Allows(AttributesFor(16)));
++  ASSERT_FALSE(authority.Allows(AttributesFor(18)));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       InvalidPublicationClearsPreviousAuthorization) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++
++  ASSERT_FALSE(authority.SetManagedContainer(0));
++  ASSERT_FALSE(authority.DedicatedUserContextId().isSome());
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       DisablementOverridesACachedRuntimeIdAndReenableUsesOnlyThatId) {
++  AutoRestoreEnabledPref restorePref;
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++
++  ASSERT_EQ(NS_OK, Preferences::SetBool(kEnabledPref, false));
++  ASSERT_FALSE(StaticPrefs::security_goodbear_russian_pki_enabled());
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.Allows(AttributesFor(18)));
++
++  ASSERT_EQ(NS_OK, Preferences::SetBool(kEnabledPref, true));
++  ASSERT_TRUE(StaticPrefs::security_goodbear_russian_pki_enabled());
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.Allows(AttributesFor(18)));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       ClearingOrReplacingTheRuntimeIdInvalidatesTheOldContainer) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++
++  authority.ClearManagedContainer();
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++
++  ASSERT_TRUE(authority.SetManagedContainer(23));
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++  ASSERT_TRUE(authority.Allows(AttributesFor(23)));
++}

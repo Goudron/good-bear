@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-03",
+  "purpose": "local-headless-windows-image-preparation-preflight-only",
+  "vm": {
+    "name": "goodbear-m15-03-windows-server-2025-prep",
+    "vcpus": 2,
+    "memory_mib": 2560,
+    "graphics": false,
+    "serial_console": true
+  },
+  "firmware": {
+    "uefi": true,
+    "secure_boot": true,
+    "code_candidates": [
+      "/usr/share/OVMF/OVMF_CODE_4M.secboot.fd"
+    ],
+    "vars_template_candidates": [
+      "/usr/share/OVMF/OVMF_VARS_4M.ms.fd"
+    ]
+  },
+  "disk": {
+    "format": "raw",
+    "bus": "sata",
+    "logical_size_gib": 250,
+    "initial_allocation_reservation_gib": 64,
+    "minimum_free_headroom_gib": 16
+  },
+  "media": {
+    "windows_installation_bus": "sata",
+    "configuration_set_bus": "sata",
+    "virtio_bus": "sata",
+    "virtio_read_only": true,
+    "virtio_windowspe_load": false
+  },
+  "network": {
+    "type": "network",
+    "source": "default",
+    "model": "e1000e",
+    "virtio_network_before_signature_gate": false
+  },
+  "lifecycle": {
+    "libvirt_define": false,
+    "libvirt_start": false,
+    "disk_create": false,
+    "nvram_copy": false,
+    "vm_create": false
+  }
+}

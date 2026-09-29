@@ -1,0 +1,31 @@
+diff --git a/browser/themes/shared/controlcenter/panel.css b/browser/themes/shared/controlcenter/panel.css
+--- a/browser/themes/shared/controlcenter/panel.css
++++ b/browser/themes/shared/controlcenter/panel.css
+@@ -915,19 +915,21 @@
+ /* Assets per state: the graphic image (legacy + Nova) and the card background
+    are selected by the tracking-protection state via custom properties. */
+ #trustpanel-popup[tracking-protection="warning"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-warning.svg);
++  /* Keep mascot artwork inside the existing dedicated graphic box. The
++   * surrounding trust, warning, and connection icons remain functional UI. */
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-generic-error.png);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-warning.svg);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-generic-error.png);
+   --trustpanel-background: var(--trustpanel-warning-bg);
+ }
+ 
+ #trustpanel-popup[tracking-protection="enabled"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-enabled.svg);
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-success.png);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-check.svg);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-success.png);
+   --trustpanel-background: var(--trustpanel-highlight-bg);
+ }
+ 
+ #trustpanel-popup[tracking-protection="disabled"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-disabled.svg);
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-empty-state.png);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-cross.svg);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-empty-state.png);
+   --trustpanel-background: var(--trustpanel-graphic-bg);
+ }

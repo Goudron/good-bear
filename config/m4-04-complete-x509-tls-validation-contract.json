@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M4-04",
+  "firefox_version": "156.0",
+  "patch": "patches/0006-good-bear-complete-x509-tls-validation.patch",
+  "owner": "security/manager/ssl/GoodBearRussianPKIX509Verifier.h",
+  "scope_owner": "security/manager/ssl/GoodBearRussianPKIContainerScope.h",
+  "test_owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+  "upstream_verifier": "security/certverifier/CertVerifier.cpp",
+  "upstream_verifier_header": "security/certverifier/CertVerifier.h",
+  "fixture_matrix": "config/m2-05-pki-fixture-matrix.json",
+  "fixture_index": "artifacts/m2-05-pki-fixtures/fixture-index.json",
+  "production_manifest": "config/russian-pki-manifest.json",
+  "production_supply_chain_gate": "tools/verify_m3_04_certificate_supply_chain.py",
+  "trust_rule": "Only non-empty exact DER anchors already admitted by the M3 pin, provenance, CA-role, and self-signature gates are supplied to a per-check upstream CertVerifier as local EnterpriseCert roots; no anchor is imported into NSS or profile/global trust.",
+  "verification_rule": "The alternate path forwards the same peer certificate, time, pin argument, hostname, flags, intermediates, stapled OCSP, SCT, delegated credential, OriginAttributes, output parameters, and immutable upstream OCSP, CT, short-lifetime, and CRLite settings to the unchanged upstream VerifySSLServerCert implementation.",
+  "standard_error_rule": "Any alternate failure retains the original standard TLS result and an unusable channel through the M4-03 scope seam.",
+  "negative_cases": [
+    "empty anchor set",
+    "same-name fake root",
+    "hostname mismatch",
+    "expired certificate",
+    "invalid signature",
+    "wrong EKU",
+    "non-CA intermediate",
+    "path length violation",
+    "missing intermediate"
+  ],
+  "follow_up_boundary": "GB100-M4-05 may optimize verifier caching/lifetime without changing this exact-anchor or upstream-validation contract. Production Russian root bytes remain outside this patch and test fixture tree."
+}

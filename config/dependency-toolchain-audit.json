@@ -1,0 +1,483 @@
+{
+  "schema_version": 1,
+  "audited_at": "2026-09-19",
+  "baseline": {
+    "firefox_version": "156.0",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+    "source": "config/firefox-baseline.json"
+  },
+  "scope": {
+    "target": "Ubuntu LTS amd64",
+    "release_locale": "ru",
+    "categories": [
+      "runtime",
+      "compiler",
+      "rust",
+      "node",
+      "python",
+      "build",
+      "test",
+      "packaging",
+      "browser_driver",
+      "release"
+    ],
+    "boundary": "This is the direct Good Bear/toolchain surface. Firefox vendored Rust crates, npm packages, Python virtualenv packages, system libraries, and all other transitive upstream inventories remain owned by the immutable Firefox 156.0 source baseline and are not represented as Good Bear direct pins."
+  },
+  "components": [
+    {
+      "id": "firefox-gecko-runtime",
+      "categories": [
+        "runtime"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "pin",
+        "version": "156.0",
+        "owner": "config/firefox-baseline.json",
+        "source_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+      },
+      "latest_stable_candidate": {
+        "version": "156.0",
+        "observed_at": "2026-09-19",
+        "source_url": "https://product-details.mozilla.org/1.0/firefox_versions.json"
+      },
+      "license_and_provenance": {
+        "license": "MPL-2.0 and upstream third-party notices",
+        "impact": "The pinned Firefox source and its notices remain the release-source provenance boundary; no replacement source or mirror is permitted."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "config/firefox-baseline.json records the Mozilla archive URL, detached signature, signed checksum summaries, hashes, tag, and immutable revision.",
+        "tools/verify_firefox_baseline.py verifies those artifacts and fails when Mozilla publishes a newer current release."
+      ],
+      "disposition": {
+        "status": "retain_current_pin",
+        "rationale": "Mozilla current-release, tag and signed-summary verification passed for 156.0 on 2026-09-19. Future updates require a fresh verified baseline selection.",
+        "next_task": "GB100-M1-05",
+        "m1_05_action": "Run the existing online baseline verifier; if it reports a new release or security dot release, stop the release path and return to GB100-M1-01."
+      }
+    },
+    {
+      "id": "rust-and-cargo",
+      "categories": [
+        "compiler",
+        "rust",
+        "build",
+        "test"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "pin",
+        "version": "1.98.0",
+        "owner": "config/toolchain-lock.json",
+        "source_url": "https://static.rust-lang.org/dist/2026-08-20/rust-1.98.0-x86_64-unknown-linux-gnu.tar.xz",
+        "revision": "Good Bear M1-05 immutable toolchain lock"
+      },
+      "latest_stable_candidate": {
+        "version": "1.98.0",
+        "observed_at": "2026-08-22",
+        "source_url": "https://static.rust-lang.org/dist/channel-rust-stable.toml"
+      },
+      "license_and_provenance": {
+        "license": "Apache-2.0 OR MIT",
+        "impact": "Rust and Cargo are build/test tools, not bundled Good Bear runtime inputs; record their signed official distribution provenance in the future environment pin."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox's rust.configure rejects rustc and cargo below 1.90.0.",
+        "config/toolchain-lock.json pins the dated official Rust manifest and x86_64 archive SHA-256; tools/install_toolchain.py verifies both before atomic promotion.",
+        "The focused Rust compile-and-run gate passes with Rust/Cargo 1.98.0; the clean Firefox configure/build gate remains M1-06."
+      ],
+      "disposition": {
+        "status": "adopted_and_verified",
+        "rationale": "1.98.0 is newer than the Firefox 156.0 floor and passed the focused deterministic toolchain gate.",
+        "next_task": "GB100-M1-05",
+        "m1_05_action": "Pinned and installed only from the dated official Rust archive; no Firefox dependency lock was modified.",
+        "toolchain_lock": "config/toolchain-lock.json",
+        "verification": "tools/install_toolchain.py verified the dated manifest and archive SHA-256, then compiled and ran a focused Rust binary."
+      }
+    },
+    {
+      "id": "clang-llvm-lld",
+      "categories": [
+        "compiler",
+        "build",
+        "test"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "floor",
+        "version": "19.0",
+        "owner": "Firefox 156.0: build/moz.configure/toolchain.configure",
+        "source_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/build/moz.configure/toolchain.configure",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+      },
+      "latest_stable_candidate": {
+        "version": "22.1.8",
+        "observed_at": "2026-08-22",
+        "source_url": "https://github.com/llvm/llvm-project/releases/tag/llvmorg-22.1.8"
+      },
+      "license_and_provenance": {
+        "license": "Apache-2.0 WITH LLVM-exception",
+        "impact": "Compiler/linker binaries are build-only; retain their official release archive/checksum provenance in the Ubuntu environment record."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox 156.0's compiler owner explicitly requires clang/LLVM 19.0 or newer and validates compiler target/ABI during configure.",
+        "config/toolchain-lock.json pins LLVM's official release API metadata, detached signature bytes, and the generic Linux X64 archive SHA-256 for supply-chain review.",
+        "The release API provides no official Ubuntu LTS amd64 support assertion for its generic Linux X64 archive; no compiler was installed or claimed compatible before M1-06 selects the target image."
+      ],
+      "disposition": {
+        "status": "do_not_adopt_latest_candidate",
+        "rationale": "LLVM 22.1.8 is newer than the Firefox floor, but the official archive is generic Linux X64 and has no Ubuntu LTS amd64 support assertion before M1-06 selects the target image.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "Do not install or claim compatibility for the generic Linux archive; preserve its official metadata/signature/archive pins as evidence and return this decision to M1-06.",
+        "exception_reason": "no-official-supported-ubuntu-amd64-artifact-before-M1-06-target-selection",
+        "exception_evidence": "https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-22.1.8 records the asset as LLVM-22.1.8-Linux-X64.tar.xz rather than an Ubuntu LTS artifact; the exact response SHA-256 is pinned in config/toolchain-lock.json.",
+        "exception_owner": "GB100-M1-06 Ubuntu environment owner",
+        "review_on_or_before": "2026-09-22",
+        "follow_up": "GB100-M1-06 must choose the Ubuntu LTS image, acquire an official Ubuntu-provenanced LLVM 22.1.8 package/archive or record a new tested exception, and run configure/build tests before any release claim."
+      }
+    },
+    {
+      "id": "python-mach",
+      "categories": [
+        "python",
+        "build",
+        "test",
+        "release"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "floor_and_tested_ceiling",
+        "version": ">=3.10, Firefox mach supports >=3.9 and only considers <=3.12 known-working",
+        "owner": "Good Bear tools require Python 3.10 syntax; Firefox 156.0 mach",
+        "source_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/mach",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+      },
+      "latest_stable_candidate": {
+        "version": "3.14.7",
+        "observed_at": "2026-08-22",
+        "source_url": "https://www.python.org/downloads/release/python-3147/"
+      },
+      "compatible_stable_candidate": {
+        "version": "3.12.14",
+        "observed_at": "2026-08-22",
+        "source_url": "https://www.python.org/downloads/release/python-31214/"
+      },
+      "license_and_provenance": {
+        "license": "PSF-2.0",
+        "impact": "Python is a build/test/release host tool only; its Ubuntu package origin and exact version must be captured with the environment, not bundled into Good Bear."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox 156.0 mach defines MIN_PYTHON_VERSION=(3,9) and MAX_PYTHON_VERSION_TO_CONSIDER=(3,12), warning that higher versions are not known-working.",
+        "Good Bear's materialization and identity tools use Python 3.10 union-type syntax, making 3.10 the local tool floor."
+      ],
+      "disposition": {
+        "status": "do_not_adopt_latest_candidate",
+        "rationale": "Python 3.14.7 is newer but outside the exact Firefox 156.0 known-working range; 3.12.14 is the current compatible stable candidate.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "Recorded exception without changing Python; M1-06 must pin Python 3.12.14 (or an equally supported 3.12 security update) and prove mach/bootstrap compatibility.",
+        "exception_owner": "GB100-M1-06 Ubuntu environment owner",
+        "review_on_or_before": "2026-09-22",
+        "follow_up": "GB100-M1-06 must select an Ubuntu-provenanced Python 3.12 package and run mach/bootstrap on the clean target image."
+      }
+    },
+    {
+      "id": "node-and-npm",
+      "categories": [
+        "node",
+        "build",
+        "test"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "pin",
+        "version": "Node 24.19.0 with npm 11.17.0",
+        "owner": "config/toolchain-lock.json",
+        "source_url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz",
+        "revision": "Good Bear M1-05 immutable toolchain lock"
+      },
+      "latest_stable_candidate": {
+        "version": "Node 24.19.0 with npm 11.17.0 (active LTS)",
+        "observed_at": "2026-08-22",
+        "source_url": "https://nodejs.org/dist/index.json"
+      },
+      "license_and_provenance": {
+        "license": "MIT",
+        "impact": "Node/npm are build/test tools only; npm dependency trees remain upstream-owned and locked in the Firefox source, not Good Bear direct pins."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox node.configure and nodeutil.py validate both executable floors and use npm ci for existing locked package trees.",
+        "config/toolchain-lock.json pins Node's official SHASUMS256 manifest and Linux x64 archive SHA-256.",
+        "The focused Node builtin-module and offline bundled-npm checks pass; no upstream npm lockfile was regenerated."
+      ],
+      "disposition": {
+        "status": "adopted_and_verified",
+        "rationale": "The active LTS candidate is newer than the Firefox floor and passed focused Node/npm checks without lockfile mutation.",
+        "next_task": "GB100-M1-05",
+        "m1_05_action": "Pinned the official Linux x64 archive and bundled npm only; Firefox npm dependencies remain upstream-owned.",
+        "toolchain_lock": "config/toolchain-lock.json",
+        "verification": "tools/install_toolchain.py checked archive/provenance SHA-256, Node builtin-module execution, and npm --offline --version."
+      }
+    },
+    {
+      "id": "cbindgen",
+      "categories": [
+        "rust",
+        "build"
+      ],
+      "ownership": "good_bear_direct",
+      "current_pin_or_floor": {
+        "state": "pin",
+        "version": "0.29.4",
+        "owner": "config/toolchain-lock.json",
+        "source_url": "https://crates.io/api/v1/crates/cbindgen/0.29.4/download",
+        "revision": "Good Bear M1-05 immutable toolchain lock"
+      },
+      "latest_stable_candidate": {
+        "version": "0.29.4",
+        "observed_at": "2026-08-22",
+        "source_url": "https://crates.io/api/v1/crates/cbindgen"
+      },
+      "license_and_provenance": {
+        "license": "MPL-2.0",
+        "impact": "cbindgen is build-only; when installed from crates.io its exact crate checksum and Cargo provenance must be recorded."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox 156.0 rejects cbindgen below 0.29.4 and can bootstrap or use an explicitly supplied executable.",
+        "config/toolchain-lock.json pins the official crates.io API metadata and 0.29.4 crate checksum.",
+        "The cbindgen binary is built from the verified crate with pinned Cargo 1.98.0 and --locked, then checked by version before atomic promotion."
+      ],
+      "disposition": {
+        "status": "adopted_and_verified",
+        "rationale": "The current stable candidate equals the Firefox 156.0 floor and was built from its exact verified crate with the locked dependency graph.",
+        "next_task": "GB100-M1-05",
+        "m1_05_action": "Pinned cbindgen 0.29.4 by registry checksum and installed it without accepting a PATH binary.",
+        "toolchain_lock": "config/toolchain-lock.json",
+        "verification": "tools/install_toolchain.py verifies registry metadata/crate SHA-256, uses cargo build --locked, and checks cbindgen --version."
+      }
+    },
+    {
+      "id": "gnu-make",
+      "categories": [
+        "build",
+        "test"
+      ],
+      "ownership": "ubuntu_environment_pending",
+      "current_pin_or_floor": {
+        "state": "untracked_host_requirement",
+        "version": "GNU make required by Firefox configure/build; no Good Bear Ubuntu pin yet",
+        "owner": "Firefox 156.0: configure.py",
+        "source_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/configure.py",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+      },
+      "latest_stable_candidate": {
+        "version": "4.4.1",
+        "observed_at": "2026-08-22",
+        "source_url": "https://ftp.gnu.org/gnu/make/"
+      },
+      "license_and_provenance": {
+        "license": "GPL-3.0-or-later",
+        "impact": "GNU make is a host build tool and is not distributed in the Good Bear package; Ubuntu package provenance is required."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox configure.py explicitly relies on GNU make semantics for generated build state.",
+        "No Mozilla version floor is declared at the selected revision, so a build gate is required instead of inferring support from a global latest version."
+      ],
+      "disposition": {
+        "status": "defer_exact_pin_to_ubuntu_environment",
+        "rationale": "The release target's package version and archive provenance must be pinned together with the selected Ubuntu LTS image.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "Do not introduce a cross-platform standalone make download; carry this audited requirement into the M1-06 Ubuntu package manifest and validate it in a clean build."
+      }
+    },
+    {
+      "id": "git",
+      "categories": [
+        "build",
+        "release"
+      ],
+      "ownership": "ubuntu_environment_pending",
+      "current_pin_or_floor": {
+        "state": "untracked_host_requirement",
+        "version": "git apply required by tools/materialize_firefox_source.py; no Good Bear Ubuntu pin yet",
+        "owner": "tools/materialize_firefox_source.py",
+        "source_url": "https://git-scm.com/",
+        "revision": "Good Bear working tree"
+      },
+      "latest_stable_candidate": {
+        "version": "2.55.0",
+        "observed_at": "2026-08-22",
+        "source_url": "https://www.kernel.org/pub/software/scm/git/"
+      },
+      "license_and_provenance": {
+        "license": "GPL-2.0-only",
+        "impact": "Git is a host source-materialization/release tool only; it is not bundled in Good Bear."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "The materializer invokes git apply --check with whitespace errors enabled before applying ordered patches.",
+        "A clean Ubuntu environment must exercise the exact package version because patch diagnostics and parsing are release-relevant."
+      ],
+      "disposition": {
+        "status": "defer_exact_pin_to_ubuntu_environment",
+        "rationale": "The exact package candidate must come from the chosen Ubuntu LTS archive rather than an unrelated standalone Git download.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "Keep the materializer's git apply contract unchanged; M1-06 must pin the Ubuntu Git package/version and run the materialization test on the clean image."
+      }
+    },
+    {
+      "id": "gnupg",
+      "categories": [
+        "release"
+      ],
+      "ownership": "ubuntu_environment_pending",
+      "current_pin_or_floor": {
+        "state": "untracked_host_requirement",
+        "version": "gpg with --status-fd signature verification required; no Good Bear Ubuntu pin yet",
+        "owner": "tools/verify_firefox_baseline.py",
+        "source_url": "https://gnupg.org/",
+        "revision": "Good Bear working tree"
+      },
+      "latest_stable_candidate": {
+        "version": "2.5.21",
+        "observed_at": "2026-08-22",
+        "source_url": "https://gnupg.org/ftp/gcrypt/gnupg/"
+      },
+      "license_and_provenance": {
+        "license": "GPL-3.0-or-later",
+        "impact": "GnuPG is a release-source verification tool only; it is not distributed in the Good Bear package."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "The baseline verifier imports Mozilla's pinned KEY into a temporary homedir and validates the expected signing and primary fingerprints through gpg status records.",
+        "The verifier checks both signed checksum manifests and the optional source-archive detached signature."
+      ],
+      "disposition": {
+        "status": "defer_exact_pin_to_ubuntu_environment",
+        "rationale": "The selected Ubuntu package must support the verifier's status protocol; latest standalone GnuPG is not automatically an Ubuntu LTS package candidate.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "Do not replace the verifier or its key/fingerprint checks; M1-06 must pin the Ubuntu GnuPG package/version and run online baseline verification on the clean image."
+      }
+    },
+    {
+      "id": "dpkg-dev",
+      "categories": [
+        "packaging",
+        "release"
+      ],
+      "ownership": "ubuntu_environment_pending",
+      "current_pin_or_floor": {
+        "state": "planned_requirement",
+        "version": "dpkg-buildpackage required for the Ubuntu .deb output; no Good Bear packaging implementation or pin exists yet",
+        "owner": "Good Bear 1.0 Ubuntu-only release boundary",
+        "source_url": "https://salsa.debian.org/dpkg-team/dpkg",
+        "revision": "Good Bear working tree"
+      },
+      "latest_stable_candidate": {
+        "version": "1.23.7",
+        "observed_at": "2026-08-22",
+        "source_url": "https://salsa.debian.org/dpkg-team/dpkg/-/tags/1.23.7"
+      },
+      "license_and_provenance": {
+        "license": "GPL-2.0-or-later",
+        "impact": "dpkg-dev is an Ubuntu packaging host dependency only and is not bundled inside the browser runtime."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Good Bear's approved distribution is Ubuntu amd64 .deb only; no package control files exist before the Ubuntu environment/design task.",
+        "The official dpkg project tag is an upstream currency candidate, but the release pin must match the selected Ubuntu LTS archive and be exercised by package install/upgrade tests."
+      ],
+      "disposition": {
+        "status": "defer_exact_pin_to_ubuntu_environment",
+        "rationale": "Choosing a standalone dpkg release before selecting the Ubuntu LTS archive would create an unsupported packaging environment.",
+        "next_task": "GB100-M1-06",
+        "m1_05_action": "No dpkg-dev update is possible yet; M1-06 must pin the Ubuntu archive package/version, and later packaging work must use that exact environment."
+      }
+    },
+    {
+      "id": "geckodriver",
+      "categories": [
+        "test",
+        "browser_driver"
+      ],
+      "ownership": "upstream_owned",
+      "current_pin_or_floor": {
+        "state": "upstream_source_version",
+        "version": "0.37.1",
+        "owner": "Firefox 156.0: testing/geckodriver/Cargo.toml",
+        "source_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/testing/geckodriver/Cargo.toml",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+      },
+      "latest_stable_candidate": {
+        "version": "0.37.1",
+        "observed_at": "2026-08-22",
+        "source_url": "https://github.com/mozilla/geckodriver/releases/tag/v0.37.1"
+      },
+      "license_and_provenance": {
+        "license": "MPL-2.0",
+        "impact": "Geckodriver is an upstream Firefox source component; its Rust dependencies are vendored/transitive upstream inventory, not independent Good Bear pins."
+      },
+      "compatibility_and_supply_chain_evidence": [
+        "Firefox 156.0 builds geckodriver from testing/geckodriver as part of its own source revision.",
+        "Mozilla's latest geckodriver release matches the version in the immutable Firefox 156.0 source baseline."
+      ],
+      "disposition": {
+        "status": "retain_upstream_owned_version",
+        "rationale": "A separate driver update would break the immutable Firefox 156.0 source/rebase boundary and is unnecessary because 0.37.1 is current.",
+        "next_task": "GB100-M1-05",
+        "m1_05_action": "Do not fetch or pin a standalone geckodriver; build/test the driver supplied by the verified Firefox 156.0 source baseline."
+      }
+    }
+  ],
+  "source_rebase_review": {
+    "firefox_version": "156.0",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+    "reviewed_at": "2026-09-19",
+    "owners": [
+      {
+        "path": "build/moz.configure/toolchain.configure",
+        "sha256": "54fc5ebb39a8969af24722c0685023100e7545a5daa0dd596009b414a264f1e5",
+        "unchanged_from_155": false
+      },
+      {
+        "path": "mach",
+        "sha256": "9606b3431527f313727cf0236ff8769ab7688099ee55c8697c44ad9aa3a4207d",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "configure.py",
+        "sha256": "db5dab35406e58f24cac87ff46b81dd52053a8c81634b4bafef840d7e5291215",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "testing/geckodriver/Cargo.toml",
+        "sha256": "5bf2d697edef5ffff6f385c0ac1b22af17b014db20fdf3fc254b53e678aeee26",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "build/moz.configure/rust.configure",
+        "sha256": "9dfb10b40e3e7eddf7afa9a1973f989378a2b236b66bcbae3fee0dd718434f14",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "build/moz.configure/bindgen.configure",
+        "sha256": "6075d8c5ac6d5f708f0f89bcdbf2816683361d72de7e63649864bc9fbe654580",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "build/moz.configure/node.configure",
+        "sha256": "0a313d9dbd9b4c437c7f5f90adb7cf6cc24d1045ac0aa832bbd54548586460de",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "python/mozbuild/mozbuild/nodeutil.py",
+        "sha256": "599479b36811de3c113015f69446f454e502b05e05794a15be5988b002f5f56a",
+        "unchanged_from_155": true
+      },
+      {
+        "path": "python/mozboot/mozboot/util.py",
+        "sha256": "e6494b42ea15500af01303a11ce39f0bd4fa01d219ce6f283b418363cbd2329d",
+        "unchanged_from_155": true
+      }
+    ],
+    "disposition": "Source floors retained; reviewed 156 toolchain.configure additions preserve WASI libc++ visibility and Windows ASan optional annotations. Existing tool install/test observations retain their original dates and do not prove a Firefox 156 build.",
+    "native_156_build_verified": false
+  }
+}

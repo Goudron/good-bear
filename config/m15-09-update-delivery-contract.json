@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-09",
+  "windows": {
+    "delivery": "Firefox Application Update complete MAR",
+    "status": "blocked_pending_approved_signing_authority_and_signed_artifact",
+    "failure_mode": "non-fatal fail closed"
+  },
+  "ubuntu": {
+    "delivery": "user-initiated terminal command",
+    "status": "blocked_pending_version_pinned_github_release_asset",
+    "required_release_manifest_fields": ["tag", "version", "deb_url", "deb_filename", "deb_sha256"],
+    "forbidden": ["latest URL", "floating branch URL", "sudo before SHA-256 verification", "dpkg ownership override"],
+    "command_shape": "curl -fL --output <deb> <version-pinned-url> && printf '<sha>  <deb>\\n' | sha256sum -c - && sudo apt install ./<deb>"
+  }
+}

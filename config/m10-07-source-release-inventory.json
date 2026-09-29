@@ -1,0 +1,238 @@
+{
+  "schema_version": 1,
+  "milestone": "GB100-M10-07",
+  "release_scope": {
+    "product_name": "Good Bear",
+    "platform": "ubuntu",
+    "architecture": "amd64",
+    "shipped_locales": [
+      "ru"
+    ],
+    "public_branding": "Good Bear",
+    "upstream_attribution_is_product_branding": false
+  },
+  "corresponding_source": {
+    "upstream": {
+      "product": "Mozilla Firefox",
+      "version": "156.0",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "source_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz",
+      "archive_sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9",
+      "license": "MPL-2.0 and licenses identified by the upstream third-party notices",
+      "metadata_owner": "config/firefox-baseline.json"
+    },
+    "good_bear_revision": {
+      "state": "required_before_public_release",
+      "value": null
+    },
+    "patch_set": {
+      "series": "patches/series",
+      "manifest_algorithm": "sha256 of sha256sum-format lines for series followed by its ordered patches",
+      "manifest_sha256": "742bba8194afb610ad781e529cf65d5959d2fd76c3f8c9156e9115f181be9642",
+      "entries": [
+        "0001-good-bear-product-identity.patch",
+        "0002-good-bear-about-dialog-attribution.patch",
+        "0003-good-bear-typed-trust-domain.patch",
+        "0004-good-bear-standard-first-classification.patch",
+        "0005-good-bear-container-scoped-russian-pki.patch",
+        "0006-good-bear-complete-x509-tls-validation.patch",
+        "0007-good-bear-trust-results-performance.patch",
+        "0008-good-bear-managed-russian-pki-container.patch",
+        "0009-good-bear-local-russian-repack.patch",
+        "0010-good-bear-russian-pki-scope-authority.patch",
+        "0011-good-bear-russian-pki-certificate-error-routing.patch",
+        "0012-good-bear-trust-history-and-transitions.patch",
+        "0013-good-bear-privacy-safe-diagnostics.patch",
+        "0014-good-bear-mascot-artwork-system.patch",
+        "0015-good-bear-strict-russian-release-locale.patch",
+        "0016-good-bear-public-product-rebranding.patch",
+        "0017-good-bear-approved-asset-injection.patch",
+        "0018-good-bear-about-author-links.patch",
+        "0019-good-bear-fstec-native-scope-regression.patch",
+        "0020-good-bear-first-run-animation-binding.patch",
+        "0021-good-bear-native-russian-pki-error-routing.patch",
+        "0022-good-bear-trustpanel-mascot-artwork.patch",
+        "0023-good-bear-live-fstec-auto-route-window.patch",
+        "0024-good-bear-trust-panel-russian-pki-ru-badge.patch",
+        "0025-good-bear-repeat-assigned-origin-routing.patch",
+        "0026-good-bear-https-only-default.patch",
+        "0027-good-bear-russian-pki-panel-copy.patch",
+        "0028-good-bear-navigation-network-evidence.patch",
+        "0029-good-bear-russian-pki-credential-isolation.patch",
+        "0030-good-bear-russian-pki-proxy-auth-isolation.patch",
+        "0031-good-bear-private-browsing-fail-closed.patch",
+        "0032-good-bear-0rtt-packet-evidence.patch",
+        "0033-good-bear-quality-format.patch",
+        "0034-good-bear-certificate-override-containment.patch",
+        "0035-good-bear-mar-public-cert-binding.patch",
+        "0036-good-bear-spellcheck-default.patch",
+        "0037-good-bear-hosted-service-boundary.patch",
+        "0038-good-bear-remove-fxa-sync-ui.patch",
+        "0039-good-bear-assigned-origin-newline-delimiter.patch",
+        "0040-good-bear-trust-panel-hosted-service-guard.patch",
+        "0041-good-bear-about-version-and-ubuntu-update-notice.patch",
+        "0042-good-bear-russian-pki-settings.patch",
+        "0043-good-bear-localized-russian-pki-prompts.patch",
+        "0044-good-bear-russian-pki-scope-override-containment.patch",
+        "0045-good-bear-firefox-user-agent-compatibility.patch",
+        "0046-good-bear-russian-pki-live-scope-leases.patch",
+        "0047-good-bear-russian-pki-security-details.patch",
+        "0048-good-bear-maintained-javascript-quality.patch",
+        "0049-good-bear-blocking-russian-pki-interstitial.patch",
+        "0050-good-bear-typed-tls-session-cache.patch",
+        "0051-good-bear-safe-browsing-v5-attributes.patch",
+        "0052-good-bear-safe-browsing-supplier-notice.patch",
+        "0053-good-bear-google-verdict-freshness.patch"
+      ]
+    },
+    "overlay": {
+      "root": "overlay",
+      "excluded_control_files": [
+        "overlay/.gitkeep"
+      ],
+      "manifest_algorithm": "sha256 of sorted sha256sum-format lines",
+      "manifest_sha256": "0430fdd8b754f850487f8bfced43ea5fad2792c6335511cce8f3bd82afb8d0e5"
+    },
+    "russian_localization": {
+      "repository": "https://github.com/mozilla-l10n/firefox-l10n.git",
+      "base_revision": "25feb12abf0f49b24210a9a6b76dcd4bca9d05bb",
+      "license": "MPL-2.0",
+      "modifications": [
+        {
+          "path": "ru/browser/browser/browser.ftl",
+          "status": "modified",
+          "sha256": "99d1423fb67dcfddf4d2ea12ca989c928ae9c8e31f94fef7bdd11986f5a43a12"
+        },
+        {
+          "path": "ru/browser/browser/preferences/goodBearRussianPKI.ftl",
+          "status": "added",
+          "sha256": "38a9629d75d3b8965b54829c7e68e4f2dcc60d6c47ffb87ee39a7d559ec03af0"
+        },
+        {
+          "path": "ru/browser/browser/aboutDialog.ftl",
+          "status": "modified",
+          "sha256": "30f06eb117f99b118eed1dfc0afd505d71d934de58ed2e042e3bd47a8e1b8c14"
+        },
+        {
+          "path": "ru/browser/browser/goodbearSafeBrowsing.ftl",
+          "status": "added",
+          "sha256": "a5abccc9c515f9bbc34ea163d1185802d79b79ead26d1b90a5ad387b70dd1cfb"
+        }
+      ]
+    },
+    "test_certificate_fixtures": [
+      {
+        "path": "source/worktrees/firefox-156.0/security/manager/ssl/tests/gtest/goodbear-russian-pki/fstec-rsa2024-leaf.pem",
+        "source_endpoint": "https://fstec.ru:443",
+        "observation_basis": "Public TLS leaf supplied for the reviewed FSTEC missing-intermediate regression",
+        "pem_sha256": "6cdeff63237fb414e20cddc713ab6f91732031bdaa30eeed1ed5e4f2e8ff8f73",
+        "certificate_der_sha256": "76e0474b9a064c210246a429401bc1b16d05e011df449861f14cf5513c062891",
+        "role": "public_leaf_test_fixture",
+        "trust_input": false,
+        "binary_packaging": false,
+        "redistribution_status": "approved by the project owner for source-only interoperability testing; issuer and subject attribution is preserved"
+      }
+    ],
+    "source_offer": {
+      "assembly_owner": "GB100-M12-05",
+      "location": "https://github.com/Goudron/good-bear",
+      "required_inputs": [
+        "config/firefox-baseline.json",
+        "config/firefox-l10n-ru-lock.json",
+        "config/m10-07-source-release-inventory.json",
+        "patches/series",
+        "patches/*.patch",
+        "overlay/**",
+        "tools/**",
+        "build/**",
+        "artwork/final/m10-03/**",
+        "overlay/l10n/firefox-l10n/ru/browser/browser/aboutDialog.ftl",
+        "overlay/l10n/firefox-l10n/ru/browser/browser/browser.ftl",
+        "overlay/l10n/firefox-l10n/ru/browser/browser/goodbearSafeBrowsing.ftl",
+        "overlay/l10n/firefox-l10n/ru/browser/browser/preferences/goodBearRussianPKI.ftl"
+      ],
+      "terms_must_not_restrict_mpl_source_code_form": true
+    }
+  },
+  "components": [
+    {
+      "id": "mozilla-firefox-upstream-and-vendored-materials",
+      "kind": "upstream_source_and_runtime",
+      "owner": "Mozilla and the individual upstream/third-party rightsholders identified by the source notices",
+      "license": "MPL-2.0 and the individual licenses preserved in upstream notices",
+      "source": "config/firefox-baseline.json",
+      "modification_status": "modified only by the ordered Good Bear patch set and additive overlay",
+      "redistribution_status": "allowed only with all applicable upstream license and notice obligations preserved"
+    },
+    {
+      "id": "good-bear-software-and-build-inputs",
+      "kind": "original_and_downstream_source",
+      "owner": "Copyright © 2026 Valery Ledovskoy <valery@ledovskoy.com> for original Good Bear contributions",
+      "license": "MPL-2.0 unless a file carries another compatible notice",
+      "source": "ordered patches, overlay source, config, build, tools and tests in the Good Bear source tree",
+      "modification_status": "new Good Bear files and identified modifications to MPL-covered upstream files",
+      "redistribution_status": "redistributable subject to MPL-2.0 and preserved file-specific notices"
+    },
+    {
+      "id": "mozilla-russian-localization-with-good-bear-messages",
+      "kind": "third_party_localization_source",
+      "owner": "Mozilla localization contributors; Good Bear owns only its added messages where legally applicable",
+      "license": "MPL-2.0",
+      "source": "pinned mozilla-l10n/firefox-l10n revision plus the four hash-locked Good Bear overlay files",
+      "modification_status": "two upstream Russian Fluent files replaced only through the reviewed overlay; two Good Bear Russian Fluent files added through the same overlay",
+      "redistribution_status": "redistributable under MPL-2.0 with corresponding modified source"
+    },
+    {
+      "id": "good-bear-original-artwork",
+      "kind": "original_product_assets",
+      "owner": "Copyright © 2026 Valery Ledovskoy <valery@ledovskoy.com>",
+      "license": "All rights reserved unless otherwise stated.",
+      "source": "config/m10-03-artwork-system.json and artwork/final/m10-03",
+      "modification_status": "original Good Bear artwork generated without input images; release derivatives are exact approved transforms",
+      "redistribution_status": "approved for Good Bear product and corresponding source packages by the recorded rightsholder"
+    },
+    {
+      "id": "russian-pki-certificates",
+      "kind": "third_party_certificate_material",
+      "owner": "certificate issuers identified in config/m3-01-certificate-provenance.json",
+      "license": "redistribution approved by Good Bear project-owner legal decision; certificate issuer rights remain attributed",
+      "source": "official sources and exact cryptographic identities in config/m3-01-certificate-provenance.json",
+      "modification_status": "certificate bytes must remain unmodified",
+      "redistribution_status": "approved for Good Bear binary distributions; exact certificate bytes remain uncommitted and are obtained through the verified official-source import"
+    },
+    {
+      "id": "fstec-public-leaf-test-fixture",
+      "kind": "third_party_source_only_test_certificate",
+      "owner": "Federal Service for Technical and Export Control certificate subject; Russian Trusted Sub CA issuer",
+      "license": "No software license asserted; redistribution disposition is the recorded Good Bear project-owner decision",
+      "source": "public TLS endpoint https://fstec.ru:443 and exact PEM/DER hashes in the test fixture inventory",
+      "modification_status": "unmodified public leaf certificate encoded as PEM for the missing-intermediate regression",
+      "redistribution_status": "approved for source-only test redistribution; excluded from runtime trust inputs and binary packaging"
+    },
+    {
+      "id": "ubuntu-build-toolchain",
+      "kind": "build_only_third_party_components",
+      "owner": "individual toolchain and Ubuntu package rightsholders",
+      "license": "component-specific licenses recorded by config/dependency-toolchain-audit.json",
+      "source": "config/toolchain-lock.json and config/ubuntu-environment-lock.json",
+      "modification_status": "unmodified pinned build-only inputs",
+      "redistribution_status": "not bundled as Good Bear runtime components; later packaging must inventory any copied runtime libraries"
+    }
+  ],
+  "legal_surfaces": {
+    "bundled_notice_entrypoint": "about:license",
+    "bundled_notice_route_owner": "source/worktrees/firefox-156.0/docshell/base/nsAboutRedirector.cpp",
+    "bundled_notice_owner": "source/worktrees/firefox-156.0/toolkit/content/license.html",
+    "bundled_notice_packaging_owner": "source/worktrees/firefox-156.0/toolkit/content/jar.mn",
+    "about_attribution": "Браузер создан на основе открытого исходного кода Mozilla Firefox.",
+    "mozilla_non_affiliation": "Good Bear — независимый браузер, не связанный с Mozilla.",
+    "preserve_upstream_and_third_party_notices": true
+  },
+  "public_release_gate": {
+    "allowed": false,
+    "required_blockers": [
+      "good_bear_revision_unavailable"
+    ],
+    "policy": "Any unresolved source, license, attribution, artwork or certificate right blocks public artifacts. Local verification candidates remain permitted."
+  }
+}

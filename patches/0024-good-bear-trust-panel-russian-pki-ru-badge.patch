@@ -1,0 +1,75 @@
+# M11: show the compact Russian-PKI marker beside the visible trust-panel shield.
+
+diff --git a/browser/base/content/navigator-toolbox.inc.xhtml b/browser/base/content/navigator-toolbox.inc.xhtml
+--- a/browser/base/content/navigator-toolbox.inc.xhtml
++++ b/browser/base/content/navigator-toolbox.inc.xhtml
+@@ -204,3 +204,7 @@
+             <image id="trust-icon"/>
+             <label id="trust-label" crop="center" flex="1" data-l10n-id="urlbar-trust-icon-notsecure-label" />
++            <label id="trust-goodbear-russian-pki-label" crop="center" hidden="true"/>
++            <description id="trust-goodbear-russian-pki-description"
++                         data-l10n-id="identity-goodbear-russian-pki-connection"
++                         hidden="true"/>
+             <span id="trust-icon-tracker-count-longform-wrapper">
+diff --git a/browser/base/content/browser-siteIdentity.js b/browser/base/content/browser-siteIdentity.js
+--- a/browser/base/content/browser-siteIdentity.js
++++ b/browser/base/content/browser-siteIdentity.js
+@@ -351,6 +351,12 @@ var gIdentityHandler = {
+       "identity-icon-label"
+     ));
+   },
++  get _goodBearRussianPKITrustLabel() {
++    delete this._goodBearRussianPKITrustLabel;
++    return (this._goodBearRussianPKITrustLabel = document.getElementById(
++      "trust-goodbear-russian-pki-label"
++    ));
++  },
+   get _overrideService() {
+     delete this._overrideService;
+     return (this._overrideService = Cc[
+@@ -989,10 +995,26 @@ var gIdentityHandler = {
+       );
+       this._identityIconLabel.collapsed = false;
++      document.l10n.setAttributes(
++        this._goodBearRussianPKITrustLabel,
++        "identity-goodbear-russian-pki-label"
++      );
++      this._goodBearRussianPKITrustLabel.hidden = false;
++      // Keep Firefox's own button name and tracker count. A separate Russian
++      // description exposes the native trust domain to assistive technology.
++      this._goodBearRussianPKITrustLabel.parentElement.setAttribute(
++        "aria-describedby",
++        "trust-goodbear-russian-pki-description"
++      );
+     } else {
+       this._identityIconLabel.removeAttribute("data-l10n-id");
+       this._identityIconLabel.setAttribute("tooltiptext", tooltip);
+       this._identityIconLabel.setAttribute("value", icon_label);
+       this._identityIconLabel.collapsed = !icon_label;
++      this._goodBearRussianPKITrustLabel.hidden = true;
++      this._goodBearRussianPKITrustLabel.removeAttribute("data-l10n-id");
++      this._goodBearRussianPKITrustLabel.parentElement.removeAttribute(
++        "aria-describedby"
++      );
+     }
+   },
+ 
+diff --git a/browser/themes/shared/identity-block/identity-block.css b/browser/themes/shared/identity-block/identity-block.css
+--- a/browser/themes/shared/identity-block/identity-block.css
++++ b/browser/themes/shared/identity-block/identity-block.css
+@@ -94,6 +94,15 @@
+   margin: 0;
+ }
+ 
++/* Keep the Good Bear Russian-PKI state visible beside Firefox's newer trust
++ * panel shield.  The legacy identity-icon label is hidden for secure pages
++ * while this feature is enabled. */
++#trust-goodbear-russian-pki-label {
++  margin: 0 0 0 4px;
++  font-size: 0.9em;
++  font-weight: 600;
++}
++
+ #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button,
+ #urlbar-label-box {
+   background-color: var(--urlbar-box-background-color);

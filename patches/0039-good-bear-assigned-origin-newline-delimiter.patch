@@ -1,0 +1,42 @@
+# Good Bear receives assigned origin keys from BrowserGlue as newline-separated
+# canonical host:port values.  Use a character newline, not the two-character
+# sequence `\\n`, so every published origin keeps its ordinary-tab block.
+diff --git a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+--- a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+@@ -45,7 +45,7 @@ void GoodBearRussianPKIScopeAuthority::SetAssignedOriginKeys(
+   }
+ 
+   nsTArray<nsCString> assignedOriginKeys;
+-  ParseString(aOriginKeys, '\\n', assignedOriginKeys);
++  ParseString(aOriginKeys, '\n', assignedOriginKeys);
+   assignedOriginKeys.RemoveElementsBy(
+       [](const nsCString& aOriginKey) { return aOriginKey.IsEmpty(); });
+ 
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+@@ -74,6 +74,23 @@ TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+   ASSERT_FALSE(authority.Allows(AttributesFor(18)));
+ }
+ 
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       EveryNewlineSeparatedOriginIsBlockedOutsideTheManagedContainer) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  authority.SetAssignedOriginKeys("fstec.ru:443\nsberbank.ru:443"_ns);
++  ASSERT_TRUE(authority.ShouldBlockOrdinaryRequest("fstec.ru:443"_ns,
++                                                   AttributesFor(0)));
++  ASSERT_TRUE(authority.ShouldBlockOrdinaryRequest("sberbank.ru:443"_ns,
++                                                   AttributesFor(0)));
++  ASSERT_FALSE(authority.ShouldBlockOrdinaryRequest("example.test:443"_ns,
++                                                    AttributesFor(0)));
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_FALSE(authority.ShouldBlockOrdinaryRequest("fstec.ru:443"_ns,
++                                                    AttributesFor(17)));
++}
++
+ TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+        PrivateBrowsingNeverReceivesAlternateRussianPKITrust) {
+   auto& authority = GetGoodBearRussianPKIScopeAuthority();

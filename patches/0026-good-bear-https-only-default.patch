@@ -1,0 +1,82 @@
+# M11: make Good Bear HTTPS-only by default so Russian PKI routing begins
+# with TLS even for HTTP links served without an HTTPS redirect.
+
+diff --git a/browser/components/DesktopActorRegistry.sys.mjs b/browser/components/DesktopActorRegistry.sys.mjs
+--- a/browser/components/DesktopActorRegistry.sys.mjs
++++ b/browser/components/DesktopActorRegistry.sys.mjs
+@@ -341,8 +341,15 @@ let JSWINDOWACTORS = {
+       events: {
+         DOMContentLoaded: {},
+       },
+     },
+-    matches: ["about:certerror?*", "about:neterror?*"],
++    // HTTPS-Only first attempts TLS and reports a failed connection via its
++    // own privileged error page.  Preserve the same native-PSM-only routing
++    // boundary there as on the ordinary certificate error pages.
++    matches: [
++      "about:certerror?*",
++      "about:neterror?*",
++      "about:httpsonlyerror?*",
++    ],
+     allFrames: true,
+     safeForUntrustedWebProcess: true,
+   },
+
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -1606,7 +1606,13 @@ pref("security.certerrors.permanentOverride", true);
+ pref("security.certerrors.mitm.priming.enabled", true);
+ pref("security.certerrors.mitm.priming.endpoint", "https://mitmdetection.services.mozilla.com/");
+ pref("security.certerrors.mitm.auto_enable_enterprise_roots", true);
+ 
++// Good Bear is security-first: never send a top-level HTTP request when its
++// HTTPS equivalent is available. The browser's built-in HTTPS-Only exception
++// UI remains the explicit recovery path for genuinely HTTP-only sites.
++pref("dom.security.https_only_mode", true);
++pref("dom.security.https_only_mode_pbm", true);
++
+ // Whether the bookmark panel should be shown when bookmarking a page.
+ pref("browser.bookmarks.editDialog.showForNewBookmarks", true);
+ 
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -13,5 +13,8 @@ const { GoodBearRussianPKINavigationPolicy } = ChromeUtils.importESModule(
+   "resource:///modules/BrowserGlue.sys.mjs"
+ );
++const { DesktopActorRegistry } = ChromeUtils.importESModule(
++  "resource:///modules/DesktopActorRegistry.sys.mjs"
++);
+ const { getRussianPKIRoutingCandidate } = ChromeUtils.importESModule(
+   "resource:///actors/GoodBearRussianPKICertificateErrorChild.sys.mjs"
+ );
+
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -21,7 +21,24 @@ const TEST_STORE_FILE_PATH = PathUtils.join(
+   PathUtils.tempDir,
+   `goodbear-first-visit-${Services.uuid.generateUUID()}.json`
+ );
+ 
++add_task(function test_good_bear_enables_https_only_by_default() {
++  ok(
++    Services.prefs.getBoolPref("dom.security.https_only_mode"),
++    "Good Bear routes top-level HTTP navigation through Firefox HTTPS-Only"
++  );
++  ok(
++    Services.prefs.getBoolPref("dom.security.https_only_mode_pbm"),
++    "the same strict transport policy applies in private browsing"
++  );
++  ok(
++    DesktopActorRegistry.GoodBearRussianPKICertificateError.matches.includes(
++      "about:httpsonlyerror?*"
++    ),
++    "a native Russian PKI candidate is routed after an HTTPS-Only TLS failure"
++  );
++});
++
+ /** Provides the container-manager publication boundary without PSM state. */
+ class FakeScopeAuthority {
+   setGoodBearRussianPKIContainerId() {

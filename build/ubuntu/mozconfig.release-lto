@@ -1,0 +1,22 @@
+# Native Ubuntu amd64 configuration for the single GB100-M13-06 Good Bear
+# full-LTO candidate.  The caller selects this file only through the explicit
+# --release-lto host-build mode; it must never be an environment fallback.
+
+goodbear_root=$(cd "$topsrcdir/../../.." && pwd)
+goodbear_wasi_sdk="$goodbear_root/artifacts/toolchains/current/wasi-sdk"
+
+. $topsrcdir/build/goodbear/mozconfig
+ac_add_options --enable-release
+export MOZ_LTO=full
+ac_add_options --host=x86_64-unknown-linux-gnu
+ac_add_options --with-l10n-base="$goodbear_root/source/l10n/firefox-l10n"
+ac_add_options --with-wasi-sysroot="$goodbear_wasi_sdk/share/wasi-sysroot"
+mk_add_options MOZ_CO_LOCALES=ru
+mk_add_options MOZ_PARALLEL_BUILD=4
+
+# The internal base remains en-US; only `installers-ru` creates the one
+# distributable Russian locale artifact.
+export WASI_SYSROOT="$goodbear_wasi_sdk/share/wasi-sysroot"
+export WASM_CC="$goodbear_wasi_sdk/bin/clang"
+export WASM_CXX="$goodbear_wasi_sdk/bin/clang++"
+export CBINDGEN="$goodbear_root/artifacts/toolchains/current/cbindgen/bin/cbindgen"

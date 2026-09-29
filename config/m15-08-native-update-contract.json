@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-08",
+  "implementation": "Firefox Application Update",
+  "channel": "goodbear-release",
+  "version_pair": {
+    "product": "1.0",
+    "firefox_base": "156.0",
+    "ordering": "product version must increase; for equal product versions Firefox base must not decrease"
+  },
+  "transport": {
+    "metadata": "HTTPS only",
+    "release_mapping": "immutable GitHub Release tag and asset URLs only",
+    "complete_mar_required": true,
+    "partial_mar_allowed": false
+  },
+  "trust": {
+    "approved_signing_authority": "Good Bear Project maintainer-owned pinned MAR and metadata keys; public fingerprints are recorded in config/m15-08-signing-public-manifest.json",
+    "public_auto_update": "blocked pending source integration, signed end-to-end artifact verification, and release-channel review",
+    "required": ["signed update metadata", "signed complete MAR", "pinned product and channel", "key rotation record"],
+    "reject": ["unsigned", "wrong product", "wrong channel", "replay", "downgrade", "modified MAR", "Firefox-base mismatch", "platform mismatch", "unapproved or unpinned self-issued trust"]
+  },
+  "privacy": {
+    "allowed_update_fields": ["product version", "Firefox base version", "platform", "channel"],
+    "forbidden": ["browsing history", "profile data", "container state", "certificate history"]
+  },
+  "failure_mode": "non-fatal fail closed; retain the installed version and surface a local error"
+}

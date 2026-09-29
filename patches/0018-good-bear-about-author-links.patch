@@ -1,0 +1,40 @@
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -49,7 +49,9 @@
+         <!-- This HBOX is duplicated below with class="update" -->
+         <hbox align="baseline">
+           <label id="version"/>
+-          <label id="releasenotes" is="text-link" hidden="true" data-l10n-id="releaseNotes-link"/>
++          <label id="goodbearAuthorHabrLink" is="text-link"
++                 href="https://habr.com/ru/users/Goudron/articles/"
++                 data-l10n-id="goodbear-about-author-habr"/>
+         </hbox>
+ #endif
+ 
+@@ -100,7 +102,9 @@
+               <!-- This HBOX is duplicated above without class="update" -->
+               <hbox align="baseline">
+                 <label id="version" class="update"/>
+-                <label id="releasenotes" is="text-link" hidden="true" data-l10n-id="releaseNotes-link"/>
++                <label id="goodbearAuthorHabrLink" is="text-link"
++                       href="https://habr.com/ru/users/Goudron/articles/"
++                       data-l10n-id="goodbear-about-author-habr"/>
+               </hbox>
+               <description class="text-blurb">
+                 <label id="aboutDialogHelpLink" is="text-link" data-l10n-id="aboutdialog-help-user"/>
+@@ -134,10 +138,10 @@
+     <vbox id="bottomBox">
+-      <hbox pack="center">
+-        <label is="text-link" class="bottom-link" useoriginprincipal="true" href="about:license" data-l10n-id="bottomLinks-license"/>
+-        <label is="text-link" class="bottom-link" href="https://www.mozilla.org/about/legal/terms/firefox/" data-l10n-id="bottom-links-terms"/>
+-        <label is="text-link" class="bottom-link" href="https://www.mozilla.org/privacy/firefox/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-id="bottom-links-privacy"/>
++      <hbox id="goodbearAuthorLinks" pack="center">
++        <label id="goodbearAuthorSupportLink" is="text-link" class="bottom-link" href="https://boosty.to/goodbear" data-l10n-id="goodbear-about-author-support"/>
++        <label id="goodbearAuthorHireLink" is="text-link" class="bottom-link" href="https://hh.ru/resume/08072c72ff0c8e15930039ed1f73616e327262" data-l10n-id="goodbear-about-author-hire"/>
++        <label id="goodbearAuthorProjectsLink" is="text-link" class="bottom-link" href="https://github.com/Goudron" data-l10n-id="goodbear-about-author-projects"/>
+       </hbox>
+       <description id="trademark" data-l10n-id="trademarkInfo"></description>
+     </vbox>
+   </html:div>
+ 

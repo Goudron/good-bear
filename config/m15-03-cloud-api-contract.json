@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-03",
+  "mode": "offline-planning-only",
+  "mutation_authorized": false,
+  "credential_reference": {
+    "path": "/home/valery/.config/goodbear/cloudru-access.json",
+    "outside_repository": true,
+    "read_by_offline_validator": false
+  },
+  "api": {
+    "iam_token_endpoint": "https://iam.api.cloud.ru/api/v1/auth/token",
+    "compute_endpoint": "https://compute.api.cloud.ru"
+  },
+  "read_only_inventory": {
+    "official_api_reference": "https://cloud.ru/docs/virtual-machines/ug/topics/api-ref",
+    "compute_get_paths": [
+      "/api/v1/availability-zones",
+      "/api/v1/flavors",
+      "/api/v1/vms",
+      "/api/v1/subnets",
+      "/api/v1/security-groups",
+      "/api/v1/floating-ips",
+      "/api/v1/images"
+    ],
+    "query_parameter": "project_id",
+    "flavor_availability_zone_query_parameter": "availability_zone_id",
+    "resource_query_policies": {
+      "/api/v1/subnets": {
+        "availability_zone_query_parameter": "availability_zone_ids",
+        "project_id_required": true
+      },
+      "/api/v1/security-groups": {
+        "availability_zone_query_parameter": "availability_zone_id",
+        "project_id_required": true
+      },
+      "/api/v1/floating-ips": {
+        "availability_zone_query_parameter": "availability_zone_id",
+        "project_id_required": true
+      },
+      "/api/v1/images": {
+        "availability_zone_query_parameter": "availability_zone_id",
+        "project_id_required": true
+      }
+    },
+    "not_in_this_compute_openapi": [
+      "vpcs",
+      "ssh_keys"
+    ],
+    "required_flavor": {
+      "vcpu": 4,
+      "memory_gib": 16
+    }
+  },
+  "project_id": "ed75ec2f-6b92-4687-aabf-e0e41655b03b",
+  "identity": {
+    "tags": {
+      "managed_by": "good-bear",
+      "role": "windows-builder",
+      "task": "GB100-M15-03"
+    }
+  },
+  "image_inputs": {
+    "windows_server_2025_evaluation": {
+      "official_source": "https://www.microsoft.com/en-us/evalcenter/download-windows-server-2025",
+      "path": null,
+      "sha256": null,
+      "architecture": "x64",
+      "edition": "Server with Desktop Experience",
+      "language": "ru-RU"
+    },
+    "virtio_win": {
+      "official_source": "https://github.com/virtio-win/virtio-win-pkg-scripts/blob/master/README.md",
+      "path": null,
+      "sha256": null,
+      "signature_path": null,
+      "signature_sha256": null,
+      "signature_verified": false,
+      "required_drivers": [
+        "vioscsi",
+        "viostor",
+        "NetKVM"
+      ]
+    },
+    "bootstrap": {
+      "cloudbase_init_path": null,
+      "cloudbase_init_sha256": null,
+      "cloudbase_init_authenticode_verified": false,
+      "cloudbase_init_publisher": null,
+      "openssh_or_winrm": "unresolved",
+      "windows_update_policy": "install-current-updates-before-sysprep"
+    }
+  },
+  "local_kvm": {
+    "disk_format": "raw",
+    "requires_kvm": true,
+    "required_commands": [
+      "qemu-img",
+      "qemu-system-x86_64",
+      "virt-install",
+      "virsh"
+    ]
+  },
+  "builder": {
+    "vcpu": 4,
+    "memory_gib": 16,
+    "ssd_workspace_gib": 250,
+    "flavor_id": null,
+    "availability_zone_id": null,
+    "subnet_id": null,
+    "security_group_id": null,
+    "public_ip_id": null,
+    "user_image_id": null
+  },
+  "remote_access": {
+    "allowed_source_cidrs": [],
+    "permitted_tcp_ports": [
+      22,
+      5985,
+      5986
+    ],
+    "recovery_console": "audited-exception-only"
+  },
+  "lifecycle": {
+    "inspect_before_mutation": true,
+    "stop_after_completed_or_unsuccessful_run": true,
+    "delete_after_verified_return": true,
+    "retention_exception_recorded": false
+  }
+}

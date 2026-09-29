@@ -1,0 +1,51 @@
+diff --git a/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs b/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
+--- a/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
++++ b/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
+@@ -3147,7 +3147,9 @@ const PREONBOARDING_MESSAGES = () => [
+           },
+           logo: {
+             imageURL:
+-              "chrome://activity-stream/content/data/content/assets/splash-logo.svg",
++              "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif",
++            reducedMotionImageURL:
++              "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving-static.png",
+             height: "500px",
+             width: "500px",
+             style: {
+diff --git a/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js b/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
+--- a/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
++++ b/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
+@@ -30,8 +30,12 @@
+ const DID_SEE_ABOUT_WELCOME_PREF = "trailhead.firstrun.didSeeAboutWelcome";
+ const PREONBOARDING_ENABLED_PREF = "browser.preonboarding.enabled";
+ const SPLASH_SHOWN_PREF = "browser.preonboarding.splashShown";
+ const ABOUT_WELCOME_ENABLED_PREF = "browser.aboutwelcome.enabled";
+ const WELCOME_URL_PREF = "startup.homepage_welcome_url";
++const GOOD_BEAR_SPLASH_ANIMATION_URL =
++  "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif";
++const GOOD_BEAR_SPLASH_STATIC_URL =
++  "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving-static.png";
+ 
+ add_setup(async function () {
+   do_get_profile();
+@@ -294,6 +298,20 @@ add_task(async function test_splash_passes_only_loading_screen() {
+     "the single screen is the loading screen (TOU acceptance excluded)"
+   );
+   Assert.equal(
++    content.screens[0].content.logo.imageURL,
++    GOOD_BEAR_SPLASH_ANIMATION_URL,
++    "the first-run splash shows the Good Bear animation"
++  );
++  Assert.equal(
++    content.screens[0].content.logo.reducedMotionImageURL,
++    GOOD_BEAR_SPLASH_STATIC_URL,
++    "reduced motion uses the approved static Good Bear frame"
++  );
++  Assert.ok(
++    !content.screens[0].content.logo.videoURL,
++    "the Good Bear animation is not replaced with upstream Firefox video"
++  );
++  Assert.equal(
+     content.disableEscClose,
+     false,
+     "the splash does not disable Esc-to-close"

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-06",
+  "source": {
+    "repository": "local:/home/valery/Projects/ruspell-lab",
+    "commit": "a8561a2d8ca6cb294e5bb663d618602d5b3ec7a8",
+    "version": "1.0.8",
+    "author": "Valery Ledovskoy",
+    "license": "MPL-2.0"
+  },
+  "dictionary": {
+    "locale": "ru",
+    "extension_id": "russian-spell-dictionary@valery-ledovskoy",
+    "primary": true,
+    "files": {
+      "manifest.json": "9b4b720663752708d5a4c1b3254502843d8755b10bda9eed2fb0c39a12455db0",
+      "LICENSE": "968c8d1e8cb68f2799a3c183b20aeeb22a04b815a2f52da457b80400294ec1bb",
+      "dictionaries/ru.aff": "e8dc652231a2c0c34b04d9c9acc63f801c20111865f05e57091c3dc81c786136",
+      "dictionaries/ru.dic": "b565654f9942fea6c5a7ac0f748e2fb0e33b49eff5f951720d5f7b0350d65b77"
+    },
+    "xpi_path": "overlay/distribution/extensions/russian-spell-dictionary@valery-ledovskoy.xpi",
+    "xpi_sha256": "27766a32cc1bc8b4bb0fa6eb24dfe5a9b6ef1c7f9e26ba8c4662d1f38eb661b1"
+  },
+  "update_procedure": "Select a reviewed immutable RusSpell release, update every source and file hash here, regenerate the XPI deterministically, and run the M15-06 packaging verifier before materialization."
+}

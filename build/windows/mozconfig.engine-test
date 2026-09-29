@@ -1,0 +1,11 @@
+# Native Cloud Windows intermediate engine; never a shipping language artifact.
+. "$topsrcdir/build/goodbear/mozconfig"
+ac_add_options --target=x86_64-pc-windows-msvc
+. "$topsrcdir/build/mozconfig.clang-cl"
+unset MOZ_LTO
+ac_add_options --disable-release
+ac_add_options --with-l10n-base="$GOODBEAR_L10N_BASE"
+mk_add_options MOZ_CO_LOCALES=ru
+mk_add_options MOZ_PARALLEL_BUILD=4
+# Compile the internal en-US engine input. Russian repacking and release LTO
+# remain separate gates; this configuration never promotes that base binary.

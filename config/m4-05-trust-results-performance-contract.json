@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M4-05",
+  "firefox_version": "156.0",
+  "patch": "patches/0007-good-bear-trust-results-performance.patch",
+  "cache_owner": "security/manager/ssl/GoodBearRussianPKIX509Verifier.h",
+  "scope_owner": "security/manager/ssl/GoodBearRussianPKIContainerScope.h",
+  "test_owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+  "ui_owner": "browser/base/content/browser-siteIdentity.js",
+  "ui_markup": [
+    "browser/components/controlcenter/content/identityPanel.inc.xhtml",
+    "browser/components/controlcenter/content/securityInformation.inc.xhtml"
+  ],
+  "russian_locale": "source/l10n/firefox-l10n/ru/browser/browser/browser.ftl",
+  "cache_rule": "A bounded private upstream CertVerifier may be reused only for an immutable M3-approved exact-DER-anchor snapshot. It caches no final TLS decision: every call rechecks the current peer chain, hostname, time, flags, OCSP/SCT/delegated-credential inputs, and OriginAttributes. Cache lifetime must end with its policy snapshot and never substitute for the M4-03 live scope recheck.",
+  "instrumentation_rule": "Counters aggregate only standard-result, secondary-check, and secondary-success path frequency. They contain no hostname, certificate, or OriginAttributes data and cannot authorize trust.",
+  "ui_rule": "The browser UI consumes only nsITransportSecurityInfo.goodBearTrustDomain. It exposes RU only for a secure RussianPKI result, and hides the indicator for Standard, Invalid, absent, and unrecognized results. The indicator is certificate-state information, not a container or safety claim.",
+  "follow_up_boundary": "M5 owns creation and lifecycle of the managed container. M6 owns routing into it. This task neither grants trust nor caches a routing result."
+}

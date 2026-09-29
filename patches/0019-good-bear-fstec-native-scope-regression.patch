@@ -1,0 +1,184 @@
+diff --git a/security/manager/ssl/nsINSSComponent.idl b/security/manager/ssl/nsINSSComponent.idl
+--- a/security/manager/ssl/nsINSSComponent.idl
++++ b/security/manager/ssl/nsINSSComponent.idl
+@@ -15,7 +15,7 @@
+ [ptr] native CERTCertificatePtr(CERTCertificate);
+ [ptr] native SharedCertVerifierPtr(mozilla::psm::SharedCertVerifier);
+ 
+-[scriptable, uuid(a0a8f52b-ea18-4abc-a3ca-eccf704ffe63)]
++[scriptable, uuid(b9abbdea-9a7e-4228-ba75-882481495af6)]
+ interface nsINSSComponent : nsISupports {
+   /**
+    * When we log out of a PKCS#11 token, any TLS connections that may have
+@@ -61,6 +61,27 @@
+   void addEnterpriseIntermediate(in Array<octet> intermediateBytes);
+ 
+   /**
++   * Runtime-only authority for the Good Bear Russian PKI container. The
++   * container manager validates its managed contextual identity before
++   * publishing its ID; the native TLS verifier reads the result directly and
++   * therefore cannot be widened by profile preferences or presentation data.
++   */
++  boolean setGoodBearRussianPKIContainerId(in unsigned long userContextId);
++  void clearGoodBearRussianPKIContainerId();
++  boolean isGoodBearRussianPKIContainer(in unsigned long userContextId,
++                                        in boolean privateBrowsing);
++
++  /**
++   * Publishes canonical host:port routing observations for the native
++   * fail-closed ordinary-request guard. This is routing state only; it never
++   * grants certificate trust.
++   */
++  void setGoodBearRussianPKIAssignedOrigins(in ACString originKeys);
++  boolean shouldBlockGoodBearRussianPKIOrdinaryRequest(
++      in ACString originKey, in unsigned long userContextId,
++      in boolean privateBrowsing);
++
++  /**
+    * For performance reasons, the builtin roots module is loaded on a background
+    * thread. When any code that depends on the builtin roots module runs, it
+    * must first wait for the module to be loaded.
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "CertVerifier.h"
++#include "GoodBearRussianPKIAnchors.h"
+ #include "GoodBearRussianPKIContainerScope.h"
+ #include "GoodBearRussianPKIX509Verifier.h"
+ #include "ScopedNSSTypes.h"
+@@ -406,6 +407,33 @@
+   ASSERT_NE(Success, VerifyStandardRussianPKI());
+ }
+ 
++// fstec.ru omits the reviewed RSA-2024 issuing certificate from its live TLS
++// handshake. The alternate verifier must use only the hash-pinned issuer
++// material generated from the controlled M3 build input; it must not fetch
++// the AIA URL or broaden ordinary/global trust.
++TEST_F(GoodBearRussianPKIX509Test,
++       ProductionRSA2024IssuerCompletesFSTECMissingIntermediateChain) {
++  nsTArray<uint8_t> leaf =
++      ReadCertificateFixture("fstec-rsa2024-leaf.pem"_ns);
++  ASSERT_FALSE(leaf.IsEmpty());
++
++  nsTArray<nsTArray<uint8_t>> roots;
++  GetGoodBearRussianPKIExactTrustAnchors(roots);
++  ASSERT_EQ(1U, roots.Length());
++  nsTArray<nsTArray<uint8_t>> intermediates;
++  GetGoodBearRussianPKIApprovedIntermediates(intermediates);
++  ASSERT_GE(intermediates.Length(), 1U);
++
++  nsTArray<nsTArray<uint8_t>> builtChain;
++  ASSERT_EQ(Success,
++            VerifyGoodBearRussianPKISSLServerCert(
++                *mVerifier, leaf, TimeFromEpochInSeconds(1787832000),
++                nullptr, "fstec.ru"_ns, builtChain, roots,
++                CertVerifier::FLAG_LOCAL_ONLY,
++                Some(std::move(intermediates))));
++  ASSERT_EQ(3U, builtChain.Length());
++}
++
+ TEST_F(GoodBearRussianPKIX509Test, EmptyAnchorSetFailsClosed) {
+   nsTArray<uint8_t> leaf = ReadCertificateFixture("russian-leaf.pem"_ns);
+   nsTArray<nsTArray<uint8_t>> noAnchors;
+diff --git a/security/manager/ssl/tests/gtest/moz.build b/security/manager/ssl/tests/gtest/moz.build
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -19,6 +19,7 @@
+ TEST_HARNESS_FILES.gtest += [
+     "goodbear-russian-pki/bad-signature-leaf.pem",
+     "goodbear-russian-pki/expired-leaf.pem",
++    "goodbear-russian-pki/fstec-rsa2024-leaf.pem",
+     "goodbear-russian-pki/not-ca-intermediate.pem",
+     "goodbear-russian-pki/not-ca-leaf.pem",
+     "goodbear-russian-pki/pathlen-intermediate.pem",
+@@ -40,4 +40,5 @@ LOCAL_INCLUDES += [
++    "!/security/manager/ssl",
+     "/netwerk/base",
+     "/security/certverifier",
+     "/security/manager/ssl",
+     "/third_party/rust/cose-c/include",
+diff --git a/security/manager/ssl/tests/gtest/goodbear-russian-pki/fstec-rsa2024-leaf.pem b/security/manager/ssl/tests/gtest/goodbear-russian-pki/fstec-rsa2024-leaf.pem
+new file mode 100644
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/fstec-rsa2024-leaf.pem
+@@ -0,0 +1,51 @@
++-----BEGIN CERTIFICATE-----
++MIIJCTCCBvGgAwIBAgIQEMH3FxJCQ7O8kaITePqXuTANBgkqhkiG9w0BAQsFADBv
++MQswCQYDVQQGEwJSVTE/MD0GA1UECgw2VGhlIE1pbmlzdHJ5IG9mIERpZ2l0YWwg
++RGV2ZWxvcG1lbnQgYW5kIENvbW11bmljYXRpb25zMR8wHQYDVQQDDBZSdXNzaWFu
++IFRydXN0ZWQgU3ViIENBMB4XDTI2MDMyMDEwMDgzNloXDTI3MDMyMDEwMDgzNlow
++ggFUMRMwEQYDVQQDDAoqLmZzdGVjLnJ1MXUwcwYDVQQKDGzQpNC10LTQtdGA0LDQ
++u9GM0L3QsNGPINGB0LvRg9C20LHQsCDQv9C+INGC0LXRhdC90LjRh9C10YHQutC+
++0LzRgyDQuCDRjdC60YHQv9C+0YDRgtC90L7QvNGDINC60L7QvdGC0YDQvtC70Y4x
++CzAJBgNVBAYTAlJVMRswGQYDVQQIDBI3NyDQsy7QnNC+0YHQutCy0LAxGTAXBgNV
++BAcMENCzLiDQnNC+0YHQutCy0LAxUDBOBgNVBAkMRzEwNTA2Niwg0LMuINCc0L7R
++gdC60LLQsCwg0YPQuy4g0KHRgtCw0YDQsNGPINCR0LDRgdC80LDQvdC90LDRjywg
++0LQuIDE3MRUwEwYFKoUDZAQSCjc3MDEzNTAwMTMxGDAWBgUqhQNkARINMTA0Nzcw
++NDA0NTc1MTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAL4rDXYHAtnZ
++Tlc7VDyqUSwIx+dsNhGKZskygDXHBGm9hUMwzP0GnK9/AU/Hm6HAwfs5hwhYor3z
++iZWAXGsA4915IhYwlmvQCbB0qt9Cq1ZyPrlDQFLEI224JrOfJaDYvdtXUz3HlU4G
++aW5Vwkkpm/2h4QGZWmMrRTAWuWaof1JoLxV1yrl76fJJXk8BBiMxH1UVuQfNzkz8
++Tr8nDrhqIysFCrY/ShpVQULBW5TTOMyIYo/YDIOPrRSzI0xoeUilldPggQHfiJdR
++DYLrbmSMOTmAplrd9v2e8tyUQDAdmKx0BIMBjgTrKD63mauKZqem3bZd+Bzktg6P
++bKsf+AXP8NkCAwEAAaOCA7gwggO0MB0GA1UdDgQWBBQnCge4NJKVAh3TugbrGpSr
++tURseDAfBgNVHSMEGDAWgBR3Pdk5r0K93FvKduru/c4+YSkwXzALBgNVHQ8EBAMC
++A6gwHQYDVR0lBBYwFAYIKwYBBQUHAwEGCCsGAQUFBwMCMGIGA1UdEQRbMFmCCGZz
++dGVjLnJ1ggx3d3cuZnN0ZWMucnWCDnd3dy4qLmZzdGVjLnJ1ggoqLmZzdGVjLnJ1
++ggxmc3RlYy5nb3YucnWCFXhuLS1qMWFuZGcxYy54bi0tcDFhaTCBiwYDVR0fBIGD
++MIGAMDygOqA4hjZodHRwOi8vbnVjLWNkcC52b3NraG9kLnJ1L2NkcC9zdWJjYV9z
++c2xfcnNhMjAyNF9vdi5jcmwwQKA+oDyGOmh0dHA6Ly9udWMtY2RwLmRpZ2l0YWwu
++Z292LnJ1L2NkcC9zdWJjYV9zc2xfcnNhMjAyNF9vdi5jcmwwgb4GCCsGAQUFBwEB
++BIGxMIGuMD8GCCsGAQUFBzAChjNodHRwOi8vbnVjLWNkcC52b3NraG9kLnJ1L2Nk
++cC9zdWJjYV9zc2xfcnNhMjAyNC5jcnQwQwYIKwYBBQUHMAKGN2h0dHA6Ly9udWMt
++Y2RwLmRpZ2l0YWwuZ292LnJ1L2NkcC9zdWJjYV9zc2xfcnNhMjAyNC5jcnQwJgYI
++KwYBBQUHMAGGGmh0dHA6Ly9udWMtb2NzcC52b3NraG9kLnJ1MBMGA1UdIAQMMAow
++CAYGZ4EMAQICMIIBfAYKKwYBBAHWeQIEAgSCAWwEggFoAWYAdgDUs3/yc08m8eVQ
++deWFW3BP3nG7fQXHV9Pc6xN/YkOtJAAAAZ0KuqixAAAEAwBHMEUCIFcMvVSxLaO+
++J4ngu9/K9PNcrAu50C0UHUwYOemE0qGdAiEAvXV9MUqtYpEMee2LqR9N9wf7zut3
++ahv5v5Q3oBpswYAAdQAa6RaHZtf3ipywhvjEnDxdzrjJkwCpr0v/sJsHT4EsFwAA
++AZ0Kuqi1AAAEAwBGMEQCIGCqYyPfxusimcHIwe62RuXrXDLYmFEz6Kx0R0pDeco3
++AiA5siAqmES6QqlqTYAfZekNwL25fx5NMwZh6UoZpzVknQB1AEyYoN279HWTZgw2
++6GYmhxQJ+X54eE6Rnqlq+BxTJ1zWAAABnQq6qK4AAAQDAEYwRAIgempTfIZDmuIX
++ZyIpjJMaKnq2GNGxU2w40IwZNFtqY/UCIFXRAsBxyFlU5hSkiWZgQO4g8nfevQU9
++M3Efwj+EaCzWMA0GCSqGSIb3DQEBCwUAA4ICAQCHNhDt6heXPJB41RRsMcYQ6uxT
++v1oI4UPdxUx2iUZnUZfzZ5oknIil0MovRufg46VYcmyM8Z+iVFXUo5ePH0pwZMRV
++ZqxjDMX0vv8CIALLuHBEc5KnMKZtEWILdic8VzOjhKOm/kSr7Cb9xkOxAj7R3B0O
++AKcWLDdmwPbEl6uRa+b/KiERwf4RSernCecWFOxAiklQ7/sK7m+Qq/tPzmuluvO4
++N9mI5fu9KqCozH/ooaZ7KckoHIQvDFl/bjhqG4H9Ce3pR8VF8sBqalYX8zU0M2bh
++hy9kEm6AgeZbPy3vGxLWyNA+dGWZl3rd89MZz2MH3XHEkriTcYkmYqjgKxH+cBz1
++C5xf/jHfUnBLxOJ0pZ16W9VMEWX8V1mBWvMRvbauON5Q0JkKGOmGN3HmN35sDOHt
++WZNhJKShr6UKYNHllEn4hWmb5h81iJDfKHjh/kBKA5Mj1DPQC1Du7xiDbTMQiDgO
++YRTRNqDZpkP568Z2vhR7GTZ31proVt+YJflKLhzM/PWk2bCgRTXwnv9hdtZXGItr
++HzwqSwvcYypGFQxm7vcbmERCoLx3vjV+UIZ++DpPFjvv03sT9K0mMZR2bD6RGbpH
++ISdX0W2QWb5TR3E9yeqWLmzLsA3VHauT0amUcbnpDvbeukH5rmRRg5V8JBUzWJSn
++ZH2mwe3wIvI47LGbjQ==
++-----END CERTIFICATE-----
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
+@@ -46,6 +46,22 @@
+   ok(container.userContextId > 0, "a real non-default userContextId is used");
+   is(container.name, "Российская PKI", "Russian-only visible name is set");
+ 
++  const scopeAuthority = Cc["@mozilla.org/psm;1"].getService(
++    Ci.nsINSSComponent
++  );
++  is(
++    typeof scopeAuthority.setGoodBearRussianPKIContainerId,
++    "function",
++    "the native Russian PKI scope publication API is exposed to JavaScript"
++  );
++  ok(
++    scopeAuthority.isGoodBearRussianPKIContainer(
++      container.userContextId,
++      false
++    ),
++    "the native scope authority recognizes the published managed container"
++  );
++
+   const tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+     userContextId: container.userContextId,
+   });

@@ -1,0 +1,198 @@
+name: M15-03 Windows pinned toolchain bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  bootstrap:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 120
+    steps:
+      - name: Download, verify, install and inventory pinned build tools
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $ProgressPreference = 'SilentlyContinue'
+          $download = 'C:\GoodBear\toolchain-downloads'
+          $tools = 'C:\GoodBear\tools'
+          $vs = 'C:\GoodBear\vs-buildtools'
+          $mozillaMsysBin = 'C:\mozilla-build\msys2\usr\bin'
+          $mozillaNativeBin = 'C:\mozilla-build\bin'
+          New-Item -ItemType Directory -Force -Path $download,$tools | Out-Null
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' -Name LongPathsEnabled -Type DWord -Value 1
+
+          function Get-Pinned([string]$Uri, [string]$Name, [string]$Expected) {
+            $path = Join-Path $download $Name
+            if (Test-Path -LiteralPath $path) {
+              $cached = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($cached -eq $Expected) {
+                Write-Host ("GOOD_BEAR_TOOL_CACHE_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
+                return $path
+              }
+              Remove-Item -LiteralPath $path -Force
+            }
+            Write-Host ("GOOD_BEAR_TOOL_DOWNLOAD_BEGIN " + $Name)
+            Invoke-WebRequest -Uri $Uri -OutFile $path -UseBasicParsing
+            $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $Expected) { throw ("SHA-256 mismatch for " + $Name) }
+            Write-Host ("GOOD_BEAR_TOOL_DOWNLOAD_VERIFIED " + $Name + " bytes=" + (Get-Item $path).Length)
+            return $path
+          }
+          function Assert-Signed([string]$Path, [string]$Publisher) {
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch [regex]::Escape($Publisher)) {
+              throw ("Authenticode verification failed for " + $Path + "; status=" + $signature.Status + "; subject=" + $signature.SignerCertificate.Subject)
+            }
+            Write-Output ("GOOD_BEAR_TOOL_SIGNATURE_VALID " + (Split-Path -Leaf $Path))
+          }
+          function Invoke-Installer([string]$File, [string[]]$Arguments, [string]$Label) {
+            Write-Output ("GOOD_BEAR_TOOL_INSTALL_BEGIN " + $Label)
+            $process = Start-Process -FilePath $File -ArgumentList $Arguments -Wait -PassThru
+            if ($process.ExitCode -notin 0,3010) { throw ("Installer failed for " + $Label + ": " + $process.ExitCode) }
+            Write-Output ("GOOD_BEAR_TOOL_INSTALL_DONE " + $Label + " exit=" + $process.ExitCode)
+          }
+
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          # The signed 17.14.37628.2 bootstrap executable is a downloader.  The
+          # reviewed installation it resolved on the isolated builder is 17.14.37710.0.
+          # Record both identities: the cache continues to verify the bootstrap bytes,
+          # while acceptance binds the installed component catalog.
+          $expectedVsInstallation = '17.14.37710.0'
+          $installedVs = if (Test-Path -LiteralPath $vswhere) { & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion } else { '' }
+          if ($installedVs -eq $expectedVsInstallation) {
+            Write-Output ('GOOD_BEAR_TOOL_ALREADY_VALID Visual Studio Build Tools installation ' + $expectedVsInstallation)
+          } else {
+            $vsBootstrap = Get-Pinned 'https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe' 'vs_BuildTools-17.14.37628.2.exe' 'c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425'
+            Assert-Signed $vsBootstrap 'Microsoft Corporation'
+            Invoke-Installer $vsBootstrap @('--quiet','--wait','--norestart','--nocache','--installPath',$vs,'--add','Microsoft.VisualStudio.Workload.VCTools','--add','Microsoft.VisualStudio.Component.VC.Tools.x86.x64','--add','Microsoft.VisualStudio.Component.VC.ATLMFC','--add','Microsoft.VisualStudio.Component.Windows11SDK.26100','--add','Microsoft.VisualStudio.Component.VC.Llvm.Clang','--includeRecommended') ('Visual Studio Build Tools installation ' + $expectedVsInstallation)
+          }
+
+          function Test-MozillaBuildCore {
+            $requiredMozilla = @(
+              'C:\mozilla-build\start-shell.bat',
+              'C:\mozilla-build\msys2\usr\bin\bash.exe',
+              'C:\mozilla-build\msys2\usr\bin\xz.exe',
+              'C:\mozilla-build\msys2\usr\bin\openssl.exe'
+            )
+            return @($requiredMozilla | Where-Object { -not (Test-Path -LiteralPath $_) }).Count -eq 0
+          }
+          if (Test-MozillaBuildCore) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID MozillaBuild 4.2.1 core'
+          } else {
+            $mozillaBuild = Get-Pinned 'https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe' 'MozillaBuildSetup-4.2.1.exe' '8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8'
+            Assert-Signed $mozillaBuild 'Mozilla Corporation'
+            Invoke-Installer $mozillaBuild @('/S') 'MozillaBuild 4.2.1'
+            if (-not (Test-MozillaBuildCore)) { throw 'MozillaBuild installation lacks required shell utilities' }
+          }
+
+          $gitExe = 'C:\Program Files\Git\cmd\git.exe'
+          if ((Test-Path -LiteralPath $gitExe) -and ((& $gitExe --version | Out-String).Trim() -eq 'git version 2.55.0.windows.5')) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Git for Windows 2.55.0.windows.5'
+          } else {
+            $gitInstaller = Get-Pinned 'https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe' 'Git-2.55.0.5-64-bit.exe' 'd065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6'
+            Assert-Signed $gitInstaller 'Johannes Schindelin'
+            Invoke-Installer $gitInstaller @('/VERYSILENT','/NORESTART','/SUPPRESSMSGBOXES','/SP-') 'Git for Windows 2.55.0.windows.5'
+          }
+
+          $pythonExe = 'C:\GoodBear\tools\Python312\python.exe'
+          if ((Test-Path -LiteralPath $pythonExe) -and ((& $pythonExe --version 2>&1 | Out-String).Trim() -eq 'Python 3.12.10')) {
+            Write-Output 'GOOD_BEAR_TOOL_ALREADY_VALID Python 3.12.10'
+          } else {
+            $python = Get-Pinned 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' 'python-3.12.10-amd64.exe' '67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb'
+            Assert-Signed $python 'Python Software Foundation'
+            Invoke-Installer $python @('/quiet','InstallAllUsers=1','TargetDir=C:\GoodBear\tools\Python312','PrependPath=0','Include_pip=1','Include_test=0') 'Python 3.12.10'
+          }
+
+          $rust = Get-Pinned 'https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'rust-1.90.0-x86_64-pc-windows-msvc.tar.xz' 'a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6'
+          $mozillaXz = Join-Path $mozillaMsysBin 'xz.exe'
+          if (-not (Test-Path -LiteralPath $mozillaXz)) { throw 'MozillaBuild xz.exe is absent' }
+          $rustInstaller = Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc\install.sh'
+          if (-not (Test-Path -LiteralPath $rustInstaller)) {
+            & $mozillaXz '--decompress' '--keep' '--force' '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz'
+            if ($LASTEXITCODE -ne 0) { throw 'Rust xz decompression failed' }
+            & "$env:WINDIR\System32\tar.exe" -xf (Join-Path $download 'rust-1.90.0-x86_64-pc-windows-msvc.tar') -C $download
+            if ($LASTEXITCODE -ne 0) { throw 'Rust archive extraction failed' }
+          }
+          if (-not (Test-Path -LiteralPath $rustInstaller)) { throw 'Rust install.sh is absent after extraction' }
+          $mozillaBash = Join-Path $mozillaMsysBin 'bash.exe'
+          if (-not (Test-Path -LiteralPath $mozillaBash)) { throw 'MozillaBuild bash.exe is absent' }
+          $zstdArchive = Get-Pinned 'https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-v1.5.7-win64.zip' 'zstd-v1.5.7-win64.zip' 'acb4e8111511749dc7a3ebedca9b04190e37a17afeb73f55d4425dbf0b90fad9'
+          $zstdRoot = Join-Path $tools 'zstd-v1.5.7-win64'
+          $zstdExe = Join-Path $zstdRoot 'zstd.exe'
+          if (-not (Test-Path -LiteralPath $zstdExe)) { Expand-Archive -LiteralPath $zstdArchive -DestinationPath $tools -Force }
+          if (-not (Test-Path -LiteralPath $zstdExe)) { throw 'Pinned zstd.exe is absent after extraction' }
+          $firefoxTools = Join-Path $tools 'firefox156-toolchains'
+          New-Item -ItemType Directory -Force -Path $firefoxTools | Out-Null
+          function Expand-PinnedZstdTar([string]$Uri, [string]$Name, [string]$Expected, [string]$RequiredFile) {
+            if (Test-Path -LiteralPath $RequiredFile) { Write-Output ('GOOD_BEAR_TOOL_ALREADY_VALID ' + (Split-Path -Leaf $RequiredFile)); return }
+            $archive = Get-Pinned $Uri $Name $Expected
+            $tarPath = Join-Path $download (($Name -replace '\.zst$',''))
+            & $zstdExe '-d' '--force' '-o' $tarPath $archive
+            if ($LASTEXITCODE -ne 0) { throw ('Zstandard decompression failed for ' + $Name) }
+            & "$env:WINDIR\System32\tar.exe" -xf $tarPath -C $firefoxTools
+            if ($LASTEXITCODE -ne 0) { throw ('Tar extraction failed for ' + $Name) }
+            if (-not (Test-Path -LiteralPath $RequiredFile)) { throw ('Required Firefox tool is absent after extraction: ' + $RequiredFile) }
+            Write-Output ('GOOD_BEAR_TOOL_INSTALL_DONE ' + $Name)
+          }
+          $mozmakeExe = Join-Path $firefoxTools 'mozmake\mozmake.exe'
+          $makensisExe = Join-Path $firefoxTools 'nsis\makensis.exe'
+          Expand-PinnedZstdTar 'https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/R-T5euokQVyqBQMApzKOUA/artifacts/public/build/mozmake.tar.zst' 'mozmake.tar.zst' '8a7dbefcfdb35cc7e96acc8c10fc91064ad1cadb9a808e9df8b1a708e9aeafe0' $mozmakeExe
+          Expand-PinnedZstdTar 'https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/X5NTJwTcS0eza0ybdOLZQw/artifacts/public/build/nsis.tar.zst' 'nsis.tar.zst' 'ac196429c3161156edc72a1b5d957fa07ad73fb785dcdc64e78f3a42f74c7d90' $makensisExe
+          $env:PATH = (Split-Path -Parent $mozmakeExe) + ';' + (Split-Path -Parent $makensisExe) + ';' + $mozillaNativeBin + ';' + $mozillaMsysBin + ';' + $env:PATH
+          & $mozillaBash '/c/GoodBear/toolchain-downloads/rust-1.90.0-x86_64-pc-windows-msvc/install.sh' '--prefix=/c/GoodBear/tools/rust-1.90.0' '--components=rustc,cargo,rust-std-x86_64-pc-windows-msvc'
+          if ($LASTEXITCODE -ne 0) { throw 'Rust 1.90.0 installation failed' }
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Rust 1.90.0'
+
+          $node = Get-Pinned 'https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip' 'node-v24.19.0-win-x64.zip' '57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73'
+          Expand-Archive -LiteralPath $node -DestinationPath $tools -Force
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE Node 24.19.0'
+          $nasm = Get-Pinned 'https://www.nasm.us/pub/nasm/releasebuilds/2.16.01/win64/nasm-2.16.01-win64.zip' 'nasm-2.16.01-win64.zip' '029eed31faf0d2c5f95783294432cbea6c15bf633430f254bb3c1f195c67ca3a'
+          Expand-Archive -LiteralPath $nasm -DestinationPath $tools -Force
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE NASM 2.16.01'
+          $llvm = Get-Pinned 'https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz' 'd96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234'
+          & $mozillaXz '--decompress' '--keep' '--force' '/c/GoodBear/toolchain-downloads/clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz'
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM xz decompression failed' }
+          & "$env:WINDIR\System32\tar.exe" -xf (Join-Path $download 'clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar') -C $tools
+          if ($LASTEXITCODE -ne 0) { throw 'LLVM archive extraction failed' }
+          Write-Output 'GOOD_BEAR_TOOL_INSTALL_DONE LLVM 22.1.8'
+
+          $actualVs = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationVersion
+          if ($actualVs -ne $expectedVsInstallation) { throw ("Unexpected Build Tools installation version: " + $actualVs) }
+          $msvc = Get-ChildItem (Join-Path $vs 'VC\Tools\MSVC') -Directory | Where-Object { $_.Name -like '14.44.*' } | Select-Object -First 1
+          if ($null -eq $msvc) { throw 'MSVC 14.44 is absent' }
+          $sdkRc = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\rc.exe'
+          if (-not (Test-Path -LiteralPath $sdkRc)) { throw 'Windows SDK 10.0.26100.0 rc.exe is absent' }
+          $required = @(
+            'C:\mozilla-build\start-shell.bat',
+            'C:\mozilla-build\msys2\usr\bin\bash.exe',
+            'C:\mozilla-build\msys2\usr\bin\xz.exe',
+            'C:\mozilla-build\msys2\usr\bin\openssl.exe',
+            $zstdExe,
+            $mozmakeExe,
+            $makensisExe,
+            'C:\Program Files\Git\cmd\git.exe',
+            'C:\GoodBear\tools\Python312\python.exe',
+            'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe',
+            'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe',
+            'C:\GoodBear\tools\nasm-2.16.01\nasm.exe',
+            'C:\GoodBear\tools\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe'
+          )
+          foreach ($path in $required) { if (-not (Test-Path -LiteralPath $path)) { throw ("Required tool is absent: " + $path) } }
+          $evidence = [ordered]@{
+            task = 'GB100-M15-03'; build_tools = $actualVs; msvc = $msvc.Name; windows_sdk_rc = $sdkRc
+            git = (& 'C:\Program Files\Git\cmd\git.exe' --version | Out-String).Trim()
+            python = (& 'C:\GoodBear\tools\Python312\python.exe' --version 2>&1 | Out-String).Trim()
+            rust = (& 'C:\GoodBear\tools\rust-1.90.0\bin\rustc.exe' --version | Out-String).Trim()
+            node = (& 'C:\GoodBear\tools\node-v24.19.0-win-x64\node.exe' --version | Out-String).Trim()
+            nasm = (& 'C:\GoodBear\tools\nasm-2.16.01\nasm.exe' -v | Out-String).Trim()
+            llvm = (& 'C:\GoodBear\tools\clang+llvm-22.1.8-x86_64-pc-windows-msvc\bin\clang-cl.exe' --version | Select-Object -First 1 | Out-String).Trim()
+            firefox_mozmake = (& $mozmakeExe --version | Select-Object -First 1 | Out-String).Trim()
+            firefox_makensis = (& $makensisExe -version | Out-String).Trim()
+          }
+          $evidence | ConvertTo-Json | Set-Content -LiteralPath 'C:\GoodBear\toolchain-evidence.json' -Encoding utf8
+          $evidence | ConvertTo-Json -Compress
+          Write-Output 'GOOD_BEAR_WINDOWS_TOOLCHAIN_BOOTSTRAP_OK'
+          $global:LASTEXITCODE = 0
+          exit 0

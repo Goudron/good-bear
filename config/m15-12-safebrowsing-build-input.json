@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-12",
+  "supplier": "Google Safe Browsing",
+  "project_id": "goodbear-sb-20260920",
+  "key_resource": "projects/561617698594/locations/global/keys/good-bear-desktop",
+  "key_file_sha256": "9fc54db5d090fdaf445fd1574e41a49651c5a7d1ca0415d5a7e85eb1b61a28c2",
+  "allowed_api_services": [
+    "safebrowsing.googleapis.com"
+  ],
+  "commercial_use_planned": false,
+  "product_license": "MPL-2.0",
+  "provisioning_authorization": "Maintainer explicitly requested agent-operated project and key setup on 2026-09-20 and completed Firefox OAuth and Google Cloud terms acceptance.",
+  "key_value_in_source": false,
+  "key_value_in_build_logs": false,
+  "key_embedded_in_browser_binary_by_design": true,
+  "private_input_binding": "The exact external key-file bytes must match key_file_sha256 on both builders and be bound to the same immutable source manifest. A rotated key requires a new source/input freeze.",
+  "native_browser_verification": "pending",
+  "download_reputation_verification": "pending",
+  "supplier_release_acceptance": "pending",
+  "official_references": [
+    "https://developers.google.com/safe-browsing/reference",
+    "https://developers.google.com/safe-browsing/reference/Appropriate.Usage",
+    "https://developers.google.com/safe-browsing/v4/get-started"
+  ]
+}

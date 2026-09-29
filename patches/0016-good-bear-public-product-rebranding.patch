@@ -1,0 +1,214 @@
+diff --git a/python/mozbuild/mozbuild/repackaging/utils.py b/python/mozbuild/mozbuild/repackaging/utils.py
+--- a/python/mozbuild/mozbuild/repackaging/utils.py
++++ b/python/mozbuild/mozbuild/repackaging/utils.py
+@@ -92,13 +92,24 @@ def get_build_variables(
+     Massage the application.ini info and other metadata into a dict suitable for passing into packaging templates
+     """
++    app_binary_name = application_ini_data["remoting_name"].lower()
+     if product == "devedition":
+         pkg_install_path = "usr/lib/firefox-devedition"
+         pkg_name = f"firefox-devedition{package_name_suffix}"
+     else:
+-        pkg_install_path = f"usr/lib/{application_ini_data['remoting_name'].lower()}"
+-        pkg_name = (
+-            f"{application_ini_data['remoting_name'].lower()}{package_name_suffix}"
+-        )
++        pkg_install_path = f"usr/lib/{app_binary_name}"
++        pkg_name = f"{app_binary_name}{package_name_suffix}"
++
++    public_executable_name = pkg_name
++    desktop_file_id = f"{pkg_name}.desktop"
++    if application_ini_data["name"] == "Good Bear":
++        # The public package and desktop IDs are deliberately independent of
++        # Firefox. Keep the shorter remoting name as the actual executable so
++        # existing Gecko single-instance plumbing sees one stable identifier.
++        pkg_name = f"goodbear-browser{package_name_suffix}"
++        public_executable_name = "goodbear"
++        desktop_file_id = "com.ledovskoy.goodbear.desktop"
++        if package_name_suffix:
++            desktop_file_id = f"goodbear-browser{package_name_suffix}.desktop"
+     timestamp = datetime.strptime(application_ini_data["build_id"], "%Y%m%d%H%M%S")
+ 
+     return {
+@@ -114,4 +125,7 @@ def get_build_variables(
+         "ARCH_NAME": arch,
+         "Icon": pkg_name,
+         "REMOTING_NAME": application_ini_data["remoting_name"],
++        "APP_BINARY_NAME": app_binary_name,
++        "PUBLIC_EXECUTABLE_NAME": public_executable_name,
++        "DESKTOP_FILE_ID": desktop_file_id,
+     }
+@@ -138,7 +152,7 @@ def inject_desktop_entry_file(
+     desktop_entry_template_path = mozpath.join(
+         source_dir, f"{build_variables['PRODUCT_NAME'].lower()}.desktop"
+     )
+-    desktop_entry_file_filename = f"{build_variables['PKG_NAME']}.desktop"
++    desktop_entry_file_filename = build_variables["DESKTOP_FILE_ID"]
+ 
+     # Check to see if a .desktop file is already supplied in the templates directory
+     # If not, continue to generate default Firefox .desktop file
+@@ -185,4 +199,4 @@ def mv_manpage_files(source_dir, build_variables):
+     src = mozpath.join(source_dir, "manpage.1")
+     if os.path.exists(src):
+-        dst = mozpath.join(source_dir, f"{build_variables['PKG_NAME']}.1")
++        dst = mozpath.join(source_dir, f"{build_variables['PUBLIC_EXECUTABLE_NAME']}.1")
+         shutil.move(src, dst)
+diff --git a/browser/installer/linux/app/debian/control.in b/browser/installer/linux/app/debian/control.in
+--- a/browser/installer/linux/app/debian/control.in
++++ b/browser/installer/linux/app/debian/control.in
+@@ -1,5 +1,5 @@
+ Source: ${PKG_NAME}
+-Maintainer: Mozilla <release@mozilla.com>
++Maintainer: Good Bear Project <valery@ledovskoy.com>
+ Priority: optional
+ Section: web
+ Build-Depends: debhelper (>= 9)
+diff --git a/browser/installer/linux/app/debian/changelog.in b/browser/installer/linux/app/debian/changelog.in
+--- a/browser/installer/linux/app/debian/changelog.in
++++ b/browser/installer/linux/app/debian/changelog.in
+@@ -2,4 +2,4 @@ ${PKG_NAME} (${PKG_VERSION}) UNRELEASED; urgency=medium
+ 
+   * N/A
+ 
+- -- Mozilla <release@mozilla.com>  ${CHANGELOG_DATE}
++ -- Good Bear Project <valery@ledovskoy.com>  ${CHANGELOG_DATE}
+diff --git a/browser/installer/linux/app/debian/distribution.ini b/browser/installer/linux/app/debian/distribution.ini
+--- a/browser/installer/linux/app/debian/distribution.ini
++++ b/browser/installer/linux/app/debian/distribution.ini
+@@ -1,7 +1,7 @@
+ [Global]
+-id=mozilla-deb
++id=goodbear-ubuntu
+ version=1.0
+-about=Mozilla Firefox Debian Package
++about=Good Bear Ubuntu Package
+ 
+ [Preferences]
+ intl.locale.requested=""
+diff --git a/browser/installer/linux/app/debian/install.in b/browser/installer/linux/app/debian/install.in
+--- a/browser/installer/linux/app/debian/install.in
++++ b/browser/installer/linux/app/debian/install.in
+@@ -1,2 +1,2 @@
+-firefox/* ${PKG_INSTALL_PATH}
+-debian/${PKG_NAME}.desktop usr/share/applications
++${APP_BINARY_NAME}/* ${PKG_INSTALL_PATH}
++debian/${DESKTOP_FILE_ID} usr/share/applications
+diff --git a/browser/installer/linux/app/debian/links.in b/browser/installer/linux/app/debian/links.in
+--- a/browser/installer/linux/app/debian/links.in
++++ b/browser/installer/linux/app/debian/links.in
+@@ -1,4 +1,4 @@
+-${PKG_INSTALL_PATH}/firefox usr/bin/${PKG_NAME}
++${PKG_INSTALL_PATH}/${APP_BINARY_NAME} usr/bin/${PUBLIC_EXECUTABLE_NAME}
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default16.png usr/share/icons/hicolor/16x16/apps/${PKG_NAME}.png
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default32.png usr/share/icons/hicolor/32x32/apps/${PKG_NAME}.png
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default48.png usr/share/icons/hicolor/48x48/apps/${PKG_NAME}.png
+diff --git a/browser/installer/linux/app/debian/manpage.1.in b/browser/installer/linux/app/debian/manpage.1.in
+--- a/browser/installer/linux/app/debian/manpage.1.in
++++ b/browser/installer/linux/app/debian/manpage.1.in
+@@ -1,12 +1,12 @@
+-.TH ${DISPLAY_NAME} 1 "${MANPAGE_DATE}" ${PKG_NAME} "Linux User's Manual"
++.TH ${DISPLAY_NAME} 1 "${MANPAGE_DATE}" ${PUBLIC_EXECUTABLE_NAME} "Linux User's Manual"
+ .SH NAME
+-${PKG_NAME} - ${DISPLAY_NAME} offers safe and easy web browsing
++${PUBLIC_EXECUTABLE_NAME} - ${DISPLAY_NAME} offers safe and easy web browsing
+ 
+ .SH SYNOPSIS
+-.B ${PKG_NAME}
++.B ${PUBLIC_EXECUTABLE_NAME}
+ [\fIOPTIONS\fR] [\fIURL\fR]
+ 
+-.B /usr/lib/${PKG_NAME}/${PKG_NAME}
++.B /${PKG_INSTALL_PATH}/${APP_BINARY_NAME}
+ [\fIOPTIONS\fR] [\fIURL\fR]
+ 
+ .SH DESCRIPTION
+@@ -14,12 +14,12 @@
+ standards compliance, performance and portability.
+ 
+ .SH USAGE
+-If there is an ${DISPLAY_NAME} browser already running, \fB${PKG_NAME}\fR will
++If there is an ${DISPLAY_NAME} browser already running, \fB${PUBLIC_EXECUTABLE_NAME}\fR will
+ arrange for it to create a new browser window; otherwise it will start
+ a new instance.
+ 
+ .SH OPTIONS
+-A summary of the options supported by \fB${PKG_NAME}\fR is included below.
++A summary of the options supported by \fB${PUBLIC_EXECUTABLE_NAME}\fR is included below.
+ 
+ .SS "X11 options"
+ .TP
+@@ -39,7 +39,7 @@
+ .B \-\-g\-fatal\-warnings
+ Make all warnings fatal
+ 
+-.SS "Mozilla options"
++.SS "Browser options"
+ .TP
+ .B \-h, \-help
+ Show summary of options.
+@@ -87,18 +87,21 @@
+ (the ones that appear at the about:plugins url)
+ 
+ .SH FILES
+-\fI/usr/bin/${PKG_NAME}\fR - symbolic link to \fB/usr/lib/${PKG_NAME}/${PKG_NAME}\fR.
++\fI/usr/bin/${PUBLIC_EXECUTABLE_NAME}\fR - symbolic link to \fB/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\fR.
+ .br
+ 
+-\fI/usr/lib/${PKG_NAME}/${PKG_NAME}\fR - ${DISPLAY_NAME} executable.
++\fI/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\fR - ${DISPLAY_NAME} executable.
+ 
+-\fI/usr/lib/${PKG_NAME}/firefox\-bin\fR - Legacy executable.
++\fI/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\-bin\fR - Legacy executable.
+ .br
+ 
+ .SH BUGS
+-To report a bug, please visit \fIhttp://bugzilla.mozilla.org/\fR
++For Good Bear support, contact \fIvalery@ledovskoy.com\fR.
+ 
+ .SH AUTHORS
+ .TP
+-.B The Mozilla Organization
+-.I https://www.mozilla.org/en-US/about/
++.B Good Bear Project
++.I Valery Ledovskoy <valery@ledovskoy.com>
++.PP
++Good Bear is an independent browser based on Mozilla Firefox open-source code.
++Good Bear is not affiliated with or endorsed by Mozilla.
+diff --git a/browser/installer/linux/app/debian/manpages.in b/browser/installer/linux/app/debian/manpages.in
+--- a/browser/installer/linux/app/debian/manpages.in
++++ b/browser/installer/linux/app/debian/manpages.in
+@@ -1 +1 @@
+-debian/${PKG_NAME}.1
++debian/${PUBLIC_EXECUTABLE_NAME}.1
+diff --git a/browser/installer/linux/app/debian/postinst.in b/browser/installer/linux/app/debian/postinst.in
+--- a/browser/installer/linux/app/debian/postinst.in
++++ b/browser/installer/linux/app/debian/postinst.in
+@@ -2,12 +2,12 @@
+ 
+ if [ "$$1" = "configure" ] || [ "$$1" = "abort-upgrade" ] || [ "$$1" = "abort-remove" ] ; then
+     update-alternatives --install /usr/bin/gnome-www-browser \
+-        gnome-www-browser /usr/bin/${PKG_NAME} 100 \
++        gnome-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME} 100 \
+         --slave /usr/share/man/man1/gnome-www-browser.1.gz \
+-        gnome-www-browser.1.gz /usr/share/man/man1/${PKG_NAME}.1.gz
++        gnome-www-browser.1.gz /usr/share/man/man1/${PUBLIC_EXECUTABLE_NAME}.1.gz
+ 
+     update-alternatives --install /usr/bin/x-www-browser \
+-        x-www-browser /usr/bin/${PKG_NAME} 100 \
++        x-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME} 100 \
+         --slave /usr/share/man/man1/x-www-browser.1.gz \
+-        x-www-browser.1.gz /usr/share/man/man1/${PKG_NAME}.1.gz
++        x-www-browser.1.gz /usr/share/man/man1/${PUBLIC_EXECUTABLE_NAME}.1.gz
+ fi
+diff --git a/browser/installer/linux/app/debian/prerm.in b/browser/installer/linux/app/debian/prerm.in
+--- a/browser/installer/linux/app/debian/prerm.in
++++ b/browser/installer/linux/app/debian/prerm.in
+@@ -1,6 +1,6 @@
+ #!/bin/sh -e
+ 
+ if [ "$$1" = "remove" ] || [ "$$1" = "deconfigure" ] ; then
+-    update-alternatives --remove x-www-browser /usr/bin/${PKG_NAME}
+-    update-alternatives --remove gnome-www-browser /usr/bin/${PKG_NAME}
++    update-alternatives --remove x-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME}
++    update-alternatives --remove gnome-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME}
+ fi

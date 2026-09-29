@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "product": {
+    "name": "Good Bear",
+    "version": "1.0",
+    "display_version": "1.0",
+    "vendor": "Good Bear Project",
+    "copyright": "Copyright © 2026 Valery Ledovskoy <valery@ledovskoy.com>"
+  },
+  "version_pair": {
+    "schema_version": 1,
+    "ordering": "good_bear_then_firefox_base",
+    "good_bear_version": "1.0",
+    "firefox_base_version": "156.0",
+    "canonical_about_ru": "Good Bear 1.0 (Firefox 156.0)",
+    "package_version": "1.0+firefox156.0"
+  },
+  "release": {
+    "platform": "ubuntu",
+    "architecture": "amd64",
+    "locale": "ru",
+    "shipped_locales": [
+      "ru"
+    ],
+    "internal_source_locale": "en-US",
+    "internal_source_locale_disposition": "build_fallback_only_not_shipped_separately",
+    "channel": "goodbear",
+    "package_name": "goodbear-browser",
+    "executable_name": "goodbear",
+    "desktop_file_id": "com.ledovskoy.goodbear.desktop",
+    "desktop_display_name": "Good Bear",
+    "profile_namespace": "goodbear"
+  },
+  "build": {
+    "mozconfig_path": "build/goodbear/mozconfig",
+    "branding_directory": "browser/branding/goodbear",
+    "package_version": "1.0+firefox156.0",
+    "mar_channel_id": "goodbear-release",
+    "accepted_mar_channel_ids": [
+      "goodbear-release"
+    ]
+  },
+  "upstream_compatibility": {
+    "firefox_version": "156.0",
+    "application_version": {
+      "value": "156.0",
+      "disposition": "preserve",
+      "reason": "Controls Gecko and extension/profile compatibility; Good Bear 1.0 is exposed separately as the display version."
+    },
+    "application_id": {
+      "value": "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}",
+      "disposition": "preserve",
+      "reason": "Firefox WebExtension/application compatibility depends on this ID; it is technical metadata, not public branding."
+    },
+    "user_agent_product": {
+      "value": "Firefox",
+      "disposition": "preserve",
+      "reason": "Web compatibility requires the Firefox UA product token; it must not be reused as a Good Bear product label."
+    }
+  },
+  "services": {
+    "application_updater": {
+      "enabled": false,
+      "delivery": "ubuntu_package_manager",
+      "endpoints": []
+    },
+    "crash_reporter": {
+      "enabled": false,
+      "endpoints": []
+    }
+  },
+  "artwork": {
+    "release_status": "approved_original_assets_verified_by_m10_05",
+    "selected_variant_id": "workshop-beacon",
+    "placeholder_policy": "development_only_and_hard_blocked_for_public_release",
+    "release_gate": "tools/verify_m10_05_asset_injection.py",
+    "required_release_paths": [
+      "browser/branding/goodbear/default16.png",
+      "browser/branding/goodbear/default32.png",
+      "browser/branding/goodbear/default48.png",
+      "browser/branding/goodbear/default64.png",
+      "browser/branding/goodbear/default128.png"
+    ]
+  },
+  "upstream_owner_evidence": [
+    {
+      "path": "browser/moz.configure",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "decision": "Preserve MOZ_APP_ID; set a Good Bear vendor and profile namespace."
+    },
+    {
+      "path": "build/moz.configure/init.configure",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "decision": "Use MOZ_APP_VERSION_DISPLAY for 1.0 and preserve MOZ_APP_VERSION 156.0."
+    },
+    {
+      "path": "toolkit/moz.configure",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "decision": "Set basename/remoting/package identities and disable the crash reporter through supported configure options."
+    },
+    {
+      "path": "build/moz.configure/update-programs.configure",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "decision": "Disable the in-app updater and reserve a non-Mozilla MAR channel."
+    },
+    {
+      "path": "toolkit/xre/nsXREDirProvider.cpp",
+      "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+      "decision": "Use MOZ_APP_PROFILE=goodbear to isolate the Ubuntu profile root."
+    }
+  ]
+}

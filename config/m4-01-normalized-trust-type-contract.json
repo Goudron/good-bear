@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M4-01",
+  "firefox_version": "156.0",
+  "type": "nsITransportSecurityInfo::GoodBearTrustDomain",
+  "states": {
+    "Invalid": 0,
+    "Standard": 1,
+    "RussianPKI": 2
+  },
+  "default": "Invalid",
+  "verifier_owner": "security/manager/ssl/SSLServerCertVerification.cpp",
+  "transport_owners": [
+    "security/manager/ssl/CommonSocketControl.cpp",
+    "security/manager/ssl/TransportSecurityInfo.cpp",
+    "ipc/glue/TransportSecurityInfoUtils.h",
+    "netwerk/base/FuzzySecurityInfo.cpp"
+  ],
+  "routing_owner": "browser/base/content/browser-siteIdentity.js",
+  "ui_evidence": "browser/base/content/test/siteIdentity/browser_getSecurityInfo.js",
+  "rule": "Only the verifier assigns a non-Invalid trust domain. Transport copies the typed value unchanged. Routing, logging, and UI consume the transport value when their later milestones add behavior; they must not derive parallel boolean or string classifications."
+}

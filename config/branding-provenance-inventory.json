@@ -1,0 +1,379 @@
+{
+  "schema_version": 1,
+  "review": {
+    "upstream_revision": "032a9fc1ac0cc3209f7c142744ba2e40847c8086",
+    "method": "owner-and-surface review",
+    "decision_rule": "Search results may nominate a candidate, but every entry below is an explicit review decision tied to a shipped surface and owner path. Unlisted search hits are not implicitly approved."
+  },
+  "coverage": {
+    "application": {
+      "strings": [
+        "application-display-name",
+        "firefox-compatibility-identifiers"
+      ],
+      "assets": [
+        "application-icon-placeholders"
+      ]
+    },
+    "package": {
+      "strings": [
+        "ubuntu-package-identifiers"
+      ],
+      "assets": [
+        "package-launcher-icon-placeholders"
+      ]
+    },
+    "about": {
+      "strings": [
+        "about-goodbear-copy",
+        "about-upstream-attribution"
+      ],
+      "assets": [
+        "about-branding-surface"
+      ]
+    },
+    "onboarding": {
+      "strings": [
+        "onboarding-neutral-copy"
+      ],
+      "assets": [
+        "onboarding-firefox-mascot-assets"
+      ]
+    },
+    "error": {
+      "strings": [
+        "network-error-copy"
+      ],
+      "assets": [
+        "error-neutral-icons",
+        "network-and-certificate-error-firefox-art",
+        "private-browsing-fox-art"
+      ]
+    },
+    "update": {
+      "strings": [
+        "update-endpoints-disabled"
+      ],
+      "assets": [
+        "update-has-no-enabled-public-artwork"
+      ]
+    },
+    "launcher": {
+      "strings": [
+        "desktop-launcher-identifiers"
+      ],
+      "assets": [
+        "launcher-icon-placeholders"
+      ]
+    },
+    "installer": {
+      "strings": [
+        "windows-installer-wizard-copy"
+      ],
+      "assets": [
+        "windows-installer-wizard-mascot"
+      ]
+    }
+  },
+  "entries": [
+    {
+      "id": "application-display-name",
+      "surface": "application",
+      "representation": "string",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/configure.sh",
+        "overlay/browser/branding/goodbear/locales/en-US/brand.ftl"
+      ],
+      "decision": "Good Bear is the public application name; it is independent product identity.",
+      "review_basis": "Good Bear branding owner inputs and product identity contract."
+    },
+    {
+      "id": "application-icon-placeholders",
+      "surface": "application",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/default16.png",
+        "overlay/browser/branding/goodbear/default32.png",
+        "overlay/browser/branding/goodbear/default48.png",
+        "overlay/browser/branding/goodbear/default64.png",
+        "overlay/browser/branding/goodbear/default128.png"
+      ],
+      "decision": "M10-03 supplies the selected original Good Bear primary mark in every declared Ubuntu icon size; the mark has no enclosing circular device.",
+      "review_basis": "BRANDING.md section 5.3 and product identity artwork policy."
+    },
+    {
+      "id": "ubuntu-package-identifiers",
+      "surface": "package",
+      "representation": "string",
+      "classification": "technical_identifier",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "config/product-identity.json",
+        "overlay/build/goodbear/mozconfig",
+        "patches/0016-good-bear-public-product-rebranding.patch"
+      ],
+      "decision": "M10-04 binds the independent goodbear-browser package name to the goodbear executable without changing compatibility identifiers or the Russian-only release contract.",
+      "review_basis": "Product identity compatibility and Ubuntu-only packaging contract."
+    },
+    {
+      "id": "package-launcher-icon-placeholders",
+      "surface": "package",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/default16.png",
+        "overlay/browser/branding/goodbear/default32.png",
+        "overlay/browser/branding/goodbear/default48.png",
+        "overlay/browser/branding/goodbear/default64.png",
+        "overlay/browser/branding/goodbear/default128.png"
+      ],
+      "decision": "Ubuntu package and launcher consume the approved original Good Bear artwork in the declared icon sizes.",
+      "review_basis": "BRANDING.md sections 5.2, 5.3, and 7."
+    },
+    {
+      "id": "about-goodbear-copy",
+      "surface": "about",
+      "representation": "string",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/locales/en-US/brand.ftl",
+        "patches/0002-good-bear-about-dialog-attribution.patch"
+      ],
+      "decision": "The About surface names Good Bear and its creator; M10-06 owns public author links and final legal copy.",
+      "review_basis": "BRANDING.md section 20 and LEGAL.md sections 1 and 6."
+    },
+    {
+      "id": "about-upstream-attribution",
+      "surface": "about",
+      "representation": "string",
+      "classification": "legal_attribution",
+      "public_identity": "preserve_attribution",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/locales/en-US/brand.ftl",
+        "patches/0002-good-bear-about-dialog-attribution.patch"
+      ],
+      "decision": "Mozilla Firefox appears here only as truthful upstream provenance and must remain distinguishable from Good Bear identity.",
+      "review_basis": "LEGAL.md sections 4 through 6; this is not a product mark to erase."
+    },
+    {
+      "id": "about-branding-surface",
+      "surface": "about",
+      "representation": "asset",
+      "classification": "neutral_ui",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/moz.build"
+      ],
+      "decision": "The About window resolves its branding through the Good Bear branding directory; M10-03 audits any concrete mascot or logo asset separately.",
+      "review_basis": "Firefox branding build owner and Good Bear product identity patch."
+    },
+    {
+      "id": "onboarding-neutral-copy",
+      "surface": "onboarding",
+      "representation": "string",
+      "classification": "neutral_ui",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "source/worktrees/firefox-155.0.1/browser/components/aboutwelcome/content/onboarding.ftl"
+      ],
+      "decision": "Generic onboarding instructions are functional UI copy; product-specific references require an explicit later review, not a blanket rename.",
+      "review_basis": "AboutWelcome owner path reviewed against the public onboarding surface."
+    },
+    {
+      "id": "onboarding-firefox-mascot-assets",
+      "surface": "onboarding",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving.gif",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving-static.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-welcome.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-thinking-setup.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-generic-error.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-success.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-devices-sync.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-backup-restore.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-empty-state.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-import-setup.png",
+        "overlay/browser/components/aboutwelcome/assets/goodbear-gratitude.png"
+      ],
+      "decision": "M10-03 replaces each audited Firefox-specific onboarding fox/logo/animation surface with an original selected Good Bear asset; the upstream files are not packaged by the modified jar manifest.",
+      "review_basis": "BRANDING.md sections 4, 6, and 7; LEGAL.md section 4.4."
+    },
+    {
+      "id": "network-error-copy",
+      "surface": "error",
+      "representation": "string",
+      "classification": "neutral_ui",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "source/worktrees/firefox-155.0.1/toolkit/locales/en-US/toolkit/neterror/netError.ftl",
+        "source/worktrees/firefox-155.0.1/toolkit/locales/en-US/toolkit/neterror/certError.ftl"
+      ],
+      "decision": "Network and certificate error language remains functional security UI; M10 artwork work must not change its technical meaning.",
+      "review_basis": "BRANDING.md sections 8, 13, and 14."
+    },
+    {
+      "id": "error-neutral-icons",
+      "surface": "error",
+      "representation": "asset",
+      "classification": "neutral_ui",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "source/worktrees/firefox-155.0.1/browser/themes/shared/identity-block/trust-icon-warning.svg",
+        "source/worktrees/firefox-155.0.1/browser/themes/shared/icons/privateBrowsing.svg"
+      ],
+      "decision": "Generic information and warning icons are neutral functional UI, not Mozilla product identity.",
+      "review_basis": "BRANDING.md section 4 prohibits brand marks, not independently licensed neutral UI icons."
+    },
+    {
+      "id": "network-and-certificate-error-firefox-art",
+      "surface": "error",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/toolkit/themes/shared/illustrations/goodbear-no-connection.png",
+        "overlay/toolkit/themes/shared/illustrations/goodbear-security-error.png"
+      ],
+      "decision": "M10-03 replaces the Firefox fox connection/certificate-error illustrations with original Good Bear generic-error artwork. Its alpha content is contained in a machine-verified transparent safe zone and its reserved flex column cannot cover the title, warning icon, body, controls, or certificate details. It remains decorative product identity only; neutral warning and trust icons remain unchanged.",
+      "review_basis": "toolkit/content/errors/net-error-illustrations.mjs explicitly maps these two public error-page assets; BRANDING.md sections 4, 6, 7, 8, 13, and 14; LEGAL.md section 4.4."
+    },
+    {
+      "id": "private-browsing-fox-art",
+      "surface": "error",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/themes/shared/privatebrowsing/goodbear-private-browsing.png",
+        "overlay/browser/themes/shared/fxa/goodbear-avatar.png",
+        "overlay/browser/themes/shared/fxa/goodbear-avatar-circle.png"
+      ],
+      "decision": "M10-03 replaces audited Firefox fox artwork in public private-browsing and account-adjacent UI with original Good Bear assets.",
+      "review_basis": "BRANDING.md sections 6, 7, and 14; LEGAL.md section 4."
+    },
+    {
+      "id": "update-endpoints-disabled",
+      "surface": "update",
+      "representation": "string",
+      "classification": "technical_identifier",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/pref/firefox-branding.js",
+        "config/product-identity.json"
+      ],
+      "decision": "In-application updates and Mozilla release-note endpoints are disabled; Ubuntu package management is the declared delivery path.",
+      "review_basis": "Product identity services contract and Ubuntu distribution boundary."
+    },
+    {
+      "id": "update-has-no-enabled-public-artwork",
+      "surface": "update",
+      "representation": "asset",
+      "classification": "technical_identifier",
+      "public_identity": "allowed",
+      "release_status": "not_applicable",
+      "paths": [],
+      "absence_reason": "The in-application updater is disabled, so Good Bear 1.0 has no enabled public update artwork surface.",
+      "decision": "No asset is approved by absence: enabling an update surface requires a new reviewed inventory entry.",
+      "review_basis": "Product identity services contract."
+    },
+    {
+      "id": "desktop-launcher-identifiers",
+      "surface": "launcher",
+      "representation": "string",
+      "classification": "technical_identifier",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "config/product-identity.json",
+        "source/worktrees/firefox-155.0.1/browser/installer/linux/app/debian/control.in",
+        "patches/0016-good-bear-public-product-rebranding.patch"
+      ],
+      "decision": "M10-04 generates the com.ledovskoy.goodbear.desktop launcher with Good Bear branding, the goodbear command, and independently named installed icons.",
+      "review_basis": "BRANDING.md section 21 and Ubuntu packaging owner path."
+    },
+    {
+      "id": "launcher-icon-placeholders",
+      "surface": "launcher",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "overlay/browser/branding/goodbear/default16.png",
+        "overlay/browser/branding/goodbear/default32.png",
+        "overlay/browser/branding/goodbear/default48.png",
+        "overlay/browser/branding/goodbear/default64.png",
+        "overlay/browser/branding/goodbear/default128.png"
+      ],
+      "decision": "The launcher consumes the selected original Good Bear artwork in all declared Ubuntu sizes.",
+      "review_basis": "BRANDING.md sections 5.2, 5.3, 7, and 21."
+    },
+    {
+      "id": "firefox-compatibility-identifiers",
+      "surface": "application",
+      "representation": "string",
+      "classification": "technical_identifier",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "config/product-identity.json",
+        "patches/0001-good-bear-product-identity.patch"
+      ],
+      "decision": "The Firefox application ID, version and UA product token are preserved narrowly for compatibility and must never be rendered as Good Bear product identity.",
+      "review_basis": "Product identity compatibility dispositions and LEGAL.md section 5."
+    },
+    {
+      "id": "windows-installer-wizard-copy",
+      "surface": "installer",
+      "representation": "string",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "tools/build_m12_03_windows_installer.py"
+      ],
+      "decision": "The Windows installer presents Good Bear as its product name; Russian wizard text is supplied by the pinned Firefox Russian locale and is verified in the native installer gate.",
+      "review_basis": "M12-03 Windows installer contract and Russian single-locale release requirement."
+    },
+    {
+      "id": "windows-installer-wizard-mascot",
+      "surface": "installer",
+      "representation": "asset",
+      "classification": "product_mark",
+      "public_identity": "allowed",
+      "release_status": "allowed",
+      "paths": [
+        "artwork/final/m10-03/goodbear-welcome.png",
+        "tools/generate_nsis_branding_assets.py",
+        "overlay/browser/branding/goodbear/wizWatermark.bmp",
+        "overlay/browser/branding/goodbear/wizHeader.bmp",
+        "overlay/browser/branding/goodbear/wizHeaderRTL.bmp"
+      ],
+      "decision": "The Windows NSIS welcome and finish pages use a deterministic derivative of the approved original Good Bear welcome mascot. The three resources retain the upstream NSIS dimensions but are verified not to equal Firefox artwork.",
+      "review_basis": "M10-03 approved Workshop Beacon artwork; NSIS resource dimensions in browser/installer/windows/Makefile.in."
+    }
+  ]
+}

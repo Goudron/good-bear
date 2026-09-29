@@ -1,0 +1,85 @@
+# Firefox 156 routes the site-information shield through TrustPanel before its
+# popup is shown.  Its upstream breach-alert preparation consults the Mozilla
+# Remote Settings Monitor collection.  Good Bear deliberately has no such
+# product-service endpoint, so that optional data must not block the local
+# connection/security UI or cause a network request.
+diff --git a/browser/base/content/browser-trustPanel.js b/browser/base/content/browser-trustPanel.js
+index 04f3060..69d38c2 100644
+--- a/browser/base/content/browser-trustPanel.js
++++ b/browser/base/content/browser-trustPanel.js
+@@ -10,23 +10,15 @@ ChromeUtils.defineESModuleGetters(this, {
+   ContentBlockingAllowList:
+     "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
+   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+-  FX_MONITOR_OAUTH_CLIENT_ID: "resource://gre/modules/FxAccountsCommon.sys.mjs",
+   PanelMultiView:
+     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
+   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
+   QWACs: "resource://gre/modules/psm/QWACs.sys.mjs",
+   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
+-  UIState: "resource://services-sync/UIState.sys.mjs",
+   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+ });
+ 
+-ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
+-  return ChromeUtils.importESModule(
+-    "resource://gre/modules/FxAccounts.sys.mjs"
+-  ).getFxAccountsSingleton();
+-});
+-
+ XPCOMUtils.defineLazyPreferenceGetter(
+   this,
+   "insecureConnectionTextEnabled",
+@@ -1150,26 +1142,10 @@ class TrustPanel {
+   }
+ 
+   async #hasMonitorAccount() {
+-    const state = UIState.get();
+-    if (state.status !== UIState.STATUS_SIGNED_IN) {
+-      return false;
+-    }
+-    try {
+-      const attachedClients =
+-        (await fxAccounts.listAttachedOAuthClients(
+-          this.#clearFxaOauthClientCache
+-        )) ?? [];
+-      this.#clearFxaOauthClientCache = false;
+-
+-      const hasMonitorClient = attachedClients.some(
+-        client => client.id === FX_MONITOR_OAUTH_CLIENT_ID
+-      );
+-
+-      return hasMonitorClient;
+-    } catch (error) {
+-      console.warn("Failed to fetch attached OAuth clients:", error);
+-      return false;
+-    }
++    // Good Bear has no Firefox Account or Mozilla Monitor integration.
++    // The local Trust Panel must never load those disabled modules before it
++    // opens the connection and site-information UI.
++    return false;
+   }
+ 
+   async #hasStoredPasswords() {
+@@ -2128,6 +2104,20 @@ class TrustPanel {
+   async #getBreachedWebsites() {
+     const REMOTE_SETTINGS_COLLECTION = "fxmonitor-breaches";
+ 
++    // The Trust Panel is local browser UI and must remain available even
++    // when Good Bear disables the optional Monitor product service.
++    // Keep the shared Remote Settings endpoint for certificate security
++    // collections; its presence must not authorize a Monitor lookup.
++    if (
++      !Services.prefs.getBoolPref(
++        "browser.contentblocking.report.monitor.enabled",
++        false
++      ) ||
++      !Services.prefs.getStringPref("services.settings.server", "")
++    ) {
++      return [];
++    }
++
+     try {
+       const breaches = await RemoteSettings(REMOTE_SETTINGS_COLLECTION).get();
+       return breaches;

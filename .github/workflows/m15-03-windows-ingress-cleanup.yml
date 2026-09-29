@@ -1,0 +1,41 @@
+name: M15-03 Windows ingress cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type REMOVE_INGRESS to disable temporary Windows remote transports.
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  remove-temporary-remote-transports:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 5
+    steps:
+      - name: Remove bootstrap ingress and retain outbound runner control only
+        shell: powershell
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:CONFIRM -ne 'REMOVE_INGRESS') {
+            throw 'Explicit cleanup confirmation is required.'
+          }
+          Get-NetFirewallRule -DisplayName 'GoodBear-*' -ErrorAction SilentlyContinue |
+            Remove-NetFirewallRule -ErrorAction Stop
+          Get-NetFirewallRule -DisplayGroup 'Windows Remote Management' -ErrorAction SilentlyContinue |
+            Disable-NetFirewallRule -ErrorAction Stop
+          Disable-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue
+          Stop-Service -Name WinRM -Force -ErrorAction SilentlyContinue
+          Set-Service -Name WinRM -StartupType Disabled
+          Stop-Service -Name sshd -Force -ErrorAction SilentlyContinue
+          Set-Service -Name sshd -StartupType Disabled
+          $listeners = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+            Where-Object { $_.LocalPort -in 22, 443, 5985, 5986 }
+          if ($listeners) {
+            throw 'A temporary remote-transport listener remains active.'
+          }
+          Write-Output 'GOOD_BEAR_WINDOWS_INGRESS_CLEANUP_OK'

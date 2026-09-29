@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M11-01",
+  "firefox_version": "156.0",
+  "fixture_matrix": "config/m2-05-pki-fixture-matrix.json",
+  "supply_chain_gate": "tools/verify_m3_04_certificate_supply_chain.py",
+  "test_owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp",
+  "test_build_owner": "security/manager/ssl/tests/gtest/moz.build",
+  "required_scenarios": {
+    "T01": "StandardSuccessDoesNotConsultScopeOrAlternateTrust",
+    "T04": "SameNameFakeRootDoesNotMatchExactAnchor",
+    "T05": "HostnameMismatchRetainsOriginalTLSError",
+    "T06": "ExpiredChainRetainsOriginalTLSError",
+    "T07": "InvalidSignatureRetainsOriginalTLSError",
+    "T21": "DisabledOrMissingContainerNeverRunsAlternateVerification",
+    "T22": "MissingIntermediateRetainsOriginalTLSError"
+  },
+  "required_algorithm_negatives": [
+    "WrongEKURetainsOriginalTLSError",
+    "NonCAIntermediateRetainsOriginalTLSError",
+    "PathLengthRetainsOriginalTLSError",
+    "EmptyAnchorSetFailsClosed"
+  ],
+  "required_role_separation": [
+    "AlternateVerifierDoesNotMutateOrdinaryOrGlobalTrust",
+    "ProductionRSA2024IssuerCompletesFSTECMissingIntermediateChain"
+  ],
+  "test_only_root_boundary": "The generated Good Bear test root is accepted only by the test-local alternate verifier. It must not be added to the ordinary NSS store, production manifest, or promoted M3 build inputs."
+}

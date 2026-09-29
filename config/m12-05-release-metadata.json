@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M12-05",
+  "product": "Good Bear",
+  "release_locale": "ru",
+  "source_inventory": "config/m10-07-source-release-inventory.json",
+  "source_offer": {
+    "location": "https://github.com/Goudron/good-bear",
+    "terms_must_not_restrict_mpl_source_code_form": true,
+    "full_firefox_source_mirror": "forbidden"
+  },
+  "ubuntu": {
+    "artifact": "artifacts/m12-02-ubuntu-candidates-r3/goodbear-browser_1.0+firefox154.0-1_amd64.deb",
+    "sha256": "b4b44e9b69f583e1de5c6a9a3a79e7731547b9c9610f2a73a8e59026f11da9f4",
+    "patch_set_manifest_sha256": "c61eb260905a7a6ac116d958c5e53151ddbfce3eb57a45206084d01720872e0c",
+    "package_evidence": "artifacts/m12-02-ubuntu-candidates-r3/goodbear-browser_1.0+firefox154.0-1_amd64.deb.evidence.json",
+    "package_evidence_sha256": "4526f4d962be8d55502ab29e17c12abc01c6ed0594c56a7ca6a44e4eab83ac82",
+    "lifecycle_evidence": "artifacts/m12-04-ubuntu-lifecycle/m12-04-20260906T021220Z.json",
+    "candidate_status": "unsigned local candidate only",
+    "signing": {
+      "format": "detached OpenPGP signature",
+      "approved_authority": "not supplied",
+      "signature": "not produced",
+      "public_release": "blocked until a separately approved signing authority is supplied",
+      "self_signed_or_invented_trust": "forbidden"
+    }
+  },
+  "windows": {
+    "artifact": null,
+    "filename": "GoodBear Setup 1.0 x64 ru.exe",
+    "candidate_status": "not built; no local candidate exists",
+    "signing": {
+      "approved_authority": "not supplied",
+      "signature": "not produced",
+      "public_release": "blocked until a separately approved signing authority is supplied",
+      "self_signed_or_invented_trust": "forbidden"
+    }
+  },
+  "public_release": {
+    "allowed": false,
+    "required_blockers": [
+      "good_bear_revision_unavailable",
+      "ubuntu_signing_authority_unavailable",
+      "windows_artifact_unavailable",
+      "windows_manual_validation_pending",
+      "windows_signing_authority_unavailable"
+    ]
+  }
+}

@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-10",
+  "release_gates": [
+    "M13",
+    "M14",
+    "public_release"
+  ],
+  "firefox_version": "156.0",
+  "prior_profile_version": "154.0",
+  "version_pair": {
+    "good_bear": "1.0",
+    "firefox": "156.0"
+  },
+  "materialization_marker": "source/worktrees/firefox-156.0/.good-bear-materialization.json",
+  "decision_contract": "config/m13-03-decision-coverage-contract.json",
+  "transport_contract": "config/m15-01-remote-transport.json",
+  "static_contracts_only": [
+    "GB100-M15-04",
+    "GB100-M15-05",
+    "GB100-M15-06",
+    "GB100-M15-07",
+    "GB100-M15-08",
+    "GB100-M15-09",
+    "GB100-M15-09a"
+  ],
+  "remote_artifacts": {
+    "ubuntu-amd64": {
+      "suffix": ".deb",
+      "provenance": "logs/provenance.json",
+      "builder_fingerprint_sha256": null
+    },
+    "windows-x64": {
+      "suffix": ".exe",
+      "provenance": "logs/provenance.json",
+      "builder_fingerprint_sha256": null
+    }
+  },
+  "runtime_evidence": {
+    "targeted_tests_156": [
+      "upstream_positive",
+      "upstream_negative",
+      "good_bear_positive",
+      "good_bear_negative"
+    ],
+    "profile_migration_154_to_156": [
+      "bookmarks",
+      "passwords",
+      "history",
+      "container_assignments",
+      "user_preferences",
+      "trust_scope_unchanged",
+      "container_state_unchanged"
+    ],
+    "russian_pki_container": [
+      "valid_scoped_chain",
+      "outside_container_rejected",
+      "fake_anchor_rejected",
+      "isolation_preserved"
+    ],
+    "decision_branches_156": [
+      "all_positive",
+      "all_negative"
+    ],
+    "spellcheck_ui_ru_en": [
+      "fresh_profile_enabled",
+      "ru_misspelling_marked",
+      "ru_correct_unmarked",
+      "en_misspelling_marked",
+      "en_correct_unmarked",
+      "user_language_choice",
+      "no_dictionary_download"
+    ],
+    "ubuntu_package_ownership": [
+      "clean_ubuntu_install",
+      "dpkg_owns_browser",
+      "dpkg_owns_desktop_entry",
+      "update_preserves_dpkg_ownership",
+      "no_unowned_browser_files"
+    ],
+    "windows_unsigned_distribution": [
+      "application_updater_disabled",
+      "asset_sha256_verified",
+      "corresponding_source_available",
+      "incomplete_release_manifest_rejected",
+      "incorrect_checksum_rejected",
+      "modified_asset_rejected",
+      "no_automatic_update_request",
+      "provenance_matches_frozen_source",
+      "russian_verification_instruction_present",
+      "sbom_matches_asset",
+      "unsigned_disclosure_visible"
+    ],
+    "ubuntu_unsigned_distribution": [
+      "application_updater_disabled",
+      "asset_sha256_verified",
+      "checksum_verified_before_privilege_escalation",
+      "corresponding_source_available",
+      "incomplete_release_manifest_rejected",
+      "incorrect_checksum_rejected",
+      "modified_asset_rejected",
+      "no_automatic_update_request",
+      "provenance_matches_frozen_source",
+      "russian_verification_instruction_present",
+      "sbom_matches_asset",
+      "unsigned_disclosure_visible",
+      "version_pinned_download"
+    ]
+  },
+  "distribution_policy": {
+    "mode": "unsigned_manual_install",
+    "application_updater_enabled": false,
+    "auto_update_claim_allowed": false,
+    "deferred_signed_update": {
+      "id": "windows_signed_mar_e2e",
+      "status": "not_accepted_for_this_release_mode",
+      "required_checks": [
+        "allowed_update_applied",
+        "downgrade_rejected",
+        "modified_mar_rejected",
+        "privacy_fields_only",
+        "replay_rejected",
+        "rollback_on_failure",
+        "signed_complete_mar",
+        "signed_metadata",
+        "wrong_channel_rejected",
+        "wrong_firefox_base_rejected",
+        "wrong_platform_rejected",
+        "wrong_product_rejected"
+      ],
+      "activation": "separate_approved_signed_release_with_complete_runtime_evidence"
+    }
+  }
+}

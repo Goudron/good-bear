@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M5-01",
+  "firefox_version": "156.0",
+  "patch": "patches/0008-good-bear-managed-russian-pki-container.patch",
+  "manager_owner": "browser/components/GoodBearRussianPKIContainer.sys.mjs",
+  "identity_owner": "toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs",
+  "startup_owner": "browser/components/BrowserGlue.sys.mjs",
+  "test_owner": "browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js",
+  "purpose": "goodbear-russian-pki",
+  "rule": "When Russian PKI support is active, Good Bear owns one native public contextual identity with the exact managed purpose. Only its non-default userContextId may become a future scope-authority snapshot. Deletion recreates a new identity and invalidates the old ID; duplicate/corrupt purpose state returns no ID. The manager never identifies or authorizes a container by its name, color, icon, window, or preference.",
+  "follow_up_boundary": "M5-02 owns the feature enable/disable preference and lifecycle policy. M5-03 through M5-05 own assignments, routing, tab/session continuity, and private-browsing policy. M6 owns first-navigation safety. This task creates no origin assignment and grants no Russian PKI trust."
+}

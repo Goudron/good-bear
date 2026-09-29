@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-09a",
+  "firefox_base": "156.0",
+  "browser_placeholder": {
+    "status": "inactive_not_configured",
+    "preference": {
+      "name": "goodbear.telemetry.enabled",
+      "fresh_profile_default": true,
+      "durable_user_choice": true
+    },
+    "ui": {
+      "status_text": "inactive_not_configured_no_data_is_sent",
+      "must_not_claim_live_collection": true
+    },
+    "runtime": {
+      "client": "absent",
+      "endpoint": null,
+      "collector_ready": false,
+      "transport_gate": false,
+      "identifier": "absent",
+      "queue": "absent",
+      "serialization": "absent",
+      "dns": "forbidden",
+      "network": "forbidden",
+      "retry": "absent",
+      "fallback": "forbidden",
+      "network_requests_regardless_of_preference": 0
+    },
+    "future_collector": {
+      "maintainer_selected_domain": "ledovskoy.com",
+      "status": "not_approved_not_configured_not_an_endpoint",
+      "requires_separate_task": true
+    }
+  },
+  "github_release_downloads": {
+    "repository": "Goudron/good-bear",
+    "source": "GitHub Releases REST API asset.download_count",
+    "collection_side": "maintainer_only",
+    "input_mode": "offline_saved_api_response",
+    "snapshot_tool": "tools/snapshot_m15_09a_github_downloads.py",
+    "distribution_assets": {
+      "ubuntu-amd64": [".deb"],
+      "windows-x64": [".exe"]
+    },
+    "required_provenance": [
+      "repository",
+      "observed_at",
+      "source_api_url",
+      "source_response_sha256",
+      "release_tag",
+      "release_id",
+      "asset_id",
+      "asset_name",
+      "asset_updated_at",
+      "download_count"
+    ],
+    "interpretation": "distribution_download_events_not_people_or_active_installations",
+    "forbidden_labels": [
+      "unique_users",
+      "active_users",
+      "active_installations",
+      "DAU",
+      "WAU",
+      "MAU"
+    ]
+  },
+  "hosted_service_boundary": "config/m15-12-hosted-service-boundary.json",
+  "release_status": "browser_telemetry_inactive_download_snapshot_foundation_only"
+}

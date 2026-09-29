@@ -1,0 +1,709 @@
+# Good Bear M15-12: disclose the Google Safe Browsing supplier before use.
+# Keep phishing, malware and download protection enabled while failing closed
+# until a visible, localized notice is rendered and the user continues.
+# Native browser/runtime acceptance remains a separate Cloud.ru gate.
+diff --git a/browser/actors/BlockedSiteChild.sys.mjs b/browser/actors/BlockedSiteChild.sys.mjs
+index c0cd551..495e41a 100644
+--- a/browser/actors/BlockedSiteChild.sys.mjs
++++ b/browser/actors/BlockedSiteChild.sys.mjs
+@@ -44,6 +44,20 @@ export class BlockedSiteChild extends JSWindowActorChild {
+     let doc = aEvent.target;
+     let blockedInfo = getSiteBlockedErrorDetails(this.docShell);
+     let provider = blockedInfo.provider || "";
++    // Attribute only Google's own results, never Mozilla or another provider.
++    if (["google", "google4", "google5"].includes(provider)) {
++      doc.getElementById("goodbearGoogleNotice").hidden = false;
++      if (aEvent.detail.err === "phishing") {
++        doc.l10n.setAttributes(
++          doc.getElementById("errorTitleText"),
++          "goodbear-safebrowsing-phishing-title"
++        );
++        doc.l10n.setAttributes(
++          doc.querySelector("title"),
++          "goodbear-safebrowsing-phishing-title"
++        );
++      }
++    }
+ 
+     /**
+      * Set error description link in error details.
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+index 821a4c9..b19695a 100644
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -3887,6 +3887,12 @@ pref("browser.crashReports.unsubmittedCheck.autoSubmit2", false);
+ // Good Bear usage telemetry is a separate future transport. The visible user
+ // choice defaults on, but an absent endpoint or closed transport gate means
+ // no serialization, DNS lookup, connection, queue, retry, or transmission.
++// Good Bear presents its own local supplier disclosure before browser startup.
++// Do not ask its users to accept the separate Mozilla Firefox product agreement.
++pref("browser.preonboarding.enabled", false);
++pref("termsofuse.bypassNotification", true);
++pref("datareporting.policy.firstRunURL", "about:rights#privacy");
++
+ pref("goodbear.telemetry.enabled", true);
+ pref("goodbear.telemetry.transport.enabled", false);
+ pref("goodbear.telemetry.endpoint", "");
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+index ac6a0a5..9d5e445 100644
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -35,6 +35,7 @@
+ 
+     <html:link rel="localization" href="branding/brand.ftl"/>
+     <html:link rel="localization" href="browser/aboutDialog.ftl"/>
++    <html:link rel="localization" href="browser/goodbearSafeBrowsing.ftl"/>
+   </linkset>
+ 
+   <html:div id="aboutDialogContainer">
+@@ -138,6 +139,9 @@
+       </vbox>
+     </hbox>
+     <vbox id="bottomBox">
++      <hbox pack="center">
++        <label is="text-link" class="bottom-link" useoriginprincipal="true" href="about:rights" data-l10n-id="goodbear-legal-title"/>
++      </hbox>
+       <hbox id="goodbearAuthorLinks" pack="center">
+         <label id="goodbearAuthorSupportLink" is="text-link" class="bottom-link" href="https://boosty.to/goodbear" data-l10n-id="goodbear-about-author-support"/>
+         <label id="goodbearAuthorHireLink" is="text-link" class="bottom-link" href="https://hh.ru/resume/08072c72ff0c8e15930039ed1f73616e327262" data-l10n-id="goodbear-about-author-hire"/>
+diff --git a/browser/base/content/blockedSite.xhtml b/browser/base/content/blockedSite.xhtml
+index 79d7b2f..dd65b66 100644
+--- a/browser/base/content/blockedSite.xhtml
++++ b/browser/base/content/blockedSite.xhtml
+@@ -24,6 +24,7 @@
+     />
+     <link rel="localization" href="branding/brand.ftl" />
+     <link rel="localization" href="browser/safebrowsing/blockedSite.ftl" />
++    <link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
+   </head>
+   <body>
+     <div id="errorPageContainer" class="container">
+@@ -46,6 +47,13 @@
+         </div>
+ 
+         <!-- Action buttons -->
++        <div id="goodbearGoogleNotice" hidden="true">
++          <p data-l10n-id="goodbear-safebrowsing-warning-notice"></p>
++          <p>
++            <a href="about:rights#privacy" data-l10n-id="goodbear-safebrowsing-warning-details"></a>
++          </p>
++        </div>
++
+         <div id="buttons" class="button-container">
+           <!-- Commands handled in browser.js -->
+           <button
+diff --git a/browser/base/content/goodbearLegal.xhtml b/browser/base/content/goodbearLegal.xhtml
+new file mode 100644
+index 0000000..1a6eee2
+--- /dev/null
++++ b/browser/base/content/goodbearLegal.xhtml
+@@ -0,0 +1,32 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++<!DOCTYPE html>
++<html xmlns="http://www.w3.org/1999/xhtml">
++  <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src chrome: 'unsafe-inline'" />
++    <meta name="color-scheme" content="light dark" />
++    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
++    <link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
++    <title data-l10n-id="goodbear-legal-title"></title>
++  </head>
++  <body style="max-width: 52em; margin: 2em auto; padding: 0 1.5em">
++    <h1 data-l10n-id="goodbear-legal-title"></h1>
++    <p data-l10n-id="goodbear-legal-product"></p>
++    <p data-l10n-id="goodbear-legal-mozilla"></p>
++    <p><a href="about:license" data-l10n-id="goodbear-legal-licenses"></a></p>
++    <section id="privacy">
++      <h2 data-l10n-id="goodbear-safebrowsing-notice-title"></h2>
++      <p data-l10n-id="goodbear-safebrowsing-attribution"></p>
++      <p data-l10n-id="goodbear-safebrowsing-reliability"></p>
++      <p data-l10n-id="goodbear-safebrowsing-url-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-download-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-connection-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-settings"></p>
++      <p><a href="https://developers.google.com/safe-browsing/v4/advisory" data-l10n-id="goodbear-safebrowsing-advisory-link"></a></p>
++      <p><a href="https://developers.google.com/safe-browsing/terms" data-l10n-id="goodbear-safebrowsing-terms-link"></a></p>
++      <p><a href="https://policies.google.com/privacy" data-l10n-id="goodbear-safebrowsing-privacy-link"></a></p>
++    </section>
++  </body>
++</html>
+diff --git a/browser/base/content/goodbearSafeBrowsingNotice.js b/browser/base/content/goodbearSafeBrowsingNotice.js
+new file mode 100644
+index 0000000..70fddde
+--- /dev/null
++++ b/browser/base/content/goodbearSafeBrowsingNotice.js
+@@ -0,0 +1,62 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// Copyright 2026 Valery Ledovskoy.
++
++let continueButton;
++let noticeResult;
++
++document.addEventListener("dialogaccept", event => {
++  if (
++    !continueButton ||
++    continueButton.disabled ||
++    !noticeResult?.getPropertyAsBool("rendered")
++  ) {
++    event.preventDefault();
++    return;
++  }
++  noticeResult.setPropertyAsBool("continued", true);
++});
++
++window.addEventListener("load", async () => {
++  try {
++    // The dialog custom element creates its buttons while the window loads.
++    // Querying it earlier leaves its internal button map uninitialized.
++    continueButton = document
++      .getElementById("goodbearSafeBrowsingNotice")
++      .getButton("accept");
++    continueButton.disabled = true;
++    noticeResult = window.arguments[0].QueryInterface(
++      Ci.nsIWritablePropertyBag2
++    );
++    await document.l10n.ready;
++    const ids = [
++      "goodbear-safebrowsing-notice-title",
++      "goodbear-safebrowsing-attribution",
++      "goodbear-safebrowsing-reliability",
++      "goodbear-safebrowsing-url-data",
++      "goodbear-safebrowsing-download-data",
++      "goodbear-safebrowsing-connection-data",
++      "goodbear-safebrowsing-settings",
++      "goodbear-safebrowsing-continue",
++    ];
++    const text = await document.l10n.formatValues(ids.map(id => ({ id })));
++    if (text.some((value, index) => !value || value === ids[index])) {
++      throw new Error("Safe Browsing notice localization is unavailable");
++    }
++    await document.l10n.translateFragment(document.documentElement);
++    await new Promise(resolve =>
++      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))
++    );
++    if (window.closed || document.hidden) {
++      return;
++    }
++    noticeResult.setPropertyAsBool("rendered", true);
++    continueButton.disabled = false;
++    continueButton.focus();
++  } catch {
++    // Do not claim that an untranslated or incomplete notice was displayed.
++    window.close();
++  }
++});
+diff --git a/browser/base/content/goodbearSafeBrowsingNotice.xhtml b/browser/base/content/goodbearSafeBrowsingNotice.xhtml
+new file mode 100644
+index 0000000..f28d652
+--- /dev/null
++++ b/browser/base/content/goodbearSafeBrowsingNotice.xhtml
+@@ -0,0 +1,32 @@
++<?xml version="1.0"?>
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++<?csp default-src chrome: resource:; style-src chrome: 'unsafe-inline'; ?>
++<window
++  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
++  xmlns:html="http://www.w3.org/1999/xhtml"
++  data-l10n-id="goodbear-safebrowsing-notice-window"
++  data-l10n-attrs="title"
++>
++  <dialog
++    id="goodbearSafeBrowsingNotice"
++    buttons="accept"
++    buttonidaccept="goodbear-safebrowsing-continue"
++  >
++    <linkset>
++      <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
++      <html:link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
++    </linkset>
++    <html:main style="max-width: 38em; padding: 0.5em 1em">
++      <html:h1 data-l10n-id="goodbear-safebrowsing-notice-title" />
++      <html:p data-l10n-id="goodbear-safebrowsing-attribution" />
++      <html:p data-l10n-id="goodbear-safebrowsing-reliability" />
++      <html:p data-l10n-id="goodbear-safebrowsing-url-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-download-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-connection-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-settings" />
++    </html:main>
++    <script src="chrome://browser/content/goodbearSafeBrowsingNotice.js" />
++  </dialog>
++</window>
+diff --git a/browser/base/jar.mn b/browser/base/jar.mn
+index 60c4d81..0808a3f 100644
+--- a/browser/base/jar.mn
++++ b/browser/base/jar.mn
+@@ -80,6 +80,9 @@ browser.jar:
+         content/browser/safeMode.css                        (content/safeMode.css)
+         content/browser/safeMode.js                         (content/safeMode.js)
+         content/browser/safeMode.xhtml                      (content/safeMode.xhtml)
++        content/browser/goodbearSafeBrowsingNotice.xhtml     (content/goodbearSafeBrowsingNotice.xhtml)
++        content/browser/goodbearSafeBrowsingNotice.js        (content/goodbearSafeBrowsingNotice.js)
++        content/browser/goodbearLegal.xhtml                  (content/goodbearLegal.xhtml)
+         content/browser/sanitize_v2.xhtml                   (content/sanitize_v2.xhtml)
+         content/browser/sanitizeDialog.js                   (content/sanitizeDialog.js)
+         content/browser/utilityOverlay.js                   (content/utilityOverlay.js)
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+index 071bb42..2203bda 100644
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -62,6 +62,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
+     "moz-src:///browser/components/ProfileDataUpgrader.sys.mjs",
+   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+   SafeBrowsing: "resource://gre/modules/SafeBrowsing.sys.mjs",
++  GoodBearSafeBrowsingNotice:
++    "resource:///modules/GoodBearSafeBrowsingNotice.sys.mjs",
+   Sanitizer: "resource:///modules/Sanitizer.sys.mjs",
+   ScreenshotsUtils:
+     "moz-src:///browser/components/screenshots/ScreenshotsUtils.sys.mjs",
+@@ -1034,6 +1036,19 @@ BrowserGlue.prototype = {
+   // runs on startup, before the first command line handler is invoked
+   // (i.e. before the first window is opened)
+   _beforeUIStartup: function BG__beforeUIStartup() {
++    // The native modal opens asynchronously. Its returned promise either
++    // enables Safe Browsing after a real acknowledgement or exits fail-closed.
++    lazy.GoodBearSafeBrowsingNotice.ensureShown().then(
++      shown => {
++        if (shown) {
++          lazy.SafeBrowsing.init();
++          return;
++        }
++        Services.startup.quit(Ci.nsIAppStartup.eForceQuit);
++      },
++      () => Services.startup.quit(Ci.nsIAppStartup.eForceQuit)
++    );
++
+     lazy.SessionStartup.init();
+ 
+     // check if we're in safe mode
+diff --git a/browser/components/GoodBearSafeBrowsingNotice.sys.mjs b/browser/components/GoodBearSafeBrowsingNotice.sys.mjs
+new file mode 100644
+index 0000000..5bcb58c
+--- /dev/null
++++ b/browser/components/GoodBearSafeBrowsingNotice.sys.mjs
+@@ -0,0 +1,108 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// Copyright 2026 Valery Ledovskoy.
++
++export const GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION = 1;
++export const GOOD_BEAR_SAFEBROWSING_NOTICE_PREF =
++  "goodbear.safebrowsing.notice.version";
++const NOTICE_URI = "chrome://browser/content/goodbearSafeBrowsingNotice.xhtml";
++
++export const GoodBearSafeBrowsingNotice = {
++  // The disclosure is modal, but its native window opens asynchronously.
++  // Safe Browsing remains disabled until its returned promise records a real
++  // user acknowledgement.
++  Policy: {
++    openNotice(result) {
++      Services.ww.openWindow(
++        null,
++        NOTICE_URI,
++        "_blank",
++        "chrome,centerscreen,modal,resizable=no",
++        result
++      );
++    },
++    savePrefs() {
++      Services.prefs.savePrefFile(null);
++    },
++  },
++
++  get wasShown() {
++    return (
++      Services.prefs.prefHasUserValue(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF) &&
++      !Services.prefs.prefIsLocked(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF) &&
++      Services.prefs.getIntPref(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF, 0) ===
++      GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION
++    );
++  },
++
++  async ensureShown() {
++    if (this.wasShown) {
++      return true;
++    }
++
++    const result = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
++      Ci.nsIWritablePropertyBag2
++    );
++    result.setPropertyAsBool("rendered", false);
++    result.setPropertyAsBool("continued", false);
++    let observer;
++    try {
++      await new Promise(resolve => {
++        let notice;
++        observer = {
++          observe(subject, topic) {
++            if (topic === "domwindowopened") {
++              const win = subject;
++              win.addEventListener(
++                "load",
++                () => {
++                  if (win.document.documentURI === NOTICE_URI) {
++                    notice = win;
++                  }
++                },
++                { once: true }
++              );
++              return;
++            }
++            if (
++              topic === "domwindowclosed" &&
++              notice &&
++              subject.location == NOTICE_URI
++            ) {
++              resolve();
++            }
++          },
++        };
++        Services.ww.registerNotification(observer);
++        this.Policy.openNotice(result);
++      });
++      if (
++        !result.getPropertyAsBool("rendered") ||
++        !result.getPropertyAsBool("continued")
++      ) {
++        return false;
++      }
++      Services.prefs.setIntPref(
++        GOOD_BEAR_SAFEBROWSING_NOTICE_PREF,
++        GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION
++      );
++      this.Policy.savePrefs();
++      return this.wasShown;
++    } catch {
++      // A failed render, locked preference or failed persistence never counts
++      // as a completed notice, including for an existing profile.
++      try {
++        Services.prefs.clearUserPref(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF);
++      } catch {
++        // A locked preference is left locked; the caller stops startup.
++      }
++      return false;
++    } finally {
++      if (observer) {
++        Services.ww.unregisterNotification(observer);
++      }
++    }
++  },
++};
+diff --git a/browser/components/about/AboutRedirector.cpp b/browser/components/about/AboutRedirector.cpp
+index a6c6ed7..3acc5f4 100644
+--- a/browser/components/about/AboutRedirector.cpp
++++ b/browser/components/about/AboutRedirector.cpp
+@@ -123,7 +123,7 @@ static const RedirEntry kRedirMap[] = {
+          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+     {"restartrequired", "chrome://browser/content/aboutRestartRequired.xhtml",
+      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+-    {"rights", "https://www.mozilla.org/about/legal/terms/firefox/",
++    {"rights", "chrome://browser/content/goodbearLegal.xhtml",
+      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+     {"robots", "chrome://browser/content/aboutRobots.xhtml",
+diff --git a/browser/components/moz.build b/browser/components/moz.build
+index 6b3813c..d7c135d 100644
+--- a/browser/components/moz.build
++++ b/browser/components/moz.build
+@@ -120,6 +120,7 @@ EXTRA_JS_MODULES += [
+     "distribution.sys.mjs",
+     "GoodBearRussianPKIContainer.sys.mjs",
+     "GoodBearRussianPKIInterstitial.sys.mjs",
++    "GoodBearSafeBrowsingNotice.sys.mjs",
+ ]
+ 
+ MOZ_SRC_FILES += [
+diff --git a/browser/components/tests/browser/browser.toml b/browser/components/tests/browser/browser.toml
+index 8abd446..50f3877 100644
+--- a/browser/components/tests/browser/browser.toml
++++ b/browser/components/tests/browser/browser.toml
+@@ -8,6 +8,8 @@ support-files = [
+ 
+ ["browser_browserGlue_fxa_client_info_ping.js"]
+ 
++["browser_goodbear_safebrowsing_notice.js"]
++
+ ["browser_browserGlue_os_auth.js"]
+ skip-if = [
+   "os == 'linux' && os_version == '22.04' && arch == 'x86_64' && display == 'wayland'",
+diff --git a/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js b/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js
+new file mode 100644
+index 0000000..3fe8345
+--- /dev/null
++++ b/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js
+@@ -0,0 +1,139 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearSafeBrowsingNotice: SupplierNotice,
++  GOOD_BEAR_SAFEBROWSING_NOTICE_PREF: NOTICE_PREF,
++  GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION: NOTICE_VERSION,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearSafeBrowsingNotice.sys.mjs"
++);
++
++const NOTICE_URI = "chrome://browser/content/goodbearSafeBrowsingNotice.xhtml";
++
++async function exerciseNotice({ continued, existingProfile }) {
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      [NOTICE_PREF, 0],
++      ["trailhead.firstrun.didSeeAboutWelcome", existingProfile],
++      ["browser.aboutwelcome.enabled", false],
++      ["browser.preonboarding.enabled", false],
++    ],
++  });
++  const opened = BrowserTestUtils.domWindowOpenedAndLoaded(
++    null,
++    win => win.document.documentURI === NOTICE_URI
++  );
++  const handled = opened.then(async win => {
++    const dialog = win.document.getElementById("goodbearSafeBrowsingNotice");
++    await TestUtils.waitForCondition(
++      () => !dialog.getButton("accept").disabled,
++      "The translated disclosure must be rendered before Continue"
++    );
++    Assert.equal(Services.prefs.getIntPref(NOTICE_PREF), 0);
++    Assert.ok(!win.document.hidden, "The actual disclosure window is visible");
++    Assert.ok(win.document.querySelector("main").textContent.trim());
++    const closed = BrowserTestUtils.windowClosed(win);
++    if (continued) {
++      dialog.acceptDialog();
++    } else {
++      win.close();
++    }
++    await closed;
++  });
++  const result = await SupplierNotice.ensureShown();
++  await handled;
++  Assert.equal(result, continued);
++  Assert.equal(
++    Services.prefs.getIntPref(NOTICE_PREF),
++    continued ? NOTICE_VERSION : 0
++  );
++  if (continued) {
++    Assert.ok(
++      Services.prefs.prefHasUserValue(NOTICE_PREF),
++      "Only a persisted profile acknowledgement satisfies the gate"
++    );
++    Assert.ok(
++      !Services.prefs.prefIsLocked(NOTICE_PREF),
++      "A locked policy value is not a rendered user acknowledgement"
++    );
++  }
++  await SpecialPowers.popPrefEnv();
++}
++
++add_task(async function test_supplier_notice_new_and_existing_profiles() {
++  await exerciseNotice({ continued: true, existingProfile: false });
++  await exerciseNotice({ continued: true, existingProfile: true });
++});
++
++add_task(async function test_supplier_notice_close_does_not_enable_service() {
++  await exerciseNotice({ continued: false, existingProfile: true });
++});
++
++add_task(async function test_supplier_notice_failure_is_not_acknowledgement() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, 0]] });
++  const original = SupplierNotice.Policy.openNotice;
++  try {
++    SupplierNotice.Policy.openNotice = () => {
++      throw new Error("local notice unavailable");
++    };
++    Assert.ok(!(await SupplierNotice.ensureShown()));
++    Assert.ok(!SupplierNotice.wasShown);
++  } finally {
++    SupplierNotice.Policy.openNotice = original;
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_supplier_notice_already_shown_does_not_repeat() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, NOTICE_VERSION]] });
++  const original = SupplierNotice.Policy.openNotice;
++  try {
++    SupplierNotice.Policy.openNotice = () => {
++      throw new Error("already-informed profile must not reopen the notice");
++    };
++    Assert.ok(await SupplierNotice.ensureShown());
++  } finally {
++    SupplierNotice.Policy.openNotice = original;
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_unattributed_warning_has_no_google_notice() {
++  await BrowserTestUtils.withNewTab(
++    "about:blocked?e=deceptiveBlocked&u=https%3A%2F%2Fexample.com%2F&o=1&",
++    async browser => {
++      await SpecialPowers.spawn(browser, [], async () => {
++        await content.document.l10n.ready;
++        Assert.ok(
++          content.document.getElementById("goodbearGoogleNotice").hidden
++        );
++        Assert.ok(!content.document.getElementById("advisory_provider"));
++      });
++    }
++  );
++});
++
++add_task(
++  async function test_bundled_legal_retains_licenses_and_supplier_links() {
++    await BrowserTestUtils.withNewTab("about:rights", async browser => {
++      await SpecialPowers.spawn(browser, [], async () => {
++        await content.document.l10n.ready;
++        Assert.ok(content.document.querySelector('a[href="about:license"]'));
++        Assert.ok(
++          content.document.querySelector(
++            'a[href="https://policies.google.com/privacy"]'
++          )
++        );
++        Assert.ok(
++          content.document.querySelector(
++            'a[href="https://developers.google.com/safe-browsing/terms"]'
++          )
++        );
++        Assert.ok(
++          content.document.querySelector("#privacy").textContent.trim()
++        );
++      });
++    });
++  }
++);
+diff --git a/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl b/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl
+new file mode 100644
+index 0000000..24fe7c6
+--- /dev/null
++++ b/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl
+@@ -0,0 +1,26 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++# Copyright 2026 Valery Ledovskoy.
++
++goodbear-safebrowsing-notice-window =
++    .title = Good Bear — protection against unsafe sites
++goodbear-safebrowsing-notice-title = Protection against unsafe sites and downloads
++goodbear-safebrowsing-attribution = Good Bear uses Google Safe Browsing. Advisory provided by Google.
++goodbear-safebrowsing-reliability = This protection cannot guarantee that a site or download is safe. Some threats may go undetected, and safe sites or files may be flagged in error.
++goodbear-safebrowsing-url-data = To check sites, Good Bear downloads threat lists from Google and may send partial hashes of web addresses for verification.
++goodbear-safebrowsing-download-data = To check downloaded programs, Good Bear may send Google the download and redirect addresses, the referring address, the file name, size and SHA256 hash, digital signature information, and the browser language.
++goodbear-safebrowsing-connection-data = Google also receives connection information, including your IP address. Google processes this information under its privacy policy.
++goodbear-safebrowsing-settings = You can manage this protection in Settings → Privacy & Security. This notice and links to the provider’s terms and privacy policy remain available under Legal and privacy notices in About Good Bear.
++goodbear-safebrowsing-continue = Continue
++    .label = Continue
++goodbear-safebrowsing-advisory-link = Google Safe Browsing advisory
++goodbear-safebrowsing-terms-link = Google Safe Browsing terms
++goodbear-safebrowsing-privacy-link = Google privacy policy
++goodbear-safebrowsing-phishing-title = This site may be deceptive
++goodbear-safebrowsing-warning-notice = Google Safe Browsing may miss threats or flag safe sites in error. The reliability and accuracy of the service’s information cannot be guaranteed.
++goodbear-safebrowsing-warning-details = Protection and privacy details
++goodbear-legal-title = Legal and privacy notices
++goodbear-legal-product = Good Bear is an independent browser. Original Good Bear contributions: © 2026 Valery Ledovskoy.
++goodbear-legal-mozilla = Good Bear is based on Mozilla Firefox open-source code and is not affiliated with, sponsored by, or endorsed by Mozilla. Mozilla and Firefox are trademarks of the Mozilla Foundation. The original Mozilla and third-party notices and licenses remain applicable.
++goodbear-legal-licenses = Open-source licenses and third-party notices
+diff --git a/testing/profiles/base/user.js b/testing/profiles/base/user.js
+index ae1866f..657faf5 100644
+--- a/testing/profiles/base/user.js
++++ b/testing/profiles/base/user.js
+@@ -30,3 +30,8 @@ user_pref("extensions.formautofill.useml", false);
+ // browser.ml.onnxNativeAvailabilityReported gates a non-trivial probe run on idle startup.
+ // Setting to true to avoid running it in every browser test.
+ user_pref("browser.ml.onnxNativeAvailabilityReported", true);
++
++// Test fixture: this profile has already displayed Good Bear's supplier notice.
++// Dedicated startup-notice tests clear this value and exercise the real dialog.
++// Shipping defaults deliberately do not contain this acknowledgement.
++user_pref("goodbear.safebrowsing.notice.version", 1);
+diff --git a/toolkit/components/reputationservice/ApplicationReputation.cpp b/toolkit/components/reputationservice/ApplicationReputation.cpp
+index 3f65492..03bd4a5 100644
+--- a/toolkit/components/reputationservice/ApplicationReputation.cpp
++++ b/toolkit/components/reputationservice/ApplicationReputation.cpp
+@@ -1596,6 +1596,17 @@ nsresult PendingLookup::SendRemoteQuery() {
+ }
+ 
+ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
++  // Download reputation can run independently of SafeBrowsing.init(). Do not
++  // contact Google before the local startup disclosure has been shown.
++  static constexpr auto kGoodBearNoticePref =
++      "goodbear.safebrowsing.notice.version";
++  if (!Preferences::HasUserValue(kGoodBearNoticePref) ||
++      Preferences::IsLocked(kGoodBearNoticePref) ||
++      Preferences::GetInt(kGoodBearNoticePref, 0) != 1) {
++    aReason = Reason::eRemotelookupdisabled;
++    return NS_ERROR_NOT_AVAILABLE;
++  }
++
+   auto scopeExit = mozilla::MakeScopeExit([&aReason]() {
+     if (aReason == Reason::eNotset) {
+       aReason = Reason::eInternalerror;
+diff --git a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+index fd82856..55717ac 100644
+--- a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
++++ b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+@@ -352,6 +352,17 @@ const FEATURES = [
+ 
+ export var SafeBrowsing = {
+   init() {
++    // This is a startup disclosure, not a switch for phishing/malware protection.
++    // BrowserGlue stops startup if the local notice cannot be displayed.
++    const noticePref = "goodbear.safebrowsing.notice.version";
++    if (
++      !Services.prefs.prefHasUserValue(noticePref) ||
++      Services.prefs.prefIsLocked(noticePref) ||
++      Services.prefs.getIntPref(noticePref, 0) !== 1
++    ) {
++      return;
++    }
++
+     if (this.initialized) {
+       log("Already initialized");
+       return;
+diff --git a/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html b/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
+index 5fa49f6..25df94b 100644
+--- a/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
++++ b/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
+@@ -40,6 +40,10 @@ var testDatas = [
+     list: "mochi2-phish-simple",
+     provider: "google4",
+   },
++  { url: "phishing.example.org/test.html",
++    list: "mochi3-phish-simple",
++    provider: "google5",
++  },
+ ];
+ 
+ let pushPrefs = (...p) => SpecialPowers.pushPrefEnv({set: p});
+@@ -88,7 +92,11 @@ function testOnWindow(aTestData) {
+       // so let's wait for `document.l10n.ready` promise to resolve.
+       await doc.l10n.ready;
+       let advisoryEl = doc.getElementById("advisory_provider");
+-      if (aTestData.provider != "google" && aTestData.provider != "google4") {
++      let isGoogle = ["google", "google4", "google5"].includes(aTestData.provider);
++      let supplierNotice = doc.getElementById("goodbearGoogleNotice");
++      is(supplierNotice.hidden, !isGoogle,
++         "Only Google results carry the Google reliability notice");
++      if (!isGoogle) {
+         ok(!advisoryEl, "Advisory should not be shown");
+       } else {
+         ok(advisoryEl, "Advisory element should exist");
+@@ -102,6 +110,9 @@ function testOnWindow(aTestData) {
+                                     aTestData.provider +
+                                     ".advisoryName");
+         is(advisoryEl.text, expectedText, "correct advisory text");
++        is(doc.getElementById("errorTitleText").getAttribute("data-l10n-id"),
++           "goodbear-safebrowsing-phishing-title", "Qualified phishing title");
++        ok(supplierNotice.textContent.trim(), "Notice has localized text");
+       }
+ 
+       win.close();

@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-01",
+  "source_authority": {
+    "location": "локальная рабочая копия Good Bear",
+    "remote_connections": "не реализуются этим инструментом",
+    "credentials": "запрещены в bundle, manifest, plan, logs и возвращаемых результатах"
+  },
+  "source_inputs": {
+    "baseline": "config/firefox-baseline.json",
+    "declared_paths": [
+      "config",
+      "build/ubuntu",
+      "build/windows",
+      "tools",
+      "patches/series",
+      "overlay",
+      "artwork/final/m10-03",
+      "source/l10n/firefox-l10n/ru"
+    ],
+    "ordered_patch_series": "patches/series",
+    "upstream_archive_from_baseline": true
+  },
+  "remote_build_inputs": {
+    "russian_pki": {
+      "separate_hash_manifest_transport": true,
+      "logical_destination": "artifacts/certificates/build-inputs/current",
+      "m3_supply_chain_verifier": "tools/verify_m3_04_certificate_supply_chain.py",
+      "verify_before_build_environment": true
+    },
+    "safebrowsing": {
+      "supplier_contract": "config/m15-12-safebrowsing-build-input.json",
+      "delivery": "separate external private file",
+      "exact_file_sha256_required": true,
+      "verify_before_each_mach_phase": true,
+      "include_in_source_bundle": false,
+      "include_in_logs": false,
+      "embedded_in_browser_binary_by_design": true
+    }
+  },
+  "remote_workspaces": {
+    "ubuntu-amd64": {
+      "kind": "disposable Ubuntu workspace",
+      "bootstrap_invocations": [
+        [
+          "sudo",
+          "bash",
+          "build/ubuntu/install-packages.sh"
+        ],
+        [
+          "python3",
+          "tools/install_toolchain.py",
+          "--host-native"
+        ]
+      ],
+      "build_invocation": [
+        "python3",
+        "tools/build_host_russian.py",
+        "--objdir",
+        "artifacts/development/m15-10-ubuntu-obj",
+        "--jobs",
+        "4",
+        "--release-lto"
+      ]
+    },
+    "windows-x64": {
+      "kind": "disposable Windows Server 2022 workspace",
+      "bootstrap_invocations": [],
+      "build_invocation": [
+        "./mach",
+        "build",
+        "-j4"
+      ]
+    }
+  },
+  "returned_result": {
+    "required_result_file": "result.json",
+    "required_prefixes": [
+      "artifacts/",
+      "logs/"
+    ],
+    "promotion": "только после проверки хешей, отсутствия секретов и связи с локальным планом"
+  }
+}

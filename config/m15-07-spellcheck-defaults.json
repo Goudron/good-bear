@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-07",
+  "fresh_profile": {
+    "pref": "layout.spellcheckDefault",
+    "value": 1,
+    "meaning": "enable spelling for multiline editable controls"
+  },
+  "languages": {
+    "ru": {
+      "source": "GB100-M15-06 bundled RusSpell",
+      "extension_id": "russian-spell-dictionary@valery-ledovskoy",
+      "dictionary_path": "dictionaries/ru.dic"
+    },
+    "en-US": {
+      "source": "Firefox built-in English spell checker",
+      "policy": "retain; never replaced by the Russian primary dictionary"
+    }
+  },
+  "user_choice": "No user preference is locked; language selection remains content-language and user controlled.",
+  "network": "No dictionary download is required for bundled Russian spelling."
+}

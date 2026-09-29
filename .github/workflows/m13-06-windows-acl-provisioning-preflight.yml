@@ -1,0 +1,74 @@
+name: M13 Windows ACL provisioning preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_manifest_sha256:
+        description: Exact reviewed Firefox 156 source-manifest SHA-256
+        required: true
+        type: string
+      source_bundle_sha256:
+        description: Exact reviewed source-bundle SHA-256
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: goodbear-windows-acl-provisioning-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 20
+    env:
+      GOODBEAR_MANIFEST_SHA256: ${{ inputs.source_manifest_sha256 }}
+      GOODBEAR_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+    steps:
+      - name: Validate exact source pins before ACL provisioning
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($hash in @($env:GOODBEAR_MANIFEST_SHA256, $env:GOODBEAR_BUNDLE_SHA256)) {
+            if ($hash -cnotmatch '^[0-9a-f]{64}$') { throw 'Exact source hashes are required' }
+          }
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $manifest = Join-Path $workspace 'source-manifest.json'
+          $bundle = Join-Path $workspace 'source-bundle.tar'
+          $script = Join-Path $workspace 'source\tools\run_m13_cloud_windows.py'
+          foreach ($path in @($manifest, $bundle, $script)) {
+            if (-not (Test-Path -LiteralPath $path)) { throw 'Required materialized source input is absent' }
+          }
+          if ((Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_MANIFEST_SHA256) { throw 'Manifest hash differs' }
+          if ((Get-FileHash -LiteralPath $bundle -Algorithm SHA256).Hash.ToLowerInvariant() -ne $env:GOODBEAR_BUNDLE_SHA256) { throw 'Bundle hash differs' }
+          Write-Output 'ACL_PREFLIGHT_SOURCE_PINS_VERIFIED'
+
+      - name: Exercise every worker ACL boundary without network mutation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $script = Join-Path $workspace 'source\tools\run_m13_cloud_windows.py'
+          $operation = Join-Path 'C:\GoodBear\m15-03-operation-cache' ('acl-preflight-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          $cache = Join-Path $operation 'python-cache'
+          $output = Join-Path $operation 'returned'
+          try {
+            New-Item -ItemType Directory -Path $operation -ErrorAction Stop | Out-Null
+            New-Item -ItemType Directory -Path $cache -ErrorAction Stop | Out-Null
+            & 'C:\GoodBear\tools\Python312\python.exe' -I -S -B -u -X ('pycache_prefix=' + $cache) $script acl-provisioning-preflight --manifest (Join-Path $workspace 'source-manifest.json') --bundle (Join-Path $workspace 'source-bundle.tar') --expected-manifest-sha256 $env:GOODBEAR_MANIFEST_SHA256 --expected-bundle-sha256 $env:GOODBEAR_BUNDLE_SHA256 --output $output
+            if ($LASTEXITCODE -ne 0) { throw 'ACL provisioning preflight failed before any native job was armed' }
+          }
+          finally {
+            Remove-Item -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'ACL_PROVISIONING_PREFLIGHT_PASSED_NO_NETWORK_MUTATION'
+
+      - name: Return source-free ACL provisioning receipt
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, pinned from the official action repository
+        with:
+          name: m13-windows-acl-provisioning-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: C:\GoodBear\m15-03-operation-cache\acl-preflight-${{ github.run_id }}-${{ github.run_attempt }}\returned\acl-provisioning-preflight.json
+          if-no-files-found: error
+          retention-days: 7

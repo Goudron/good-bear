@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M11-06",
+  "policy": {
+    "test_only": true,
+    "runtime_allowlist": false,
+    "production_trust_input": false,
+    "external_availability_required": false,
+    "government_endpoint_required": false,
+    "result_location": "artifacts/live-russian-pki-corpus"
+  },
+  "candidates": [
+    {
+      "id": "russian_trusted_check",
+      "url": "https://check.russian-trusted.ru/",
+      "kind": "public_neutral_test_endpoint"
+    },
+    {
+      "id": "sovcombank_invest2",
+      "url": "https://invest2.sovcombank.ru/",
+      "kind": "public_commercial_endpoint"
+    }
+  ]
+}

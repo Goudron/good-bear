@@ -1,0 +1,377 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-12",
+  "firefox_base": {
+    "version": "156.0",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+  },
+  "request_scope": "privileged_background_and_product_feature_requests_only",
+  "content_navigation_policy": "not_filtered_by_this_contract",
+  "defaults": {
+    "unknown_endpoint": "deny_and_fail_verification",
+    "unknown_remote_config_collection": "deny_and_fail_verification",
+    "endpoint_redirect": "reclassify_and_revalidate",
+    "user_override": "explicit_configuration_only"
+  },
+  "retained_local_features": [
+    "screenshots",
+    "bookmarks",
+    "passwords",
+    "containers",
+    "tracking_protection",
+    "history"
+  ],
+  "build_switches": {
+    "MOZ_SERVICES_HEALTHREPORT": false,
+    "MOZ_SERVICES_SYNC": false,
+    "MOZ_NORMANDY": false,
+    "telemetry_configure_option": null,
+    "telemetry_disable_mechanism": "goodbear_hosted_service_runtime_policy_after_firefox_155_option_removal"
+  },
+  "good_bear_usage_telemetry": {
+    "implementation": "separate_from_mozilla_telemetry_and_glean",
+    "user_setting_pref": "goodbear.telemetry.enabled",
+    "user_setting_default": true,
+    "transport_gate_pref": "goodbear.telemetry.transport.enabled",
+    "transport_gate_default": false,
+    "endpoint_pref": "goodbear.telemetry.endpoint",
+    "endpoint_default": "",
+    "endpoint_status": "forbidden_in_m15_inactive_placeholder",
+    "missing_endpoint_behavior": "no_dns_no_connect_no_queue_no_send",
+    "redirect_policy": "forbidden",
+    "disable_invariant": "user_setting_false_overrides_all_other_state",
+    "disable_actions": [
+      "persist_user_setting_false",
+      "retain_zero_runtime_state",
+      "retain_zero_network_requests"
+    ],
+    "required_endpoint_contract": [
+      "maintainer_controlled_https_origin",
+      "version_pinned_exact_url",
+      "documented_retention_and_deletion_policy",
+      "documented_authentication_rate_limit_and_abuse_policy",
+      "versioned_allowlisted_event_schema",
+      "no_cookies_or_browser_account_identity",
+      "no_url_history_search_certificate_container_or_free_text_fields",
+      "independent_runtime_no-request-test-when-disabled",
+      "privacy_notice_and_user_setting_ui"
+    ],
+    "runtime_status": "inactive_placeholder_no_client_transport_or_endpoint"
+  },
+  "disabled_services": [
+    {
+      "id": "firefox_account_and_sync",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "identity.fxaccounts.enabled": false,
+        "identity.fxaccounts.pairing.enabled": false,
+        "identity.fxaccounts.commands.remoteTabManagement.enabled": false,
+        "identity.fxaccounts.telemetry.clientAssociationPing.enabled": false,
+        "identity.fxaccounts.telemetry.clientInfoPing.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.newtabpage.activity-stream.fxaccounts.endpoint",
+        "identity.fxaccounts.remote.root",
+        "identity.fxaccounts.remote.profile.uri",
+        "identity.fxaccounts.remote.oauth.uri",
+        "identity.fxaccounts.remote.pairing.uri",
+        "identity.sync.tokenserver.uri"
+      ]
+    },
+    {
+      "id": "firefox_relay",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "signon.firefoxRelay.feature": "disabled",
+        "browser.promo.relay.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "signon.firefoxRelay.base_url"
+      ]
+    },
+    {
+      "id": "firefox_monitor",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "browser.contentblocking.report.monitor.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.contentblocking.report.endpoint_url"
+      ]
+    },
+    {
+      "id": "pocket_and_discovery_stream",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "extensions.pocket.enabled": false,
+        "browser.newtabpage.activity-stream.feeds.section.topstories": false,
+        "browser.newtabpage.activity-stream.discoverystream.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.newtabpage.activity-stream.discoverystream.merino-provider.endpoint",
+        "browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL",
+        "browser.newtabpage.activity-stream.discoverystream.ohttp.configURL"
+      ]
+    },
+    {
+      "id": "sponsored_and_online_suggestions",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "browser.search.suggest.enabled": false,
+        "browser.urlbar.suggest.searches": false,
+        "browser.urlbar.quicksuggest.enabled": false,
+        "browser.urlbar.quicksuggest.online.available": false,
+        "browser.urlbar.quicksuggest.online.enabled": false,
+        "browser.urlbar.suggest.quicksuggest.all": false,
+        "browser.urlbar.suggest.quicksuggest.nonsponsored": false,
+        "browser.urlbar.suggest.quicksuggest.sponsored": false,
+        "browser.urlbar.sponsoredTopSites": false,
+        "browser.topsites.contile.enabled": false,
+        "browser.topsites.useRemoteSetting": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.urlbar.merino.endpointURL",
+        "browser.urlbar.merino.ohttpConfigURL",
+        "browser.urlbar.merino.ohttpRelayURL",
+        "browser.topsites.contile.endpoint",
+        "browser.partnerlink.attributionURL"
+      ]
+    },
+    {
+      "id": "mozilla_vpn_and_ip_protection",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "browser.vpn_promo.enabled": false,
+        "browser.contentblocking.report.hide_vpn_banner": true,
+        "browser.ipProtection.enabled": false,
+        "browser.ipProtection.blockIPProtectionCallouts": true,
+        "browser.ipProtection.features.autoStart": false,
+        "browser.ipProtection.userEnabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.contentblocking.report.vpn.url",
+        "browser.contentblocking.report.vpn-promo.url",
+        "browser.ipProtection.guardian.endpoint"
+      ]
+    },
+    {
+      "id": "normandy_shield_and_nimbus",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "app.normandy.enabled": false,
+        "app.normandy.first_run": false,
+        "app.shield.optoutstudies.enabled": false,
+        "nimbus.rollouts.enabled": false,
+        "nimbus.telemetry.targetingContextEnabled": false,
+        "browser.aboutwelcome.experimentsGate.enabled": false,
+        "browser.newtabpage.activity-stream.asrouter.useRemoteL10n": false
+      },
+      "endpoint_prefs_cleared": [
+        "app.normandy.api_url"
+      ],
+      "remote_collections_denied": [
+        "nimbus-desktop-experiments",
+        "messaging-experiments",
+        "message-groups",
+        "cfr"
+      ]
+    },
+    {
+      "id": "mozilla_telemetry_glean_and_crash_upload",
+      "ui": "absent",
+      "background_network": "denied",
+      "prefs": {
+        "datareporting.policy.dataSubmissionEnabled": false,
+        "datareporting.healthreport.uploadEnabled": false,
+        "datareporting.usage.uploadEnabled": false,
+        "toolkit.telemetry.unified": false,
+        "toolkit.telemetry.archive.enabled": false,
+        "toolkit.telemetry.shutdownPingSender.enabled": false,
+        "toolkit.telemetry.firstShutdownPing.enabled": false,
+        "toolkit.telemetry.newProfilePing.enabled": false,
+        "toolkit.telemetry.updatePing.enabled": false,
+        "toolkit.telemetry.bhrPing.enabled": false,
+        "browser.newtabpage.activity-stream.telemetry.privatePing.enabled": false,
+        "browser.tabs.crashReporting.sendReport": false,
+        "browser.crashReports.unsubmittedCheck.enabled": false,
+        "browser.crashReports.unsubmittedCheck.autoSubmit2": false
+      },
+      "endpoint_prefs_cleared": [
+        "toolkit.telemetry.server",
+        "breakpad.reportURL"
+      ]
+    },
+    {
+      "id": "mozilla_addon_and_dictionary_services",
+      "ui": "local_file_install_only",
+      "background_network": "denied",
+      "prefs": {
+        "extensions.getAddons.cache.enabled": false,
+        "extensions.update.enabled": false,
+        "extensions.update.autoUpdateDefault": false,
+        "extensions.systemAddon.update.enabled": false,
+        "browser.discovery.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "browser.dictionaries.download.url",
+        "extensions.getAddons.get.url",
+        "extensions.getAddons.search.browseURL",
+        "extensions.getAddons.link.url",
+        "extensions.getAddons.langpacks.url",
+        "extensions.getAddons.discovery.api_url",
+        "extensions.getAddons.browserMappings.url",
+        "extensions.update.url",
+        "extensions.update.background.url",
+        "extensions.systemAddon.update.url"
+      ]
+    }
+  ],
+  "security_services": [
+    {
+      "id": "web_push",
+      "default": "disabled_pending_explicit_user_provider",
+      "prefs": {
+        "dom.push.connection.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "dom.push.serverURL"
+      ],
+      "failure_mode": "no_push_delivery"
+    },
+    {
+      "id": "automatic_doh_and_odoh",
+      "default": "disabled_pending_explicit_user_provider",
+      "prefs": {
+        "network.trr.mode": 5,
+        "doh-rollout.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "network.trr.uri",
+        "network.trr.custom_uri"
+      ],
+      "failure_mode": "use_native_system_resolver"
+    },
+    {
+      "id": "network_geolocation",
+      "default": "disabled_pending_explicit_user_provider",
+      "prefs": {
+        "geo.enabled": false
+      },
+      "endpoint_prefs_cleared": [
+        "geo.provider.network.url"
+      ],
+      "failure_mode": "deny_geolocation_request"
+    },
+    {
+      "id": "translation_model_download",
+      "default": "disabled_pending_pinned_model_supplier",
+      "prefs": {
+        "browser.translations.enable": false,
+        "browser.translations.select.enable": false,
+        "browser.translations.quickAction.enabled": false
+      },
+      "endpoint_prefs_cleared": [],
+      "failure_mode": "no_translation_offer_or_download"
+    },
+    {
+      "id": "form_autofill_model_download",
+      "default": "disabled_pending_pinned_model_supplier",
+      "prefs": {
+        "extensions.formautofill.useml": false
+      },
+      "endpoint_prefs_cleared": [],
+      "failure_mode": "use_local_regex_autofill_without_model_download; local_address_and_card_autofill_unchanged"
+    },
+    {
+      "id": "safe_browsing",
+      "default": "retained_security_protection_pending_supplier_review",
+      "supplier_status": "unresolved_release_blocker",
+      "prefs": {
+        "browser.safebrowsing.phishing.enabled": true,
+        "browser.safebrowsing.malware.enabled": true,
+        "browser.safebrowsing.downloads.remote.enabled": true
+      },
+      "endpoint_prefs_cleared": [],
+      "endpoint_prefs_retained": [
+        "browser.safebrowsing.downloads.remote.url",
+        "browser.safebrowsing.provider.google.updateURL",
+        "browser.safebrowsing.provider.google.gethashURL",
+        "browser.safebrowsing.provider.google4.updateURL",
+        "browser.safebrowsing.provider.google4.gethashURL",
+        "browser.safebrowsing.provider.google5.updateURL",
+        "browser.safebrowsing.provider.google5.gethashURL"
+      ],
+      "failure_mode": "retain_upstream_anti_phishing_and_malware_protection; block_release_until_supplier_is_pinned_or_equally_protective_replacement_is_approved"
+    },
+    {
+      "id": "remote_settings_security_collections",
+      "default": "retained_security_protection_pending_supplier_review",
+      "supplier_status": "unresolved_release_blocker",
+      "prefs": {
+        "security.remote_settings.intermediates.enabled": true,
+        "security.remote_settings.crlite_filters.enabled": true
+      },
+      "endpoint_prefs_cleared": [],
+      "endpoint_prefs_retained": [
+        "services.settings.server"
+      ],
+      "remote_collections_retained": [
+        "security-state/onecrl",
+        "security-state/intermediates",
+        "security-state/cert-revocations"
+      ],
+      "failure_mode": "retain_upstream_certificate_revocation_and_intermediate_protection; block_release_until_supplier_is_pinned_or_equally_protective_replacement_is_approved"
+    }
+  ],
+  "audit_owners": [
+    "browser/moz.configure",
+    "browser/app/profile/firefox.js",
+    "modules/libpref/init/all.js",
+    "services/settings/Utils.sys.mjs",
+    "services/settings/RemoteSettingsClient.sys.mjs",
+    "security/manager/ssl/RemoteSecuritySettings.sys.mjs"
+  ],
+  "rebase_audit": {
+    "from_version": "155.0.1",
+    "from_revision": "fb95137a04eb8fe1196cb12f26b100c1e060295c",
+    "to_version": "156.0",
+    "to_revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+    "evidence_kind": "static_named_owner_diff_only_not_runtime_outbound_evidence",
+    "owner_dispositions": {
+      "browser/moz.configure": {
+        "disposition": "preserve_upstream_with_good_bear_overrides",
+        "review": "Preserve new package-manifest defines and package input configuration. Keep Good Bear MOZ_SERVICES_HEALTHREPORT, MOZ_SERVICES_SYNC and MOZ_NORMANDY disabled; the new packaging code introduces no hosted endpoint."
+      },
+      "browser/app/profile/firefox.js": {
+        "disposition": "preserve_upstream_with_good_bear_overrides",
+        "review": "Explicitly disable the new enabled Relay promo and FxA client-info ping. New Smart Window AITab and agent-toolbar defaults are false and its development viewer URL is empty; browser.smartwindow.enabled remains false. Removed World Cup and lightweight-theme endpoints require no replacement. FxA pairing-version and VPN l10n/hasSeenFeature controls do not override Good Bear account, pairing, IP Protection and endpoint disables. Stable-channel net-error search CTA remains false; Nimbus rollouts and remote messaging remain disabled. Local tab, startup, URL-bar and autocomplete changes are preserved."
+      },
+      "modules/libpref/init/all.js": {
+        "disposition": "preserve_upstream_with_good_bear_overrides",
+        "review": "Dynamic remote-agent startup defaults false; retain its new connection prompt and banner safeguards. ML autofill twoHead and timeoutMS are subordinate settings, not disabled features: Windows useml defaults true for non-release/non-esr channels, including goodbear, so explicitly override useml=false while the model supplier is unpinned. Keep local address/card autofill and upstream accessibility behavior; new CVV autofill defaults false."
+      },
+      "services/settings/Utils.sys.mjs": {
+        "disposition": "preserve_upstream_security_behavior",
+        "review": "Preserve moving request-option destructuring before the fallback callback. The one-retry proxy fallback still respects bypassProxy, shutdown and offline state; this change does not authorize a supplier or relax endpoint disposition."
+      },
+      "services/settings/RemoteSettingsClient.sys.mjs": {
+        "disposition": "preserve_upstream_security_behavior",
+        "review": "Preserve MissingSignatureError when no signature is usable, treat local verification exceptions as untrustworthy, and restore only verified prior records after failed updates; otherwise clear or restore the bundled dump and propagate failure. Retain upstream OneCRL/CRLite and intermediate security protection without disabling signature verification. Supplier review remains an explicit release blocker; source review does not prove fresh runtime revocation data."
+      },
+      "security/manager/ssl/RemoteSecuritySettings.sys.mjs": {
+        "disposition": "preserve_upstream_security_behavior",
+        "review": "The native security-state clients select onecrl, intermediates and cert-revocations with the onecrl.content-signature.mozilla.org signer. Correct the stale crlite-filters collection name in audit metadata only; preserve the native client, enabled preferences, signature checks and attachment validation. Supplier approval and fresh signed-update runtime evidence remain pending."
+      }
+    }
+  },
+  "implementation_patch": "0037-good-bear-hosted-service-boundary.patch",
+  "ui_enforcement_patch": "0038-good-bear-remove-fxa-sync-ui.patch",
+  "release_status": "blocked_until_runtime_outbound_and_fresh_profile_ui_evidence"
+}

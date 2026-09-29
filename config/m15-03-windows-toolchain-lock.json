@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-03",
+  "selected_at": "2026-09-14",
+  "platform": "Windows Server 2022 x64",
+  "install_root": "C:\\GoodBear\\tools",
+  "network_policy": {
+    "acquisition": "only the exact HTTPS URLs below may be fetched during the controlled bootstrap",
+    "build_after_source_freeze": "network forbidden",
+    "unapproved_toolchain_update": "fail closed"
+  },
+  "components": [
+    {
+      "id": "visual-studio-build-tools",
+      "version": "17.14.37628.2",
+      "installation_version": "17.14.37710.0",
+      "url": "https://download.visualstudio.microsoft.com/download/pr/f8d58e41-102a-4347-a567-60d7235da3b5/c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425/vs_BuildTools.exe",
+      "sha256": "c988ff1317d082a67a8b4a26ab60e5fe0a8e41de3e4c22b626a0db6b490b5425",
+      "publisher": "Microsoft Corporation",
+      "required_components": [
+        "Microsoft.VisualStudio.Workload.VCTools",
+        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+        "Microsoft.VisualStudio.Component.VC.ATLMFC",
+        "Microsoft.VisualStudio.Component.Windows11SDK.26100",
+        "Microsoft.VisualStudio.Component.VC.Llvm.Clang"
+      ],
+      "required_msvc_directory_version": "14.44",
+      "required_windows_sdk": "10.0.26100.0",
+      "provenance": {
+        "channel_manifest_url": "https://aka.ms/vs/17/release/channel",
+        "channel_manifest_sha256": "b2631afb766b66de6c75da91efe3cecc8a56c8ca5c59c0beaa6227d963189b0f",
+        "vsman_sha256": "469b3396a3493df91870ce13c52015a92283a2d1c6fd12e5f7e55669be8050ca"
+      }
+    },
+    {
+      "id": "mozilla-build",
+      "version": "4.2.1",
+      "url": "https://ftp.mozilla.org/pub/mozilla/libraries/win32/MozillaBuildSetup-4.2.1.exe",
+      "sha256": "8ef5b3d2087e4867dc75bf19f5e62f12e917f518239415723cc70896b6f1e3d8",
+      "publisher": "Mozilla Corporation"
+    },
+    {
+      "id": "git-for-windows",
+      "version": "2.55.0.windows.5",
+      "url": "https://github.com/git-for-windows/git/releases/download/v2.55.0.windows.5/Git-2.55.0.5-64-bit.exe",
+      "sha256": "d065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6",
+      "publisher": "Johannes Schindelin",
+      "executable": "C:\\Program Files\\Git\\cmd\\git.exe",
+      "provenance_url": "https://api.github.com/repos/git-for-windows/git/releases/tags/v2.55.0.windows.5"
+    },
+    {
+      "id": "python",
+      "version": "3.12.10",
+      "url": "https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe",
+      "sha256": "67b5635e80ea51072b87941312d00ec8927c4db9ba18938f7ad2d27b328b95fb",
+      "publisher": "Python Software Foundation"
+    },
+    {
+      "id": "rust",
+      "version": "1.90.0-x86_64-pc-windows-msvc",
+      "url": "https://static.rust-lang.org/dist/2025-09-18/rust-1.90.0-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "a2db311d0ac032a97717c9280d85fc31d6ccc34b330f8a095b63a1bc042744f6",
+      "manifest_url": "https://static.rust-lang.org/dist/channel-rust-1.90.0.toml"
+    },
+    {
+      "id": "node",
+      "version": "24.19.0",
+      "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-win-x64.zip",
+      "sha256": "57f71ab3652e797d84acddc79c81cc9ff1c6ddb2a1974cdb83f00fee9bff4c73",
+      "checksum_manifest_url": "https://nodejs.org/dist/v24.19.0/SHASUMS256.txt"
+    },
+    {
+      "id": "nasm",
+      "version": "2.16.01",
+      "url": "https://www.nasm.us/pub/nasm/releasebuilds/2.16.01/win64/nasm-2.16.01-win64.zip",
+      "sha256": "029eed31faf0d2c5f95783294432cbea6c15bf633430f254bb3c1f195c67ca3a"
+    },
+    {
+      "id": "llvm",
+      "version": "22.1.8",
+      "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz",
+      "sha256": "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234",
+      "provenance_url": "https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-22.1.8"
+    },
+    {
+      "id": "firefox156-mozmake",
+      "version": "task-R-T5euokQVyqBQMApzKOUA-20260318",
+      "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/R-T5euokQVyqBQMApzKOUA/artifacts/public/build/mozmake.tar.zst",
+      "sha256": "8a7dbefcfdb35cc7e96acc8c10fc91064ad1cadb9a808e9df8b1a708e9aeafe0",
+      "provenance_url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/R-T5euokQVyqBQMApzKOUA"
+    },
+    {
+      "id": "firefox156-nsis",
+      "version": "task-X5NTJwTcS0eza0ybdOLZQw-20260318",
+      "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/X5NTJwTcS0eza0ybdOLZQw/artifacts/public/build/nsis.tar.zst",
+      "sha256": "ac196429c3161156edc72a1b5d957fa07ad73fb785dcdc64e78f3a42f74c7d90",
+      "provenance_url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/X5NTJwTcS0eza0ybdOLZQw"
+    },
+    {
+      "id": "zstd",
+      "version": "1.5.7",
+      "url": "https://github.com/facebook/zstd/releases/download/v1.5.7/zstd-v1.5.7-win64.zip",
+      "sha256": "acb4e8111511749dc7a3ebedca9b04190e37a17afeb73f55d4425dbf0b90fad9",
+      "provenance_url": "https://github.com/facebook/zstd/releases/tag/v1.5.7"
+    }
+  ],
+  "packaging": {
+    "provider": "Firefox Taskcluster toolchains plus MozillaBuild",
+    "required_commands": [
+      "git.exe",
+      "mozmake.exe",
+      "makensis.exe"
+    ],
+    "reason": "Firefox 156 requires the Mozilla Taskcluster mozmake and NSIS toolchains; MozillaBuild provides the shell utilities."
+  }
+}

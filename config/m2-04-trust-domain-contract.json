@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M2-04",
+  "firefox_version": "156.0",
+  "source_of_truth": {
+    "owner": "security/manager/ssl/nsITransportSecurityInfo.idl",
+    "type": "nsITransportSecurityInfo::GoodBearTrustDomain",
+    "attribute": "nsITransportSecurityInfo.goodBearTrustDomain",
+    "states": {
+      "Invalid": 0,
+      "Standard": 1,
+      "RussianPKI": 2
+    },
+    "default": "Invalid"
+  },
+  "lifetime": {
+    "classification_owner": "security/manager/ssl/SSLServerCertVerification.cpp",
+    "connection_owner": "security/manager/ssl/CommonSocketControl.h",
+    "immutable_snapshot_owner": "security/manager/ssl/TransportSecurityInfo.h",
+    "rule": "Invalid while verification is pending or failed; the explicit verifier result then lives with the TLS socket and is copied into immutable TransportSecurityInfo snapshots."
+  },
+  "serialization_boundaries": [
+    {
+      "id": "socket_process_verification_result",
+      "owner": "security/manager/ssl/PVerifySSLServerCert.ipdl",
+      "validation_owner": "ipc/glue/TransportSecurityInfoUtils.h",
+      "invalid_wire_policy": "reject"
+    },
+    {
+      "id": "transport_security_info_ipc",
+      "owner": "security/manager/ssl/TransportSecurityInfo.cpp",
+      "validation_owner": "ipc/glue/TransportSecurityInfoUtils.h",
+      "invalid_wire_policy": "reject"
+    },
+    {
+      "id": "transport_security_info_persistence",
+      "owner": "security/manager/ssl/TransportSecurityInfo.cpp",
+      "serialization_version": 10,
+      "legacy_policy": "Invalid",
+      "invalid_wire_policy": "reject"
+    }
+  ],
+  "ui_contract": {
+    "owner": "browser/base/content/browser-siteIdentity.js",
+    "typed_test_owner": "browser/base/content/test/siteIdentity/browser_getSecurityInfo.js",
+    "rule": "UI consumes goodBearTrustDomain and never classifies trust from issuer, subject, organization, root names, booleans, or ad-hoc strings."
+  },
+  "rebase_guards": [
+    "security/manager/ssl/nsITransportSecurityInfo.idl",
+    "security/manager/ssl/SSLServerCertVerification.h",
+    "security/manager/ssl/SSLServerCertVerification.cpp",
+    "security/manager/ssl/PVerifySSLServerCert.ipdl",
+    "security/manager/ssl/VerifySSLServerCertParent.h",
+    "security/manager/ssl/VerifySSLServerCertParent.cpp",
+    "security/manager/ssl/VerifySSLServerCertChild.h",
+    "security/manager/ssl/VerifySSLServerCertChild.cpp",
+    "security/manager/ssl/CommonSocketControl.h",
+    "security/manager/ssl/CommonSocketControl.cpp",
+    "security/manager/ssl/TransportSecurityInfo.h",
+    "security/manager/ssl/TransportSecurityInfo.cpp",
+    "ipc/glue/TransportSecurityInfoUtils.h",
+    "netwerk/base/FuzzySecurityInfo.cpp",
+    "browser/base/content/test/siteIdentity/browser_getSecurityInfo.js"
+  ]
+}

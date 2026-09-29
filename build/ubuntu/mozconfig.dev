@@ -1,0 +1,17 @@
+# M1-06 quarantined Good Bear technical candidate; never a public release.
+. $topsrcdir/build/goodbear/mozconfig
+ac_add_options --host=x86_64-unknown-linux-gnu
+ac_add_options --with-l10n-base=/workspace/source/l10n/firefox-l10n
+ac_add_options --enable-ui-locale=ru
+ac_add_options --with-wasi-sysroot=/workspace/toolchains/current/wasi-sdk/share/wasi-sysroot
+mk_add_options MOZ_OBJDIR=/workspace/artifacts/build-candidates/m1-06-goodbear-ru/obj
+mk_add_options MOZ_CO_LOCALES=ru
+export CC=/workspace/toolchains/current/llvm/bin/clang
+export CXX=/workspace/toolchains/current/llvm/bin/clang++
+export RUSTC=/workspace/toolchains/current/rust/bin/rustc
+export CARGO=/workspace/toolchains/current/rust/bin/cargo
+export NODEJS=/workspace/toolchains/current/node/bin/node
+export CBINDGEN=/workspace/toolchains/current/cbindgen/bin/cbindgen
+export WASI_SYSROOT=/workspace/toolchains/current/wasi-sdk/share/wasi-sysroot
+export WASM_CC=/workspace/toolchains/current/wasi-sdk/bin/clang
+export WASM_CXX=/workspace/toolchains/current/wasi-sdk/bin/clang++

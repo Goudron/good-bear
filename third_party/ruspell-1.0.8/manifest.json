@@ -1,0 +1,20 @@
+{
+  "author": "Valery Ledovskoy",
+  "browser_specific_settings": {
+    "gecko": {
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      },
+      "id": "russian-spell-dictionary@valery-ledovskoy"
+    }
+  },
+  "description": "Modern Russian spell-checking dictionary for Firefox and Thunderbird.",
+  "dictionaries": {
+    "ru": "dictionaries/ru.dic"
+  },
+  "manifest_version": 2,
+  "name": "Russian Spelling Dictionary",
+  "version": "1.0.8"
+}

@@ -1,0 +1,304 @@
+# Good Bear M4-03: container-scoped Russian PKI acceptance
+#
+# Gates the future exact-anchor validator on the live dedicated-container
+# userContextId before and after verification so policy changes fail closed.
+
+--- /dev/null
++++ b/security/manager/ssl/GoodBearRussianPKIContainerScope.h
+@@ -0,0 +1,91 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearRussianPKIContainerScope_h
++#define GoodBearRussianPKIContainerScope_h
++
++#include <stdint.h>
++
++#include "GoodBearRussianPKIClassification.h"
++#include "mozilla/FunctionRef.h"
++#include "mozilla/Maybe.h"
++#include "mozilla/OriginAttributes.h"
++#include "mozpkix/Result.h"
++#include "nsIScriptSecurityManager.h"
++#include "nsITransportSecurityInfo.h"
++
++namespace mozilla::psm {
++
++// This is an immutable snapshot of the managed-container state used by a
++// scope-authority callback. A missing/default userContextId is never a
++// dedicated container, even when the feature is nominally enabled.
++struct GoodBearRussianPKIContainerScope final {
++  bool mEnabled = false;
++  mozilla::Maybe<uint32_t> mDedicatedUserContextId;
++
++  bool Allows(const mozilla::OriginAttributes& aOriginAttributes) const {
++    return mEnabled && mDedicatedUserContextId.isSome() &&
++           mDedicatedUserContextId.ref() !=
++               nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID &&
++           aOriginAttributes.mUserContextId == mDedicatedUserContextId.ref();
++  }
++};
++
++struct GoodBearContainerVerificationResult final {
++  nsITransportSecurityInfo::GoodBearTrustDomain mTrustDomain =
++      nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++  mozilla::pkix::Result mResult =
++      mozilla::pkix::Result::FATAL_ERROR_INVALID_STATE;
++
++  bool ChannelUsable() const {
++    if (mResult != mozilla::pkix::Success) {
++      return false;
++    }
++    switch (mTrustDomain) {
++      case nsITransportSecurityInfo::GoodBearTrustDomain::Standard:
++      case nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI:
++        return true;
++      case nsITransportSecurityInfo::GoodBearTrustDomain::Invalid:
++        return false;
++    }
++    return false;
++  }
++};
++
++// aScopeAllows must consult the current managed-container state. It is called
++// both before and after alternate verification so disablement, deletion, or
++// recreation while verification is in flight cannot authorize a stale
++// userContextId. M4-04 owns the implementation behind
++// aVerifyAgainstExactRussianPKIAnchors.
++inline GoodBearContainerVerificationResult
++ClassifyGoodBearContainerServerCertificate(
++    mozilla::pkix::Result aStandardResult,
++    const mozilla::OriginAttributes& aOriginAttributes,
++    mozilla::FunctionRef<bool(const mozilla::OriginAttributes&)> aScopeAllows,
++    mozilla::FunctionRef<mozilla::pkix::Result()>
++        aVerifyAgainstExactRussianPKIAnchors) {
++  if (aStandardResult == mozilla::pkix::Success) {
++    return {nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
++            mozilla::pkix::Success};
++  }
++
++  if (!IsGoodBearRussianPKISecondaryVerificationEligible(aStandardResult) ||
++      !aScopeAllows(aOriginAttributes)) {
++    return {nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++            aStandardResult};
++  }
++
++  if (aVerifyAgainstExactRussianPKIAnchors() != mozilla::pkix::Success ||
++      !aScopeAllows(aOriginAttributes)) {
++    return {nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++            aStandardResult};
++  }
++
++  return {nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI,
++          mozilla::pkix::Success};
++}
++
++}  // namespace mozilla::psm
++
++#endif  // GoodBearRussianPKIContainerScope_h
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -0,0 +1,192 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#include "GoodBearRussianPKIContainerScope.h"
++#include "gtest/gtest.h"
++
++using namespace mozilla;
++using namespace mozilla::pkix;
++using namespace mozilla::psm;
++
++using GoodBearTrustDomain = nsITransportSecurityInfo::GoodBearTrustDomain;
++using PKIXResult = mozilla::pkix::Result;
++
++namespace {
++
++OriginAttributes ChannelAttributes(uint32_t aUserContextId) {
++  OriginAttributes attributes;
++  attributes.mUserContextId = aUserContextId;
++  return attributes;
++}
++
++}  // namespace
++
++TEST(psm_GoodBearRussianPKIVerifier, DefaultResultIsFailClosed)
++{
++  GoodBearContainerVerificationResult result;
++
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, result.mTrustDomain);
++  ASSERT_EQ(PKIXResult::FATAL_ERROR_INVALID_STATE, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     StandardSuccessDoesNotConsultScopeOrAlternateTrust)
++{
++  bool scopeCalled = false;
++  bool alternateCalled = false;
++  auto result = ClassifyGoodBearContainerServerCertificate(
++      Success, ChannelAttributes(17),
++      [&](const OriginAttributes&) {
++        scopeCalled = true;
++        return false;
++      },
++      [&]() {
++        alternateCalled = true;
++        return PKIXResult::ERROR_UNKNOWN_ISSUER;
++      });
++
++  ASSERT_FALSE(scopeCalled);
++  ASSERT_FALSE(alternateCalled);
++  ASSERT_EQ(GoodBearTrustDomain::Standard, result.mTrustDomain);
++  ASSERT_EQ(Success, result.mResult);
++  ASSERT_TRUE(result.ChannelUsable());
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     SameValidRussianChainIsAcceptedOnlyInDedicatedContainer)
++{
++  constexpr uint32_t kDedicatedUserContextId = 17;
++  GoodBearRussianPKIContainerScope scope{true, Some(kDedicatedUserContextId)};
++  int alternateCalls = 0;
++  auto authorize = [&](const OriginAttributes& aOriginAttributes) {
++    return scope.Allows(aOriginAttributes);
++  };
++  auto exactRussianChainSucceeds = [&]() {
++    alternateCalls++;
++    return Success;
++  };
++
++  auto dedicated = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER,
++      ChannelAttributes(kDedicatedUserContextId), authorize,
++      exactRussianChainSucceeds);
++  ASSERT_EQ(GoodBearTrustDomain::RussianPKI, dedicated.mTrustDomain);
++  ASSERT_EQ(Success, dedicated.mResult);
++  ASSERT_TRUE(dedicated.ChannelUsable());
++  ASSERT_EQ(1, alternateCalls);
++
++  for (uint32_t userContextId : {0U, 4U, 18U}) {
++    auto outside = ClassifyGoodBearContainerServerCertificate(
++        PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(userContextId),
++        authorize, exactRussianChainSucceeds);
++    ASSERT_EQ(GoodBearTrustDomain::Invalid, outside.mTrustDomain);
++    ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, outside.mResult);
++    ASSERT_FALSE(outside.ChannelUsable());
++  }
++  ASSERT_EQ(1, alternateCalls);
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     DisabledOrMissingContainerNeverRunsAlternateVerification)
++{
++  for (GoodBearRussianPKIContainerScope scope : {
++           GoodBearRussianPKIContainerScope{false, Some(17U)},
++           GoodBearRussianPKIContainerScope{true, Nothing()},
++           GoodBearRussianPKIContainerScope{true, Some(0U)},
++       }) {
++    bool alternateCalled = false;
++    auto result = ClassifyGoodBearContainerServerCertificate(
++        PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(17),
++        [&](const OriginAttributes& aOriginAttributes) {
++          return scope.Allows(aOriginAttributes);
++        },
++        [&]() {
++          alternateCalled = true;
++          return Success;
++        });
++
++    ASSERT_FALSE(alternateCalled);
++    ASSERT_EQ(GoodBearTrustDomain::Invalid, result.mTrustDomain);
++    ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++    ASSERT_FALSE(result.ChannelUsable());
++  }
++}
++
++TEST(psm_GoodBearRussianPKIVerifier, DisablementDuringVerificationFailsClosed)
++{
++  GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++  int scopeChecks = 0;
++  auto result = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(17),
++      [&](const OriginAttributes& aOriginAttributes) {
++        scopeChecks++;
++        return scope.Allows(aOriginAttributes);
++      },
++      [&]() {
++        scope.mEnabled = false;
++        return Success;
++      });
++
++  ASSERT_EQ(2, scopeChecks);
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, result.mTrustDomain);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     RecreatedContainerInvalidatesOldAndInFlightChannels)
++{
++  GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++  auto oldAttributes = ChannelAttributes(17);
++  auto authorize = [&](const OriginAttributes& aOriginAttributes) {
++    return scope.Allows(aOriginAttributes);
++  };
++
++  auto inFlight = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, oldAttributes, authorize, [&]() {
++        scope.mDedicatedUserContextId = Some(23U);
++        return Success;
++      });
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, inFlight.mTrustDomain);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, inFlight.mResult);
++  ASSERT_FALSE(inFlight.ChannelUsable());
++
++  bool oldAlternateCalled = false;
++  auto oldAfterRecreation = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, oldAttributes, authorize, [&]() {
++        oldAlternateCalled = true;
++        return Success;
++      });
++  ASSERT_FALSE(oldAlternateCalled);
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, oldAfterRecreation.mTrustDomain);
++  ASSERT_FALSE(oldAfterRecreation.ChannelUsable());
++
++  auto recreated = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(23), authorize,
++      []() { return Success; });
++  ASSERT_EQ(GoodBearTrustDomain::RussianPKI, recreated.mTrustDomain);
++  ASSERT_TRUE(recreated.ChannelUsable());
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     NonEligibleFailureNeverUsesAlternateTrustEvenInDedicatedContainer)
++{
++  GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++  bool alternateCalled = false;
++  auto result = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_BAD_CERT_DOMAIN, ChannelAttributes(17),
++      [&](const OriginAttributes& aOriginAttributes) {
++        return scope.Allows(aOriginAttributes);
++      },
++      [&]() {
++        alternateCalled = true;
++        return Success;
++      });
++
++  ASSERT_FALSE(alternateCalled);
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, result.mTrustDomain);
++  ASSERT_EQ(PKIXResult::ERROR_BAD_CERT_DOMAIN, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -7,6 +7,7 @@
+     "CoseTest.cpp",
+     "DeserializeCertTest.cpp",
+     "GoodBearRussianPKIClassificationTest.cpp",
++    "GoodBearRussianPKIVerifierTest.cpp",
+     "GoodBearTrustDomainTest.cpp",
+     "HMACTest.cpp",
+     "MD4Test.cpp",

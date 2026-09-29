@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "repository": "https://github.com/mozilla-l10n/firefox-l10n.git",
+  "revision": "25feb12abf0f49b24210a9a6b76dcd4bca9d05bb",
+  "checkout": "source/l10n/firefox-l10n",
+  "locale": "ru",
+  "overlay": "overlay/l10n/firefox-l10n",
+  "assets": {
+    "ru/browser/browser/aboutDialog.ftl": {
+      "base_sha256": "d0e66d221838186ab2fb4d31cd97f9755d4d630567c5914d3089beca9bdb085a",
+      "overlay_sha256": "30f06eb117f99b118eed1dfc0afd505d71d934de58ed2e042e3bd47a8e1b8c14"
+    },
+    "ru/browser/browser/browser.ftl": {
+      "base_sha256": "166a0c6ddf183b6a2551cb7ceb5b9bfbe7b3c9c47ccfbdbdaefe7fe3dafb37d9",
+      "overlay_sha256": "99d1423fb67dcfddf4d2ea12ca989c928ae9c8e31f94fef7bdd11986f5a43a12"
+    },
+    "ru/browser/browser/goodbearSafeBrowsing.ftl": {
+      "base_sha256": null,
+      "overlay_sha256": "a5abccc9c515f9bbc34ea163d1185802d79b79ead26d1b90a5ad387b70dd1cfb"
+    },
+    "ru/browser/browser/preferences/goodBearRussianPKI.ftl": {
+      "base_sha256": null,
+      "overlay_sha256": "38a9629d75d3b8965b54829c7e68e4f2dcc60d6c47ffb87ee39a7d559ec03af0"
+    }
+  }
+}

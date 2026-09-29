@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "milestone": "GB100-M10-03",
+  "selected_direction": "workshop-beacon",
+  "asset_status": "final_release_ready_artwork",
+  "rights": {
+    "copyright": "Copyright © 2026 Valery Ledovskoy <valery@ledovskoy.com>",
+    "license": "All rights reserved unless otherwise stated.",
+    "creation_method": "OpenAI built-in image generation, directed for Good Bear by Valery Ledovskoy's selected Workshop Beacon direction; final derivative sizes and state compositions were produced only from the original Good Bear master.",
+    "input_images": [],
+    "likeness_or_portrait_claim": false,
+    "third_party_or_upstream_art_used": false,
+    "final_rights_review_owner": "GB100-M10-07"
+  },
+  "identity_invariants": {
+    "bear_has_modern_round_glasses": true,
+    "monochrome_or_small_icon_has_no_enclosing_circle": true,
+    "no_firefox_fox_flame_or_orbit_derivation": true,
+    "mascot_is_not_certificate_trust_privacy_or_container_evidence": true,
+    "neutral_warning_and_trust_icons_remain_unchanged": true
+  },
+  "error_illustration_contract": {
+    "role": "decorative_product_identity_only",
+    "assets": {
+      "overlay/toolkit/themes/shared/illustrations/goodbear-no-connection.png": {
+        "canvas_px": [
+          960,
+          960
+        ],
+        "minimum_transparent_margin_px": 192
+      },
+      "overlay/toolkit/themes/shared/illustrations/goodbear-security-error.png": {
+        "canvas_px": [
+          960,
+          960
+        ],
+        "minimum_transparent_margin_px": 192
+      }
+    },
+    "layout": {
+      "stylesheet": "source/worktrees/firefox-155.0.1/toolkit/themes/shared/aboutNetError.css",
+      "reserved_column_selector": ".felt-privacy-container > .img-container",
+      "image_selector": ".img-container > img.goodbear-error-illustration",
+      "security_max_size": "min(8.75em, 20vw)",
+      "network_max_size": "min(13em, 24vw)",
+      "functional_ui_preserved": [
+        "title",
+        "warning_icon",
+        "body",
+        "buttons",
+        "certificate_details"
+      ]
+    }
+  },
+  "master": "artwork/final/m10-03/goodbear-primary-master.png",
+  "state_assets": {
+    "neutral_welcome": "artwork/final/m10-03/goodbear-welcome.png",
+    "thinking_setup": "artwork/final/m10-03/goodbear-thinking-setup.png",
+    "concerned_generic_error": "artwork/final/m10-03/goodbear-generic-error.png",
+    "success": "artwork/final/m10-03/goodbear-success.png",
+    "devices_sync": "artwork/final/m10-03/goodbear-devices-sync.png",
+    "backup_restore": "artwork/final/m10-03/goodbear-backup-restore.png",
+    "empty_state": "artwork/final/m10-03/goodbear-empty-state.png",
+    "import_setup": "artwork/final/m10-03/goodbear-import-setup.png",
+    "gratitude": "artwork/final/m10-03/goodbear-gratitude.png",
+    "first_run_animation": "artwork/final/m10-03/goodbear-first-run.gif",
+    "first_run_static_frame": "artwork/final/m10-03/goodbear-first-run-static.png"
+  },
+  "ubuntu_icon_sizes": {
+    "16": "overlay/browser/branding/goodbear/default16.png",
+    "32": "overlay/browser/branding/goodbear/default32.png",
+    "48": "overlay/browser/branding/goodbear/default48.png",
+    "64": "overlay/browser/branding/goodbear/default64.png",
+    "128": "overlay/browser/branding/goodbear/default128.png"
+  },
+  "surface_replacements": [
+    {
+      "upstream": "browser/components/aboutwelcome/assets/fox-doodle-tail.png",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-welcome.png",
+      "state": "neutral_welcome"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/fox-doodle-waving.gif",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving.gif",
+      "state": "first_run_animation"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/fox-doodle-waving-static.png",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-doodle-waving-static.png",
+      "state": "first_run_static_frame"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/fox-doodle-backup-restore.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-backup-restore.png",
+      "state": "backup_restore"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-set-default-fox-heart.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-success.png",
+      "state": "success"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-import-fox-house.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-import-setup.png",
+      "state": "import_setup"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-fxa-fox-mirror.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-devices-sync.png",
+      "state": "devices_sync"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-amo-fox-paint.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-thinking-setup.png",
+      "state": "thinking_setup"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-gratitude-fox-rock.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-gratitude.png",
+      "state": "gratitude"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/splash-logo.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-welcome.png",
+      "state": "neutral_welcome"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-migration-fox-juggle.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-devices-sync.png",
+      "state": "devices_sync"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-backup-fox-in-box.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-backup-restore.png",
+      "state": "backup_restore"
+    },
+    {
+      "upstream": "browser/components/aboutwelcome/assets/br-backup-fox-outside-box.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-backup-restore.png",
+      "state": "backup_restore"
+    },
+    {
+      "upstream": "toolkit/themes/shared/illustrations/no-connection.svg",
+      "replacement": "overlay/toolkit/themes/shared/illustrations/goodbear-no-connection.png",
+      "state": "concerned_generic_error"
+    },
+    {
+      "upstream": "toolkit/themes/shared/illustrations/security-error.svg",
+      "replacement": "overlay/toolkit/themes/shared/illustrations/goodbear-security-error.png",
+      "state": "concerned_generic_error"
+    },
+    {
+      "upstream": "browser/themes/shared/privatebrowsing/fox-tail.svg",
+      "replacement": "overlay/browser/themes/shared/privatebrowsing/goodbear-private-browsing.png",
+      "state": "empty_state"
+    },
+    {
+      "upstream": "browser/themes/shared/fxa/avatar-fox.svg",
+      "replacement": "overlay/browser/themes/shared/fxa/goodbear-avatar.png",
+      "state": "neutral_welcome"
+    },
+    {
+      "upstream": "browser/themes/shared/fxa/avatar-fox-circle.svg",
+      "replacement": "overlay/browser/themes/shared/fxa/goodbear-avatar-circle.png",
+      "state": "neutral_welcome"
+    },
+    {
+      "upstream": "browser/themes/shared/identity-block/trustpanel-graphic-warning.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-generic-error.png",
+      "state": "concerned_generic_error"
+    },
+    {
+      "upstream": "browser/themes/shared/identity-block/trustpanel-graphic-enabled.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-success.png",
+      "state": "success"
+    },
+    {
+      "upstream": "browser/themes/shared/identity-block/trustpanel-graphic-disabled.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-empty-state.png",
+      "state": "empty_state"
+    },
+    {
+      "upstream": "browser/components/controlcenter/assets/breach-alert-shield-warning.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-generic-error.png",
+      "state": "concerned_generic_error"
+    },
+    {
+      "upstream": "browser/components/controlcenter/assets/breach-alert-shield-check.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-success.png",
+      "state": "success"
+    },
+    {
+      "upstream": "browser/components/controlcenter/assets/breach-alert-shield-cross.svg",
+      "replacement": "overlay/browser/components/aboutwelcome/assets/goodbear-empty-state.png",
+      "state": "empty_state"
+    }
+  ],
+  "windows_nsis_wizard": {
+    "source": "artwork/final/m10-03/goodbear-welcome.png",
+    "generator": "tools/generate_nsis_branding_assets.py",
+    "role": "decorative Good Bear product identity for NSIS welcome and finish pages only",
+    "assets": {
+      "wizWatermark.bmp": {
+        "path": "overlay/browser/branding/goodbear/wizWatermark.bmp",
+        "canvas_px": [
+          164,
+          314
+        ],
+        "sha256": "6fbe0419c2da9601e62e1f9247cb4698324b0d73f35ea5690b6ca9724c170fd5"
+      },
+      "wizHeader.bmp": {
+        "path": "overlay/browser/branding/goodbear/wizHeader.bmp",
+        "canvas_px": [
+          150,
+          57
+        ],
+        "sha256": "8a570f3e63d8ee8c1bc0349fcfa03e3f395b1bf42150002390fab8d0444c3305"
+      },
+      "wizHeaderRTL.bmp": {
+        "path": "overlay/browser/branding/goodbear/wizHeaderRTL.bmp",
+        "canvas_px": [
+          150,
+          57
+        ],
+        "sha256": "5077adc8a0d44e741df7b0e4ed651ef96cddd9b763274ef6cd8c313deb71013b"
+      }
+    }
+  }
+}

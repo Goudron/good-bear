@@ -1,0 +1,51 @@
+name: M13-06 Windows native frozen-source preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_manifest_sha256:
+        description: Exact reviewed source-manifest SHA-256 for the already materialized snapshot
+        required: true
+        type: string
+      source_bundle_sha256:
+        description: Exact reviewed source-bundle SHA-256 for the same snapshot
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  native-preflight:
+    runs-on: [self-hosted, Windows, X64, goodbear]
+    timeout-minutes: 30
+    env:
+      GOODBEAR_MANIFEST_SHA256: ${{ inputs.source_manifest_sha256 }}
+      GOODBEAR_BUNDLE_SHA256: ${{ inputs.source_bundle_sha256 }}
+    steps:
+      - name: Verify existing native inputs without compiling or promoting a product
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GOODBEAR_MANIFEST_SHA256 -notcmatch '^[0-9a-f]{64}$' -or $env:GOODBEAR_BUNDLE_SHA256 -notcmatch '^[0-9a-f]{64}$') { throw 'Exact lowercase source pins are required' }
+          $workspace = 'C:\GoodBear\m15-03-private-source'
+          $reportDir = Join-Path $env:RUNNER_TEMP ('goodbear-native-preflight-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          New-Item -ItemType Directory -Path $reportDir | Out-Null
+          $report = Join-Path $reportDir 'preflight.json'
+          $log = Join-Path $reportDir 'preflight.log'
+          $script = Join-Path $workspace 'source\tools\preflight_m15_cloud_windows.py'
+          if (-not (Test-Path -LiteralPath $script)) { throw 'The frozen snapshot lacks the reviewed native preflight; prepare a new snapshot' }
+          & 'C:\GoodBear\tools\Python312\python.exe' -u $script --manifest (Join-Path $workspace 'source-manifest.json') --bundle (Join-Path $workspace 'source-bundle.tar') --expected-manifest-sha256 $env:GOODBEAR_MANIFEST_SHA256 --expected-bundle-sha256 $env:GOODBEAR_BUNDLE_SHA256 --report $report 2>&1 | Tee-Object -FilePath $log
+          $exitCode = $LASTEXITCODE
+          Get-ChildItem -LiteralPath $reportDir -File | ForEach-Object { Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256 }
+          if ($exitCode -ne 0) { throw 'Native preflight failed; no compilation or product promotion occurred' }
+          Write-Output 'NATIVE_PREFLIGHT_PASSED_BUILD_STILL_BLOCKED_ON_M13_AND_NETWORK_EVIDENCE'
+      - name: Return source-free preflight evidence and real log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m13-06-windows-native-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/goodbear-native-preflight-${{ github.run_id }}-${{ github.run_attempt }}/preflight.json
+            ${{ runner.temp }}/goodbear-native-preflight-${{ github.run_id }}-${{ github.run_attempt }}/preflight.log
+          if-no-files-found: warn
+          retention-days: 7

@@ -1,0 +1,361 @@
+# M13: clang-format correction for Good Bear-owned C/C++ paths.
+
+diff --git a/netwerk/protocol/http/nsHttpChannelAuthProvider.cpp b/netwerk/protocol/http/nsHttpChannelAuthProvider.cpp
+index 9f23956..9fadd66 100644
+--- a/netwerk/protocol/http/nsHttpChannelAuthProvider.cpp
++++ b/netwerk/protocol/http/nsHttpChannelAuthProvider.cpp
+@@ -75,8 +75,8 @@ static bool ShouldIsolateGoodBearRussianPKIProxyAuth(nsIChannel* aChan) {
+   }
+ 
+   OriginAttributes originAttributes;
+-  StoragePrincipalHelper::GetOriginAttributesForNetworkState(
+-      aChan, originAttributes);
++  StoragePrincipalHelper::GetOriginAttributesForNetworkState(aChan,
++                                                             originAttributes);
+   if (originAttributes.mUserContextId == 0) {
+     return false;
+   }
+@@ -92,8 +92,8 @@ static bool ShouldIsolateGoodBearRussianPKIProxyAuth(nsIChannel* aChan) {
+ 
+   bool isManagedContainer = false;
+   nsresult rv = nssComponent->IsGoodBearRussianPKIContainer(
+-      originAttributes.mUserContextId,
+-      originAttributes.mPrivateBrowsingId != 0, &isManagedContainer);
++      originAttributes.mUserContextId, originAttributes.mPrivateBrowsingId != 0,
++      &isManagedContainer);
+   return NS_FAILED(rv) || isManagedContainer;
+ }
+ 
+diff --git a/security/manager/ssl/GoodBearRussianPKIAnchors.h b/security/manager/ssl/GoodBearRussianPKIAnchors.h
+index 7734b59..13b5a97 100644
+--- a/security/manager/ssl/GoodBearRussianPKIAnchors.h
++++ b/security/manager/ssl/GoodBearRussianPKIAnchors.h
+@@ -31,12 +31,14 @@ inline void GetGoodBearRussianPKIApprovedIntermediates(
+     nsTArray<nsTArray<uint8_t>>& aIntermediates) {
+   aIntermediates.Clear();
+   nsTArray<uint8_t> rsa2022;
+-  rsa2022.AppendElements(kGoodBearRussianPKIApprovedIntermediateRSA2022,
+-                         sizeof(kGoodBearRussianPKIApprovedIntermediateRSA2022));
++  rsa2022.AppendElements(
++      kGoodBearRussianPKIApprovedIntermediateRSA2022,
++      sizeof(kGoodBearRussianPKIApprovedIntermediateRSA2022));
+   aIntermediates.AppendElement(std::move(rsa2022));
+   nsTArray<uint8_t> rsa2024;
+-  rsa2024.AppendElements(kGoodBearRussianPKIApprovedIntermediateRSA2024,
+-                         sizeof(kGoodBearRussianPKIApprovedIntermediateRSA2024));
++  rsa2024.AppendElements(
++      kGoodBearRussianPKIApprovedIntermediateRSA2024,
++      sizeof(kGoodBearRussianPKIApprovedIntermediateRSA2024));
+   aIntermediates.AppendElement(std::move(rsa2024));
+ }
+ 
+diff --git a/security/manager/ssl/SSLServerCertVerification.cpp b/security/manager/ssl/SSLServerCertVerification.cpp
+index 0b43962..4d1b273 100644
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -537,9 +537,9 @@ static void GatherTelemetry(
+     const nsTArray<nsTArray<uint8_t>>& aBuiltCertChain,
+     const CertificateTransparencyInfo& aCertificateTransparencyInfo,
+     const IssuerSources& issuerSources) {
+-  uint32_t evStatus = (aCertVerificationResult != Success) ? 0  // 0 = Failure
+-                      : (aEVStatus != EVStatus::EV)        ? 1  // 1 = DV
+-                                                           : 2;        // 2 = EV
++  uint32_t evStatus = (aCertVerificationResult != Success) ? 0   // 0 = Failure
++                      : (aEVStatus != EVStatus::EV)        ? 1   // 1 = DV
++                                                           : 2;  // 2 = EV
+   glean::cert::ev_status.AccumulateSingleSample(evStatus);
+ 
+   if (aOcspStaplingStatus != CertVerifier::OCSP_STAPLING_NEVER_CHECKED) {
+@@ -877,10 +877,10 @@ SSLServerCertVerificationJob::Run() {
+           bool ignoredMadeOCSPRequests = false;
+           return AuthGoodBearRussianPKIContainerCertificate(
+               *certVerifier, mPinArg, certBytes, mPeerCertChain, mHostName,
+-              mOriginAttributes, mStapledOCSPResponse,
+-              mSCTsFromTLSExtension, mDCInfo, mCertVerifierFlags, mTime,
+-              ignoredBuiltChain, ignoredEVStatus, ignoredCTInfo,
+-              ignoredChainRootBuiltIn, ignoredMadeOCSPRequests);
++              mOriginAttributes, mStapledOCSPResponse, mSCTsFromTLSExtension,
++              mDCInfo, mCertVerifierFlags, mTime, ignoredBuiltChain,
++              ignoredEVStatus, ignoredCTInfo, ignoredChainRootBuiltIn,
++              ignoredMadeOCSPRequests);
+         });
+     goodBearRussianPKIRequired =
+         ordinaryResult.mClassification ==
+@@ -938,11 +938,12 @@ SSLServerCertVerificationJob::Run() {
+         std::move(builtChainBytesArray), std::move(mPeerCertChain),
+         TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
+             certificateTransparencyInfo),
+-        evStatus, true, usedGoodBearRussianPKIAlternateTrust
++        evStatus, true,
++        usedGoodBearRussianPKIAlternateTrust
+             ? nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI
+             : nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
+-        false,
+-        0, nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
++        false, 0,
++        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
+         isCertChainRootBuiltInRoot, mProviderFlags, madeOCSPRequests);
+     if (NS_FAILED(rv)) {
+       // We can't release this off the STS thread because some parts of it
+@@ -970,8 +971,7 @@ SSLServerCertVerificationJob::Run() {
+           certificateTransparencyInfo),
+       EVStatus::NotEV, false,
+       nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
+-      goodBearRussianPKIRequired, finalError,
+-      overridableErrorCategory,
++      goodBearRussianPKIRequired, finalError, overridableErrorCategory,
+       // If the certificate verifier returned Result::ERROR_BAD_CERT_DOMAIN,
+       // a chain was built, so isCertChainRootBuiltInRoot is valid and
+       // potentially useful. Otherwise, assume no chain was built.
+@@ -1224,8 +1224,7 @@ nsresult SSLServerCertVerificationResult::Dispatch(
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired,
+-    PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+diff --git a/security/manager/ssl/SSLServerCertVerification.h b/security/manager/ssl/SSLServerCertVerification.h
+index da03ac9..aefaefc 100644
+--- a/security/manager/ssl/SSLServerCertVerification.h
++++ b/security/manager/ssl/SSLServerCertVerification.h
+@@ -49,8 +49,7 @@ class BaseSSLServerCertVerificationResult {
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired,
+-      PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -78,8 +77,7 @@ class SSLServerCertVerificationResult final
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired,
+-      PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+diff --git a/security/manager/ssl/TransportSecurityInfo.cpp b/security/manager/ssl/TransportSecurityInfo.cpp
+index b62ca80..159b100 100644
+--- a/security/manager/ssl/TransportSecurityInfo.cpp
++++ b/security/manager/ssl/TransportSecurityInfo.cpp
+@@ -47,8 +47,7 @@ TransportSecurityInfo::TransportSecurityInfo(
+     bool aMadeOCSPRequests, bool aUsedPrivateDNS, Maybe<bool> aIsEV,
+     bool aNPNCompleted, const nsCString& aNegotiatedNPN, bool aResumed,
+     bool aIsBuiltCertChainRootBuiltInRoot, const nsCString& aPeerId,
+-    GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired)
++    GoodBearTrustDomain aGoodBearTrustDomain, bool aGoodBearRussianPKIRequired)
+     : mSecurityState(aSecurityState),
+       mErrorCode(aErrorCode),
+       mHandshakeCertificates(std::move(aHandshakeCertificates)),
+@@ -847,8 +846,8 @@ nsresult TransportSecurityInfo::Read(const nsCString& aSerializedSecurityInfo,
+       aSignatureSchemeName, aProtocolVersion, aCertificateTransparencyStatus,
+       aIsAcceptedEch, aIsDelegatedCredential, aOverridableErrorCategory,
+       aMadeOCSPRequests, aUsedPrivateDNS, aIsEV, aNPNCompleted, aNegotiatedNPN,
+-      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId,
+-      aGoodBearTrustDomain, aGoodBearRussianPKIRequired));
++      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId, aGoodBearTrustDomain,
++      aGoodBearRussianPKIRequired));
+   securityInfo.forget(aResult);
+   return NS_OK;
+ }
+@@ -935,8 +934,8 @@ bool TransportSecurityInfo::DeserializeFromIPC(
+       aSignatureSchemeName, aProtocolVersion, aCertificateTransparencyStatus,
+       aIsAcceptedEch, aIsDelegatedCredential, aOverridableErrorCategory,
+       aMadeOCSPRequests, aUsedPrivateDNS, aIsEV, aNPNCompleted, aNegotiatedNPN,
+-      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId,
+-      aGoodBearTrustDomain, aGoodBearRussianPKIRequired));
++      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId, aGoodBearTrustDomain,
++      aGoodBearRussianPKIRequired));
+   *aResult = std::move(securityInfo);
+   return true;
+ }
+diff --git a/security/manager/ssl/VerifySSLServerCertChild.cpp b/security/manager/ssl/VerifySSLServerCertChild.cpp
+index 6652521..ed23918 100644
+--- a/security/manager/ssl/VerifySSLServerCertChild.cpp
++++ b/security/manager/ssl/VerifySSLServerCertChild.cpp
+@@ -48,8 +48,7 @@ ipc::IPCResult VerifySSLServerCertChild::RecvOnVerifySSLServerCertFinished(
+     const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+     const bool& aSucceeded,
+     const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
+-    const bool& aGoodBearRussianPKIRequired,
+-    int32_t aFinalError,
++    const bool& aGoodBearRussianPKIRequired, int32_t aFinalError,
+     const nsITransportSecurityInfo::OverridableErrorCategory&
+         aOverridableErrorCategory,
+     const bool& aIsBuiltCertChainRootBuiltInRoot,
+@@ -67,8 +66,7 @@ ipc::IPCResult VerifySSLServerCertChild::RecvOnVerifySSLServerCertFinished(
+       std::move(certBytesArray), std::move(mPeerCertChain),
+       aCertTransparencyStatus, aEVStatus, aSucceeded, aGoodBearTrustDomain,
+       aGoodBearRussianPKIRequired, aFinalError, aOverridableErrorCategory,
+-      aIsBuiltCertChainRootBuiltInRoot,
+-      mProviderFlags, aMadeOCSPRequests);
++      aIsBuiltCertChainRootBuiltInRoot, mProviderFlags, aMadeOCSPRequests);
+   if (NS_FAILED(rv)) {
+     // We can't release this off the STS thread because some parts of it are
+     // not threadsafe. Just leak mResultTask.
+diff --git a/security/manager/ssl/VerifySSLServerCertChild.h b/security/manager/ssl/VerifySSLServerCertChild.h
+index ff71277..1a3d1eb 100644
+--- a/security/manager/ssl/VerifySSLServerCertChild.h
++++ b/security/manager/ssl/VerifySSLServerCertChild.h
+@@ -31,8 +31,7 @@ class VerifySSLServerCertChild : public PVerifySSLServerCertChild {
+       const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+       const bool& aSucceeded,
+       const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
+-      const bool& aGoodBearRussianPKIRequired,
+-      int32_t aFinalError,
++      const bool& aGoodBearRussianPKIRequired, int32_t aFinalError,
+       const nsITransportSecurityInfo::OverridableErrorCategory&
+           aOverridableErrorCategory,
+       const bool& aIsBuiltCertChainRootBuiltInRoot,
+diff --git a/security/manager/ssl/VerifySSLServerCertParent.cpp b/security/manager/ssl/VerifySSLServerCertParent.cpp
+index b2859d2..7f96a1d 100644
+--- a/security/manager/ssl/VerifySSLServerCertParent.cpp
++++ b/security/manager/ssl/VerifySSLServerCertParent.cpp
+@@ -44,8 +44,7 @@ void VerifySSLServerCertParent::OnVerifiedSSLServerCert(
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired,
+-    PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests) {
+@@ -56,8 +55,8 @@ void VerifySSLServerCertParent::OnVerifiedSSLServerCert(
+   (void)SendOnVerifySSLServerCertFinished(
+       aBuiltCertChain, aCertificateTransparencyStatus, aEVStatus, aSucceeded,
+       aGoodBearTrustDomain, aGoodBearRussianPKIRequired, aFinalError,
+-      aOverridableErrorCategory,
+-      aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests);
++      aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++      aMadeOCSPRequests);
+ 
+   Close();
+ }
+@@ -80,8 +79,7 @@ class IPCServerCertVerificationResult final
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired,
+-      PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -100,8 +98,7 @@ nsresult IPCServerCertVerificationResult::Dispatch(
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired,
+-    PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -119,14 +116,13 @@ nsresult IPCServerCertVerificationResult::Dispatch(
+           [parent(mParent), builtCertChain{std::move(builtCertChain)},
+            aCertificateTransparencyStatus, aEVStatus, aSucceeded, aFinalError,
+            aGoodBearTrustDomain, aGoodBearRussianPKIRequired,
+-           aOverridableErrorCategory,
+-           aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests]() {
++           aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++           aMadeOCSPRequests]() {
+             parent->OnVerifiedSSLServerCert(
+                 builtCertChain, aCertificateTransparencyStatus, aEVStatus,
+-                aSucceeded, aGoodBearTrustDomain,
+-                aGoodBearRussianPKIRequired, aFinalError,
+-                aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+-                aMadeOCSPRequests);
++                aSucceeded, aGoodBearTrustDomain, aGoodBearRussianPKIRequired,
++                aFinalError, aOverridableErrorCategory,
++                aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests);
+           }),
+       NS_DISPATCH_NORMAL);
+   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+diff --git a/security/manager/ssl/VerifySSLServerCertParent.h b/security/manager/ssl/VerifySSLServerCertParent.h
+index 434a429..f9a08e6 100644
+--- a/security/manager/ssl/VerifySSLServerCertParent.h
++++ b/security/manager/ssl/VerifySSLServerCertParent.h
+@@ -39,8 +39,7 @@ class VerifySSLServerCertParent : public PVerifySSLServerCertParent {
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired,
+-      PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests);
+diff --git a/security/manager/ssl/nsNSSComponent.cpp b/security/manager/ssl/nsNSSComponent.cpp
+index f2be6d6..ac6df13 100644
+--- a/security/manager/ssl/nsNSSComponent.cpp
++++ b/security/manager/ssl/nsNSSComponent.cpp
+@@ -1887,7 +1887,7 @@ nsNSSComponent::GetDefaultCertVerifier(SharedCertVerifier** result) {
+ 
+ NS_IMETHODIMP
+ nsNSSComponent::SetGoodBearRussianPKIContainerId(uint32_t aUserContextId,
+-                                                  bool* aResult) {
++                                                 bool* aResult) {
+   NS_ENSURE_ARG_POINTER(aResult);
+   *aResult = false;
+   if (!XRE_IsParentProcess()) {
+@@ -1912,8 +1912,8 @@ nsNSSComponent::ClearGoodBearRussianPKIContainerId() {
+ 
+ NS_IMETHODIMP
+ nsNSSComponent::IsGoodBearRussianPKIContainer(uint32_t aUserContextId,
+-                                               bool aPrivateBrowsing,
+-                                               bool* aResult) {
++                                              bool aPrivateBrowsing,
++                                              bool* aResult) {
+   NS_ENSURE_ARG_POINTER(aResult);
+   OriginAttributes originAttributes;
+   originAttributes.mUserContextId = aUserContextId;
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+index 078124f..4984ecd 100644
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -413,8 +413,7 @@ TEST_F(GoodBearRussianPKIX509Test,
+ // the AIA URL or broaden ordinary/global trust.
+ TEST_F(GoodBearRussianPKIX509Test,
+        ProductionRSA2024IssuerCompletesFSTECMissingIntermediateChain) {
+-  nsTArray<uint8_t> leaf =
+-      ReadCertificateFixture("fstec-rsa2024-leaf.pem"_ns);
++  nsTArray<uint8_t> leaf = ReadCertificateFixture("fstec-rsa2024-leaf.pem"_ns);
+   ASSERT_FALSE(leaf.IsEmpty());
+ 
+   nsTArray<nsTArray<uint8_t>> roots;
+@@ -427,9 +426,8 @@ TEST_F(GoodBearRussianPKIX509Test,
+   nsTArray<nsTArray<uint8_t>> builtChain;
+   ASSERT_EQ(Success,
+             VerifyGoodBearRussianPKISSLServerCert(
+-                *mVerifier, leaf, TimeFromEpochInSeconds(1787832000),
+-                nullptr, "fstec.ru"_ns, builtChain, roots,
+-                CertVerifier::FLAG_LOCAL_ONLY,
++                *mVerifier, leaf, TimeFromEpochInSeconds(1787832000), nullptr,
++                "fstec.ru"_ns, builtChain, roots, CertVerifier::FLAG_LOCAL_ONLY,
+                 Some(std::move(intermediates))));
+   ASSERT_EQ(3U, builtChain.Length());
+ }
+diff --git a/security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp b/security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp
+index ff7604d..528e0a9 100644
+--- a/security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp
+@@ -78,8 +78,8 @@ TEST(psm_GoodBearTrustDomain,
+   nsCString serialized;
+   ASSERT_EQ(NS_OK, securityInfo->ToString(serialized));
+   nsCOMPtr<nsITransportSecurityInfo> deserialized;
+-  ASSERT_EQ(NS_OK,
+-            TransportSecurityInfo::Read(serialized, getter_AddRefs(deserialized)));
++  ASSERT_EQ(NS_OK, TransportSecurityInfo::Read(serialized,
++                                               getter_AddRefs(deserialized)));
+   GoodBearTrustDomain trustDomain = GoodBearTrustDomain::Standard;
+   ASSERT_EQ(NS_OK, deserialized->GetGoodBearTrustDomain(&trustDomain));
+   ASSERT_EQ(GoodBearTrustDomain::Invalid, trustDomain);

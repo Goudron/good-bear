@@ -1,0 +1,54 @@
+# M9-06: opt-in, privacy-safe native verification diagnostics with fixed identifiers only.
+
+diff --git a/security/manager/ssl/SSLServerCertVerification.cpp b/security/manager/ssl/SSLServerCertVerification.cpp
+index fa0969f..0b43962 100644
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -109,6 +109,7 @@
+ #include "VerifySSLServerCertChild.h"
+ #include "cert.h"
+ #include "mozilla/Assertions.h"
++#include "mozilla/Logging.h"
+ #include "mozilla/RefPtr.h"
+ #include "mozilla/StaticPrefs_security.h"
+ #include "mozilla/UniquePtr.h"
+@@ -145,6 +146,8 @@ using namespace mozilla::pkix;
+ namespace mozilla {
+ namespace psm {
+ 
++static LazyLogModule gGoodBearTrustLog("GoodBearTrust");
++
+ // do not use a nsCOMPtr to avoid static initializer/destructor
+ nsIThreadPool* gCertVerificationThreadPool = nullptr;
+ 
+@@ -859,6 +862,10 @@ SSLServerCertVerificationJob::Run() {
+   // A positive alternate check for an ordinary request is only a native
+   // routing hint. The original TLS error is retained below, so no ordinary
+   // cookies, headers, request body, or response bytes become usable.
++  if (result != Success) {
++    MOZ_LOG(gGoodBearTrustLog, LogLevel::Debug,
++            ("phase=verification result=standard-failed"));
++  }
+   if (result != Success && mOriginAttributes.mPrivateBrowsingId == 0 &&
+       !GetGoodBearRussianPKIScopeAuthority().Allows(mOriginAttributes)) {
+     GoodBearOrdinaryVerificationResult ordinaryResult =
+@@ -906,6 +913,8 @@ SSLServerCertVerificationJob::Run() {
+                   russianPKIChainRootBuiltIn, russianPKIMadeOCSPRequests);
+             });
+     if (russianPKIResult.ChannelUsable()) {
++      MOZ_LOG(gGoodBearTrustLog, LogLevel::Debug,
++              ("phase=verification result=secondary-succeeded"));
+       result = Success;
+       usedGoodBearRussianPKIAlternateTrust = true;
+       builtChainBytesArray = std::move(russianPKIBuiltChain);
+@@ -913,6 +922,9 @@ SSLServerCertVerificationJob::Run() {
+       certificateTransparencyInfo = std::move(russianPKICTInfo);
+       isCertChainRootBuiltInRoot = russianPKIChainRootBuiltIn;
+       madeOCSPRequests = russianPKIMadeOCSPRequests;
++    } else if (IsGoodBearRussianPKISecondaryVerificationEligible(result)) {
++      MOZ_LOG(gGoodBearTrustLog, LogLevel::Debug,
++              ("phase=verification result=secondary-failed"));
+     }
+   }
+ 
+

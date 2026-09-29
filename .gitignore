@@ -1,0 +1,48 @@
+# Firefox/Gecko build outputs and local state
+obj-*/
+dist/
+artifacts/*
+!artifacts/.gitkeep
+*.log
+
+# Remote-build evidence, returned artifacts, encrypted inputs, VM diagnostics,
+# and local quality reports are review material only.  The public source offer
+# keeps just the declared, reproducible host recipes below.
+build/*
+!build/ubuntu/
+build/ubuntu/*
+!build/ubuntu/Dockerfile
+!build/ubuntu/install-packages.sh
+!build/ubuntu/mozconfig.dev
+!build/ubuntu/mozconfig.host
+!build/ubuntu/mozconfig.release-lto
+!build/windows/
+build/windows/*
+!build/windows/mozconfig.engine-test
+!build/windows/mozconfig.release-lto
+
+# Interrupted local probes can leave an empty marker or broken symlinks in the
+# repository root.  They never form part of Good Bear source provenance.
+/.runnerprobe.txt
+/Projectsbe=
+/firefox-l-l10n=
+
+# Materialized Firefox source is derived exclusively from the pinned archive.
+# Keep the tracked directory marker, but never stage archives or worktrees.
+source/*
+!source/.gitkeep
+
+# Editor, OS, and cache files
+.cache/
+.idea/
+.vscode/
+__pycache__/
+*.py[cod]
+*~
+
+# Secrets and signing material
+.env
+.env.*
+*.key
+*.pem
+!project-inputs/*.pem

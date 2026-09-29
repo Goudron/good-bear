@@ -1,0 +1,312 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-04",
+  "selected_at": "2026-09-16",
+  "from": {
+    "version": "154.0",
+    "revision": "032a9fc1ac0cc3209f7c142744ba2e40847c8086"
+  },
+  "to": {
+    "version": "156.0",
+    "release_tag": "FIREFOX_156_0_RELEASE",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+    "archive": "source/firefox-156.0.source.tar.xz",
+    "sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9",
+    "sha512": "0463304a0898670d248114f66f7c235166ae2397c3989a7c878c96f0c589fbbba1f1c87432daa22633b9fadd94394adf1dc37f0e67d22b066c75efe5eead75ce"
+  },
+  "version_pair": {
+    "good_bear": "1.0",
+    "firefox": "156.0",
+    "canonical_about_ru": "Good Bear 1.0 (Firefox 156.0)",
+    "required_in": [
+      "candidate",
+      "provenance",
+      "sbom",
+      "source_offer",
+      "about",
+      "package",
+      "update"
+    ]
+  },
+  "owner_scopes": [
+    "browser UI, Fluent/l10n, branding and packaging",
+    "PSM/NSS certificate verification and security UI",
+    "containers, BrowserGlue, actors and isolation",
+    "network HTTP authentication and TLS evidence",
+    "application-update identity and update policy"
+  ],
+  "patch_dispositions": [
+    {
+      "patch": "0001-good-bear-product-identity.patch",
+      "owner": "browser configure, branding and update identity",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0002-good-bear-about-dialog-attribution.patch",
+      "owner": "browser About UI and Fluent",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0003-good-bear-typed-trust-domain.patch",
+      "owner": "PSM/NSS trust classification",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0004-good-bear-standard-first-classification.patch",
+      "owner": "PSM/NSS trust classification",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0005-good-bear-container-scoped-russian-pki.patch",
+      "owner": "containers and PSM/NSS",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0006-good-bear-complete-x509-tls-validation.patch",
+      "owner": "PSM/NSS certificate verification",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0007-good-bear-trust-results-performance.patch",
+      "owner": "PSM/NSS verification performance",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0008-good-bear-managed-russian-pki-container.patch",
+      "owner": "containers, BrowserGlue and PSM/NSS",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0009-good-bear-local-russian-repack.patch",
+      "owner": "l10n repackaging",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0010-good-bear-russian-pki-scope-authority.patch",
+      "owner": "PSM/NSS trust scope",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0011-good-bear-russian-pki-certificate-error-routing.patch",
+      "owner": "PSM/NSS, browser actors and error UI",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0012-good-bear-trust-history-and-transitions.patch",
+      "owner": "PSM/NSS trust-state transitions",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0013-good-bear-privacy-safe-diagnostics.patch",
+      "owner": "PSM/NSS diagnostics",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0014-good-bear-mascot-artwork-system.patch",
+      "owner": "onboarding, error UI and browser theme",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0015-good-bear-strict-russian-release-locale.patch",
+      "owner": "l10n and installer packaging",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0016-good-bear-public-product-rebranding.patch",
+      "owner": "branding, Debian and Windows packaging",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0017-good-bear-approved-asset-injection.patch",
+      "owner": "browser branding build input",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0018-good-bear-about-author-links.patch",
+      "owner": "browser About UI and Fluent",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0019-good-bear-fstec-native-scope-regression.patch",
+      "owner": "PSM/NSS and container tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0020-good-bear-first-run-animation-binding.patch",
+      "owner": "onboarding UI and tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0021-good-bear-native-russian-pki-error-routing.patch",
+      "owner": "browser actors and container tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0022-good-bear-trustpanel-mascot-artwork.patch",
+      "owner": "security panel theme",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0023-good-bear-live-fstec-auto-route-window.patch",
+      "owner": "BrowserGlue and container routing",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0024-good-bear-trust-panel-russian-pki-ru-badge.patch",
+      "owner": "site identity UI and theme",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0025-good-bear-repeat-assigned-origin-routing.patch",
+      "owner": "BrowserGlue and container routing",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0026-good-bear-https-only-default.patch",
+      "owner": "browser defaults, actors and container tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0027-good-bear-russian-pki-panel-copy.patch",
+      "owner": "security panel UI and Fluent",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0028-good-bear-navigation-network-evidence.patch",
+      "owner": "container navigation tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0029-good-bear-russian-pki-credential-isolation.patch",
+      "owner": "network credential isolation",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0030-good-bear-russian-pki-proxy-auth-isolation.patch",
+      "owner": "network HTTP authentication",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0031-good-bear-private-browsing-fail-closed.patch",
+      "owner": "private browsing and container isolation",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0032-good-bear-0rtt-packet-evidence.patch",
+      "owner": "TLS transport security",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0033-good-bear-quality-format.patch",
+      "owner": "PSM/NSS, TLS and network diagnostics",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0034-good-bear-certificate-override-containment.patch",
+      "owner": "PSM/NSS certificate override containment",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0035-good-bear-mar-public-cert-binding.patch",
+      "owner": "application updater MAR trust",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0036-good-bear-spellcheck-default.patch",
+      "owner": "browser defaults and spell-check language selection",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0037-good-bear-hosted-service-boundary.patch",
+      "owner": "browser hosted services, defaults, Remote Settings and privacy boundary",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0038-good-bear-remove-fxa-sync-ui.patch",
+      "owner": "browser App Menu and Firefox Account/Sync entry points",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0039-good-bear-assigned-origin-newline-delimiter.patch",
+      "owner": "PSM/NSS Russian PKI container assignment",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0040-good-bear-trust-panel-hosted-service-guard.patch",
+      "owner": "Trust Panel and Remote Settings service boundary",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0041-good-bear-about-version-and-ubuntu-update-notice.patch",
+      "owner": "browser About UI, Fluent version pair and Ubuntu update notice",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0042-good-bear-russian-pki-settings.patch",
+      "owner": "preferences layouts, Russian PKI settings, transactional assignment controls and Fluent",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0043-good-bear-localized-russian-pki-prompts.patch",
+      "owner": "BrowserGlue address-only consent prompts, Fluent and container navigation tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0044-good-bear-russian-pki-scope-override-containment.patch",
+      "owner": "PSM/NSS live scope revocation and certificate override containment",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0045-good-bear-firefox-user-agent-compatibility.patch",
+      "owner": "native browser build identity, HTTP User-Agent and navigator compatibility tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0046-good-bear-russian-pki-live-scope-leases.patch",
+      "owner": "PSM and socket-process live scope leases, TLS session-cache containment and native revocation tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0047-good-bear-russian-pki-security-details.patch",
+      "owner": "native verified-chain security details, certificate viewer, Fluent container presentation and UI regressions",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0048-good-bear-maintained-javascript-quality.patch",
+      "owner": "About version cleanup, native first-visit fixture interface and observed TLS-resumption requirement",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0049-good-bear-blocking-russian-pki-interstitial.patch",
+      "owner": "tab-bound address-only trust/body interstitial, native certificate error actors, Fluent and navigation tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0050-good-bear-typed-tls-session-cache.patch",
+      "owner": "explicit typed TLS session-cache persistence, strict decoding and resumption regressions",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0051-good-bear-safe-browsing-v5-attributes.patch",
+      "owner": "Safe Browsing v5 response parser and URL-classifier native tests",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0052-good-bear-safe-browsing-supplier-notice.patch",
+      "owner": "Browser startup, Safe Browsing/reputation transport, legal UI and Russian Fluent",
+      "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0053-good-bear-google-verdict-freshness.patch",
+      "owner": "URL-classifier Google verdict cache, completion path and native tests",
+      "disposition": "targeted_rebase_required"
+    }
+  ],
+  "migration_rules": {
+    "force_apply": "forbidden",
+    "unknown_upstream_change": "block_migration",
+    "firefox_154_compatibility_shim": "forbidden",
+    "security_contracts": "must_be_reexecuted_in_m15_05"
+  },
+  "evidence_status": "Firefox-154-derived and Firefox-155-derived evidence is invalidated until reexecuted against the frozen Firefox-156.0 tree; the historical Firefox-154 profile migration remains required"
+}

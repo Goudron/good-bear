@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "milestone": "GB100-M10-02",
+  "record_type": "preview_visual_brand_candidates",
+  "copyright_policy": {
+    "intended_rightsholder": "Valery Ledovskoy <valery@ledovskoy.com>",
+    "status": "unreviewed_preview_only",
+    "release_notice": "No candidate is an approved brand asset or a licensed release asset. M10-03 must create a selected original master and record its final authorship, rights and license basis."
+  },
+  "selection_gate": {
+    "selected_candidate_id": "workshop-beacon",
+    "selection_recorded": true,
+    "maintainer_selection": "Valery Ledovskoy explicitly selected candidate 01, Workshop Beacon.",
+    "required_m10_03_refinement": "Remove the non-final circular enclosing device from the monochrome icon direction. Retain an independent bear-with-modern-glasses silhouette.",
+    "explicit_maintainer_selection_required": true,
+    "release_asset_injection_allowed": false,
+    "release_block_reason": "Workshop Beacon is selected only as the M10-03 design direction. Its preview remains unlicensed and cannot enter a release artifact before M10-03 creates approved original assets and records their rights."
+  },
+  "generation": {
+    "method": "OpenAI built-in image generation",
+    "input_images": [],
+    "public_photograph_references": [],
+    "exact_confirmed_valery_reference_images": false,
+    "provenance_basis": "Each preview was generated from its separately recorded original prompt. No Firefox, Mozilla, third-party, or personal photographic artwork was used as an input or reference."
+  },
+  "candidates": [
+    {
+      "id": "workshop-beacon",
+      "name": "Workshop Beacon",
+      "artifact_path": "artwork/candidates/m10-02/01-workshop-beacon-preview.png",
+      "sha256": "c72069a95b232e7aade1c447ee47a0b1af5a0e51464a1cfaf9e2081deae11438",
+      "format": "PNG",
+      "dimensions_px": [1254, 1254],
+      "artifact_status": "preview_only",
+      "selection_status": "selected_for_m10_03_refinement",
+      "visual_direction": "Warm forest-green and copper editorial mascot system with a centred friendly bear, slim round glasses, and calm, professional welcome desk scene.",
+      "primary_mark_direction": "Forward-facing bear head with slim contemporary glasses and confident broad shapes.",
+      "monochrome_icon_direction": "Dark single-colour bear-and-glasses silhouette intended for 16 px study; its enclosing presentation circle is explicitly not approved for a final icon.",
+      "welcome_onboarding_pose": "A relaxed bear at a desk gently presents a neutral learning card about browser use.",
+      "illustrative_style": "Warm textured editorial illustration with restrained product-design geometry.",
+      "distinguishing_traits": ["forest green and copper palette", "round glasses", "desk educator pose", "soft textured editorial rendering"],
+      "generation_prompt": "Use case: logo-brand. Asset type: preview-only Good Bear visual-branding candidate board, not production artwork. Create one original visual system for the independent desktop browser Good Bear: a text-free three-panel board with a primary calm intelligent adult bear head in slim contemporary round glasses; a simplified monochrome 16px bear icon direction; and a welcome onboarding bear at a small desk gently presenting a neutral internet-learning card. The bear is broadly sturdy but not a portrait or literal likeness. Use flat geometric editorial illustration, deep forest green, warm oat, muted copper and charcoal. No text, watermark, flags, government symbols, certificates, locks, shields, foxes, Firefox/Mozilla artwork, flames, rings, orbit compositions, or security-state claims.",
+      "constraints_review": {
+        "bear_is_not_a_portrait_or_likeness": true,
+        "no_reference_photographs": true,
+        "no_firefox_or_mozilla_source_or_derived_art": true,
+        "no_fox_flame_or_orbit_silhouette": true,
+        "no_government_symbol_or_security_state_claim": true,
+        "no_text_or_watermark": true
+      },
+      "review_flags": ["The generated round presentation frame around the monochrome study must be removed rather than carried into any final icon; final M10-03 artwork requires a distinctiveness review."]
+    },
+    {
+      "id": "paper-path",
+      "name": "Paper Path",
+      "artifact_path": "artwork/candidates/m10-02/02-paper-path-preview.png",
+      "sha256": "47bd2881789f3d4cead0380086882e853f1ac3571f8c91583a4042bade4ba168",
+      "format": "PNG",
+      "dimensions_px": [1254, 1254],
+      "artifact_status": "preview_only",
+      "selection_status": "not_selected",
+      "visual_direction": "Cool mineral-blue, cream and muted-brick paper-cut system that treats Good Bear as a quiet guide through understandable digital paths.",
+      "primary_mark_direction": "Three-quarter sturdy bear head with compact rectangular glasses and layered paper-cut contours.",
+      "monochrome_icon_direction": "Black bear-head-and-glasses silhouette without an enclosing container, intended to be simplified further at 16 px.",
+      "welcome_onboarding_pose": "The bear walks beside an open notebook and points to an abstract dot-and-line learning path.",
+      "illustrative_style": "Layered paper-cut collage and linocut texture with structured, adult editorial forms.",
+      "distinguishing_traits": ["mineral-blue paper-cut palette", "rectangular glasses", "walking guide pose", "layered linocut texture"],
+      "generation_prompt": "Use case: logo-brand. Asset type: preview-only Good Bear visual-branding candidate board, not production artwork. Invent a second clearly distinct original Good Bear system: text-free three-panel board with a three-quarter calm adult bear in compact rectangular glasses; a black-and-white 16px bear-and-glasses icon without an enclosing shape; and the bear walking beside an open notebook, gently pointing to an abstract dotted network path. Broadly sturdy but never a person likeness. Use highly original paper-cut collage and linocut-inspired vector-like art in midnight navy, mineral blue, warm cream, muted brick red and black. No text, watermark, flags, seals, certificates, locks, shields, foxes, circular rings, flames, orbit arcs, wrapped animal silhouettes, Firefox/Mozilla art, or security-state claims.",
+      "constraints_review": {
+        "bear_is_not_a_portrait_or_likeness": true,
+        "no_reference_photographs": true,
+        "no_firefox_or_mozilla_source_or_derived_art": true,
+        "no_fox_flame_or_orbit_silhouette": true,
+        "no_government_symbol_or_security_state_claim": true,
+        "no_text_or_watermark": true
+      },
+      "review_flags": ["The abstract landscape and path are welcome-scene devices only; M10-03 must keep the final mascot separate from certificate and container indicators."]
+    },
+    {
+      "id": "editorial-guide",
+      "name": "Editorial Guide",
+      "artifact_path": "artwork/candidates/m10-02/03-editorial-guide-preview.png",
+      "sha256": "29c82be6e491783aaae9f48a8908a624af1d68dfe78e2998c464f453c25b1d08",
+      "format": "PNG",
+      "dimensions_px": [1254, 1254],
+      "artifact_status": "preview_only",
+      "selection_status": "not_selected",
+      "visual_direction": "A restrained aubergine, sand, orange and sage editorial system with a direct, welcoming educator personality.",
+      "primary_mark_direction": "Front-facing broad adult bear with translucent rectangular glasses, a composed gaze, and simple warm architectural fields.",
+      "monochrome_icon_direction": "A solid aubergine bear face and glasses silhouette, isolated for 16 px legibility study.",
+      "welcome_onboarding_pose": "Seated bear calmly arranges three blank abstract browser cards as a simple learning sequence.",
+      "illustrative_style": "Crisp screen-print-inspired flat colour with soft halftone grain and modern editorial forms.",
+      "distinguishing_traits": ["aubergine, sand and sage palette", "translucent glasses", "seated browser educator pose", "screen-print editorial texture"],
+      "generation_prompt": "Use case: logo-brand. Asset type: preview-only Good Bear visual-branding candidate board, not production artwork. Create a third independent Good Bear system: text-free triptych showing a kind intelligent broadly sturdy adult bear in translucent contemporary eyeglasses; a bold isolated monochrome bear-and-glasses 16px icon; and a welcoming bear at a table arranging three blank abstract browser-window cards into a learning sequence. It is a generic character, never a portrait or likeness. Use original crisp monoline plus soft flat-colour screen-print illustration with aubergine, sand, burnt orange, sage green, near-black and cream. No photos, text, watermark, flags, government symbols, certificates, locks, shields, foxes, flames, orbital curves/rings, wrapped animal compositions, Firefox/Mozilla art, or trust/security-state claims.",
+      "constraints_review": {
+        "bear_is_not_a_portrait_or_likeness": true,
+        "no_reference_photographs": true,
+        "no_firefox_or_mozilla_source_or_derived_art": true,
+        "no_fox_flame_or_orbit_silhouette": true,
+        "no_government_symbol_or_security_state_claim": true,
+        "no_text_or_watermark": true
+      },
+      "review_flags": ["The blank browser-card drawing is illustrative onboarding material only; it is not an approved UI design or asset-injection specification."]
+    }
+  ]
+}

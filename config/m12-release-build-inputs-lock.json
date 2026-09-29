@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "selected_at": "2026-09-06",
+  "release_locale": "ru",
+  "network_policy": {
+    "acquisition": "controlled fetch only into the input cache quarantine",
+    "build_after_fetch": "network forbidden",
+    "intermediate_candidate": "network forbidden"
+  },
+  "intermediate_candidate": {
+    "mode": "non-lto",
+    "lto": "forbidden",
+    "full_lto": "reserved for GB100-M13-06 after all preceding gates pass"
+  },
+  "platforms": {
+    "ubuntu-amd64": {
+      "target": "Ubuntu 26.04 amd64",
+      "libc6_minimum": "2.43",
+      "target_rationale": "Maintainer-selected host-only release baseline. The candidate is linked on Ubuntu 26.04.1 LTS and must not claim Ubuntu 24.04 compatibility.",
+      "environment_lock": "config/ubuntu-environment-lock.json",
+      "inputs": [
+        {
+          "path": "config/firefox-baseline.json",
+          "sha256": "6b2560788de6c3920b4d45814cff9e8c18aa97d9ae5b2fa05036316346220397"
+        },
+        {
+          "path": "config/ubuntu-environment-lock.json",
+          "sha256": "0ef7a7f1dbb173deaddc0e1acc2bd911e090762578f5b029aea9122c5cdd5b8b"
+        },
+        {
+          "path": "config/toolchain-lock.json",
+          "sha256": "a276bf9b08952d04e03092178e022f2e54afba113dc5a64dc0bcb4b1aeb5b928"
+        },
+        {
+          "path": "config/russian-pki-manifest.json",
+          "sha256": "518ea8cedb64a7db8093f1973d06c472e117c60a41fb1db35a6608f485530da1"
+        },
+        {
+          "path": "build/ubuntu/mozconfig.host",
+          "sha256": "5752cdabdb5ddf60d0036ee7992f171274e7686f1adbe7e7d35347f4a7407144"
+        }
+      ]
+    },
+    "windows-x64": {
+      "target": "Windows x64",
+      "installer": {
+        "format": "NSIS full offline installer (.exe)",
+        "architecture": "x64",
+        "release_locale": "ru",
+        "filename": "GoodBear Setup 1.0 x64 ru.exe",
+        "build_steps": [
+          [
+            "./mach",
+            "build"
+          ],
+          [
+            "./mach",
+            "build",
+            "installers-ru"
+          ]
+        ],
+        "source_owner_pins": [
+          {
+            "path": "browser/installer/windows/nsis/installer.nsi",
+            "sha256": "154ff6b272254daae4cf8b83793912cbeb459f207a7f11b24a09d5f06d4d336a"
+          },
+          {
+            "path": "browser/installer/windows/nsis/defines.nsi.in",
+            "sha256": "e2dc4ec0905139682facd4fcfb89aad789f6a16224a5bffdfd1fb81d32aee768"
+          },
+          {
+            "path": "browser/installer/package-manifest.in",
+            "sha256": "ba18ff3089ba57bee4fb61602e38873fb56ca53e4b176bafee8f743c432da4b5"
+          }
+        ],
+        "code_signing": {
+          "candidate": "unsigned local candidate only",
+          "public_release": "blocked until a separately approved signing authority is supplied",
+          "self_signed_or_invented_trust": "forbidden"
+        }
+      },
+      "manual_vm_validation": {
+        "status": "deferred-until-maintainer-provides-a-windows-environment",
+        "automation_prohibited": true,
+        "release_blocker": true
+      },
+      "toolchain": {
+        "name": "LLVM 22.1.8 Windows x64 MSVC archive",
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/clang%2Bllvm-22.1.8-x86_64-pc-windows-msvc.tar.xz",
+        "sha256": "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234",
+        "provenance_url": "https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-22.1.8"
+      },
+      "vm_input": {
+        "status": "cached-and-sha256-verified",
+        "media": {
+          "path": "artifacts/windows-input-cache-quarantine/Win10_22H2_Russian_x64v1.iso",
+          "sha256": "2a7c440c984eb018f513901e8ed96405213d237938c410c5089c0fac7ba01898",
+          "provenance_url": "https://www.microsoft.com/en-us/software-download/windows10ISO",
+          "acquisition_service": "https://www.microsoft.com/software-download-connector/api/",
+          "product": "Windows 10 22H2_v1 multi-edition ISO",
+          "architecture": "x64",
+          "language": "ru-RU",
+          "volume_id": "CCCOMA_X64FRE_RU-RU_DV9",
+          "edition_validation": {
+            "wim_image_count": 6,
+            "windows_10_pro_index": 4,
+            "wim_build": 19041
+          }
+        },
+        "required_before_execution": [],
+        "promotion": "forbidden until every required input is cached and SHA-256 verified"
+      },
+      "native_vm_toolchain_evidence": {
+        "status": "installed-and-verified-cache-complete",
+        "verified_at": "2026-09-08",
+        "bootstrapper": {
+          "path": "C:\\GoodBear\\input-cache\\vs_buildtools.exe",
+          "product": "Visual Studio Build Tools 2022",
+          "file_version": "17.14.37614.0",
+          "sha256": "2aeac090a9cfb2c56474aa9a6c5817ad8cfb879539e0ed1aecec33de9fc2dc4f",
+          "publisher": "Microsoft Corporation",
+          "authenticode": "Valid"
+        },
+        "build_tools": {
+          "installation_version": "17.14.37614.0",
+          "installation_path": "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools",
+          "msvc_directory_version": "14.44.35207",
+          "cl": {
+            "file_version": "19.44.35228.0",
+            "sha256": "88c8344236a27a6e727e0a8edc49aaa2690bdc7a9464b9d18cc7abe70a9f1c0d"
+          },
+          "link": {
+            "file_version": "14.44.35228.0",
+            "sha256": "ca11e6c45debd34bf652dfe984c5360a531a005ed78bf72852330c9c2590cf0d"
+          }
+        },
+        "windows_sdk": {
+          "version": "10.0.26100.0",
+          "rc_file_version": "10.0.26100.7705",
+          "rc_sha256": "43da1503c262c30894c851589bf0155f8365d77e63a5f7bc13982320e3a6b42d"
+        },
+        "offline_cache": {
+          "path": "C:\\GoodBear\\input-cache\\vs2022-buildtools-17.14.37614-layout",
+          "file_count": 918,
+          "byte_count": 3103011170,
+          "sha256_manifest": "artifacts/m13-06-windows-input-cache/vs-layout-sha256.json",
+          "sha256_manifest_sha256": "5d937f9ad8fd62a05a2942026b5f473a290b8dec7a3a16ddc10e0302f4146fe4"
+        },
+        "llvm_archive": {
+          "path": "C:\\GoodBear\\input-cache\\clang+llvm-22.1.8-x86_64-pc-windows-msvc.tar.xz",
+          "byte_count": 862053924,
+          "sha256": "d96c2cc1736f4eb7fa43cb9bbdf56d93551a9ae0a9aadb9c99c3c3b2b712a234"
+        },
+        "cache_requirement": "Verified offline layout and pinned LLVM archive are present in the native VM input cache; network must be forbidden before the release freeze and LTO execution."
+      },
+      "execution_status": "ready-for-local-windows-build"
+    }
+  }
+}

@@ -1,0 +1,61 @@
+diff --git a/browser/confvars.sh b/browser/confvars.sh
+index 419d0e2d6721..548198aa68d0 100755
+--- a/browser/confvars.sh
++++ b/browser/confvars.sh
+@@ -3,11 +3,12 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
++MOZ_APP_NAME=goodbear
+ # MOZ_APP_DISPLAYNAME will be set by branding/configure.sh
+ # MOZ_BRANDING_DIRECTORY is the default branding directory used when none is
+ # specified. It should never point to the "official" branding directory.
+ # For mozilla-beta, mozilla-release, or mozilla-central repositories, use
+ # "unofficial" branding.
+ # For the mozilla-aurora repository, use "aurora".
+-MOZ_BRANDING_DIRECTORY=browser/branding/unofficial
++MOZ_BRANDING_DIRECTORY=browser/branding/goodbear
+ MOZ_OFFICIAL_BRANDING_DIRECTORY=browser/branding/official
+diff --git a/browser/config/version_display.txt b/browser/config/version_display.txt
+index 7533b889ac26..3eefcb9dd431 100644
+--- a/browser/config/version_display.txt
++++ b/browser/config/version_display.txt
+@@ -1 +1 @@
+-156.0
++1.0
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+index 75163e2779d8..b31e88f5673a 100644
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -1591,7 +1591,7 @@ pref("browser.sessionstore.max_serialize_forward", -1);
+ pref("browser.zoom.updateBackgroundTabs", true);
+ 
+ // The breakpad report server to link to in about:crashes
+-pref("breakpad.reportURL", "https://crash-stats.mozilla.org/report/index/");
++pref("breakpad.reportURL", "");
+ 
+ // URL for "Learn More" for DataCollection
+ pref("toolkit.datacollection.infoURL",
+@@ -2760,6 +2760,6 @@ pref("browser.tabs.remote.warmup.unloadDelayMs", 2000);
+ 
+ // For the about:tabcrashed page
+-pref("browser.tabs.crashReporting.sendReport", true);
++pref("browser.tabs.crashReporting.sendReport", false);
+ pref("browser.tabs.crashReporting.includeURL", false);
+ 
+ // Enables the "Unload Tab" context menu item
+diff --git a/browser/moz.configure b/browser/moz.configure
+index 7a74ec98913b..acb9f990f9a2 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -11,8 +11,9 @@ imply_option("MOZ_NORMANDY", True)
+ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ 
+-imply_option("MOZ_APP_VENDOR", "Mozilla")
++imply_option("MOZ_APP_VENDOR", "Good Bear Project")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
++imply_option("MOZ_APP_PROFILE", "goodbear")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")

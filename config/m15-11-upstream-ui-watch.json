@@ -1,0 +1,148 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-11",
+  "current_baseline": {
+    "version": "156.0",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1"
+  },
+  "reference_baseline": {
+    "version": "155.0.1",
+    "revision": "fb95137a04eb8fe1196cb12f26b100c1e060295c"
+  },
+  "gate": {
+    "unknown_owner_delta": "block_rebase",
+    "unknown_fluent_delta": "block_rebase",
+    "unexplained_visual_drift": "block_rebase",
+    "generated_baseline_update": "requires_named_manual_review",
+    "unattended_promotion": "forbidden"
+  },
+  "owner_scopes": [
+    "browser_ui",
+    "good_bear_branding",
+    "fluent_l10n",
+    "security_ui",
+    "project_nova_or_equivalent_ui_architecture"
+  ],
+  "good_bear_surfaces": [
+    "container_marker",
+    "russian_pki_trust_indicator",
+    "security_popup",
+    "trust_change_interstitial",
+    "request_body_interstitial",
+    "settings",
+    "assignment_management",
+    "about",
+    "updater_and_error_ux",
+    "installer_and_launcher"
+  ],
+  "visual_matrix": {
+    "locale": "ru",
+    "themes": ["light", "dark"],
+    "scales": [1.0, 1.25],
+    "viewport": "1920x1080",
+    "accessibility_states": ["default", "hover", "keyboard_focus", "high_contrast"],
+    "trust_panel_states": ["secure", "scanning", "inactive", "warning", "breached", "first_visit_tracker_count", "repeat_visit_tracker_count"],
+    "platforms": ["ubuntu-lts-amd64", "windows-x64"]
+  },
+  "transitions": [
+    {
+      "id": "firefox_155_to_156",
+      "from_train": "155",
+      "to_train": "156",
+      "status": "pinned_pending_review",
+      "target_pin": {
+        "version": "156.0",
+        "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+        "release_artifact_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz",
+        "sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9",
+        "signature": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz.asc",
+        "retrieved_at": "2026-09-19T19:50:29Z",
+        "mozilla_release_provenance": "https://github.com/mozilla-firefox/firefox/tree/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+        "mozilla_security_provenance": "https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox/"
+      },
+      "owner_dispositions": [
+        {
+          "scope": "security_ui",
+          "owners": ["browser/themes/shared/identity-block/identity-block.css", "browser/themes/shared/identity-block/trust-icon-active.svg", "browser/themes/shared/identity-block/trust-icon-disabled.svg", "browser/themes/shared/identity-block/trust-icon-insecure.svg", "browser/themes/shared/identity-block/trust-icon-warning.svg"],
+          "disposition": "Byte-identical between the exact 155.0.1 and 156.0 pins. Good Bear retains the upstream Proton/Nova shield artwork, CSS states, dimensions, hover/focus and theme behavior; RU typography and placement are unchanged. This source comparison does not prove rendered visual parity."
+        },
+        {
+          "scope": "browser_ui",
+          "owners": ["browser/base/content/navigator-toolbox.inc.xhtml", "browser/base/content/browser-trustPanel.js"],
+          "disposition": "The trust-icon-container markup is unchanged. TrustPanel 156 uses PopupNotifications.CHECK_VISIBILITY_OPTIONS when selecting the anchor and adds breach-animation telemetry; its shield state mapping is unchanged. Retain both upstream changes. Good Bear adds a localized accessible description only while native trust is RussianPKI, preserving the upstream button name and tracker count."
+        }
+      ],
+      "ru_shield_source_audit": {
+        "checked_at": "2026-09-19T19:50:29Z",
+        "from_revision": "fb95137a04eb8fe1196cb12f26b100c1e060295c",
+        "to_revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+        "status": "source_checked_visual_pending",
+        "visual_parity_proven": false,
+        "badge_patch_sha256": "2a9dd53a084e2a1cb7b05b283af276442082eadac9941dfcbd01021a3f4f770f",
+        "unchanged_owner_sha256": {
+          "browser/themes/shared/identity-block/identity-block.css": "88aaf649266dcdd158392f063947bc46b85404f192483fef8e5cb453e3418fbf",
+          "browser/themes/shared/identity-block/trust-icon-active.svg": "3d9ff211325a42d48f4c0fdacf1e8128ae5b59cc2107052e9350e418389085fc",
+          "browser/themes/shared/identity-block/trust-icon-disabled.svg": "62f920c90cd8b328ce5387ac6313ba4ad9e8ef0aa4bfb402e57045c429887ac2",
+          "browser/themes/shared/identity-block/trust-icon-insecure.svg": "cb43b0daf52d96609e5d9bb3a25b5b186b87c67cd27b4f7586aa43f8d83dab69",
+          "browser/themes/shared/identity-block/trust-icon-warning.svg": "a20468c8959f4c22f84ed299fc420016a5aed08f7e2ce3ace0d0f5db8591010f"
+        },
+        "changed_owner_sha256": {
+          "browser/base/content/navigator-toolbox.inc.xhtml": {
+            "from": "b3bf0efc4f9281c004dddb40ce3a56945046c151770a9c8cdac9390611783636",
+            "to": "14b69ca8510054f547b029a8830a9b23f87bf7f68c0c7f1665d5d408d0906add"
+          },
+          "browser/base/content/browser-trustPanel.js": {
+            "from": "921722a6955fc7e1e0b663db24b7d653ec9619b436619d08aea82ea78c59d326",
+            "to": "aa03478a7a880fa0aa1e1b074658569b98a92353b89d37436d86410d18102571"
+          }
+        },
+        "remaining_evidence": ["Russian localized binary", "declared visual matrix including shield animation and tracker-count states", "screen-reader description and certificate/container distinction", "named manual promotion"]
+      },
+      "fluent_audit": {
+        "status": "passed_offline_source_runtime_pending",
+        "method": "pinned_fluent_ast_and_registered_consumers",
+        "verifier": "tools/verify_m15_11_fluent_audit.py",
+        "path": "artifacts/build-tmp/m15-11-fluent-audit-firefox156-50patches.json",
+        "sha256": "08e9d223c3bf2ab85cf5ba94c57625e5fe03b9b3e0cec2dab655dc350c0ff06c",
+        "checked_message_count": 173,
+        "bound_message_count": 154,
+        "structural_findings": 0,
+        "fallback_findings": 0,
+        "binding_findings": 0,
+        "unbound_message_count": 0,
+        "source_manifest_sha256": "85259ecd47d16da06b2892ef3eca9dc50bbbe559d4d40ba64e19034ade434a29",
+        "runtime_verified": false,
+        "visual_parity_proven": false,
+        "visible_english_observed": null,
+        "upstream_rebase_regression_proven": false,
+        "remaining_runtime_review": [
+          "Run the complete declared surface, state, scale and operating-system matrix on pinned Firefox 156 Russian localized binaries.",
+          "Review native trust/container distinction, accessibility and rendered text; bind named manual promotion to the actual candidates and runtime evidence."
+        ]
+      },
+      "ru_shield_capture": {
+        "runner": "tools/run_m15_11_ru_shield_capture.py",
+        "status": "blocked_missing_pinned_russian_archive",
+        "runtime_verified": false,
+        "visual_parity_proven": false,
+        "scope": ["russian_pki_trust_indicator", "security_popup"],
+        "remaining_acceptance": ["Complete surface/state/OS matrix", "High-contrast review", "Native standard/invalid trust and tracker-count transitions", "Build provenance and named manual promotion"]
+      },
+      "visual_evidence": [],
+      "manual_promotion": null,
+      "promotion_allowed": false
+    },
+    {
+      "id": "firefox_156_to_157",
+      "from_train": "156",
+      "to_train": "157",
+      "status": "blocked_by_previous_transition",
+      "target_pin": null,
+      "owner_dispositions": [],
+      "fluent_audit": null,
+      "visual_evidence": [],
+      "manual_promotion": null,
+      "promotion_allowed": false
+    }
+  ]
+}

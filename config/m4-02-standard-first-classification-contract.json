@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M4-02",
+  "firefox_version": "156.0",
+  "patch": "patches/0004-good-bear-standard-first-classification.patch",
+  "owner": "security/manager/ssl/GoodBearRussianPKIClassification.h",
+  "test_owner": "security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp",
+  "eligible_standard_results": [
+    "ERROR_UNKNOWN_ISSUER"
+  ],
+  "classifications": [
+    "Standard",
+    "RussianPKIRequired",
+    "Invalid"
+  ],
+  "ordinary_channel_rule": "Only Standard makes an ordinary channel usable. RussianPKIRequired is a classification signal, preserves the original trust-anchor error, and maps to transport GoodBearTrustDomain::Invalid until a new container-scoped verification succeeds.",
+  "follow_up_boundary": "GB100-M4-03 owns container-scoped acceptance; GB100-M4-04 owns the complete alternate X.509 validator."
+}

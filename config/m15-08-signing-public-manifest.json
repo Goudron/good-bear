@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-08",
+  "authority": "maintainer-approved local update-signing identities",
+  "trust_model": "exact pinned public certificates; no CA or TLS trust",
+  "updater_enabled": false,
+  "certificates": [
+    {
+      "role": "mar-primary",
+      "certificate_der": "third_party/goodbear-update-signing/mar-primary.der",
+      "certificate_sha256": "01f3005a76edc0a411f7b2493b633a97245a342cff8c5c2760685510128dfc93",
+      "certificate_sha384": "2581e009e5bd7e30a10e9360f4c363983606e40b89d2d0c92651a2a0767c3962c4af7a166f655d2e7d8a35a121a5e032",
+      "key_algorithm": "RSA",
+      "key_size_bits": 4096
+    },
+    {
+      "role": "mar-backup",
+      "certificate_der": "third_party/goodbear-update-signing/mar-backup.der",
+      "certificate_sha256": "cfd9721e0547ce78b40ba295184c8100637de86f230c32a6ce294730250f3502",
+      "certificate_sha384": "4461a32a6aee8a98f15fad6dec9265d50e6211a949efe419c0184e9c8ad1717ff63b6b863ad5ab25ff1e601abe1e40d9",
+      "key_algorithm": "RSA",
+      "key_size_bits": 4096
+    },
+    {
+      "role": "metadata",
+      "certificate_der": "third_party/goodbear-update-signing/metadata.der",
+      "certificate_sha256": "7a1065ded38a8e71e4b487d08fc9e71da41657ba1172881dca83faa45c677574",
+      "certificate_sha384": "49db3773703889f489db20ab7497a6895192ee59ac9c26182bf4f2708f5e2d5c33fe266444421b375acabf52097a3937",
+      "key_algorithm": "RSA",
+      "key_size_bits": 4096
+    }
+  ]
+}

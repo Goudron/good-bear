@@ -1,0 +1,35 @@
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -14,7 +14,7 @@
+         data-l10n-id="aboutDialog-title"
+ #endif
+         role="dialog"
+-        aria-describedby="version distribution distributionId communityDesc contributeDesc trademark"
++        aria-describedby="version distribution distributionId communityDesc trademark"
+         >
+ #ifdef XP_MACOSX
+ #include macWindow.inc.xhtml
+@@ -124,19 +124,9 @@
+               <label is="text-link" useoriginprincipal="true" href="about:credits" data-l10n-name="community-exp-creditsLink"/>
+             </description>
+           </vbox>
+-          <description class="text-blurb" id="communityDesc" data-l10n-id="community-2">
+-            <label is="text-link" href="https://www.mozilla.org/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="community-mozillaLink"/>
+-            <label is="text-link" useoriginprincipal="true" href="about:credits" data-l10n-name="community-creditsLink"/>
+-          </description>
+-          <description class="text-blurb" id="contributeDesc" data-l10n-id="helpus">
+-            <label is="text-link" href="https://foundation.mozilla.org/?form=firefox-about" data-l10n-name="helpus-donateLink"/>
+-            <label is="text-link" href="https://www.mozilla.org/contribute/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="helpus-getInvolvedLink"/>
+-          </description>
+-          <description class="text-blurb" id="contributeDescReferrals" data-l10n-id="helpus-referrals2" hidden="true">
+-            <label is="text-link" href="https://foundation.mozilla.org/?form=firefox-about" data-l10n-name="helpus-donateLink"/>
+-            <label is="text-link" useoriginprincipal="true" href="about:referrals" data-l10n-name="helpus-shareFirefoxLink"/>
+-            <label is="text-link" href="https://www.mozilla.org/contribute/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="helpus-getInvolvedLink"/>
+-          </description>
++          <description class="text-blurb" id="communityDesc" data-l10n-id="goodbear-about-description"></description>
++          <description class="text-blurb" id="contributeDesc" hidden="true"></description>
++          <description class="text-blurb" id="contributeDescReferrals" hidden="true"></description>
+ 
+         </vbox>
+       </vbox>

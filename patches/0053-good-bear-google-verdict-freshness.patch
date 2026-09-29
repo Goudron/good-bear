@@ -1,0 +1,518 @@
+From: Good Bear Maintainers
+Subject: [PATCH] Bound Google Safe Browsing positive verdict freshness
+
+diff --git a/toolkit/components/url-classifier/Classifier.cpp b/toolkit/components/url-classifier/Classifier.cpp
+index 80e3e0e..e21f3ae 100644
+--- a/toolkit/components/url-classifier/Classifier.cpp
++++ b/toolkit/components/url-classifier/Classifier.cpp
+@@ -577,6 +577,11 @@ nsresult Classifier::CheckURIFragments(
+       result->mTableName.Assign(cache->TableName());
+       result->mPartialHashLength = confirmed ? COMPLETE_SIZE : matchLength;
+       result->mProtocolV2 = LookupCache::Cast<LookupCacheV2>(cache);
++      result->mGoodBearRequiresFreshGoogleVerdict =
++          cache->RequiresFreshGoogleVerdict();
++      if (result->mGoodBearRequiresFreshGoogleVerdict) {
++        result->mGoodBearFreshness = cache->GoogleVerdictFreshness(lookupHash);
++      }
+ 
+       hasAnyHit = true;
+     }
+diff --git a/toolkit/components/url-classifier/Entries.h b/toolkit/components/url-classifier/Entries.h
+index f1401e9..79ce8ca 100644
+--- a/toolkit/components/url-classifier/Entries.h
++++ b/toolkit/components/url-classifier/Entries.h
+@@ -18,6 +18,7 @@
+ #include "nsClassHashtable.h"
+ #include "nsComponentManagerUtils.h"
+ #include "nsTHashMap.h"
++#include "GoodBearGoogleVerdictFreshness.h"
+ 
+ namespace mozilla {
+ namespace safebrowsing {
+@@ -281,6 +282,7 @@ typedef nsTHashMap<FullHashString, int64_t> FullHashExpiryCache;
+ 
+ struct CachedFullHashResponse {
+   int64_t negativeCacheExpirySec;
++  GoodBearGoogleVerdictFreshness mGoodBearFreshness;
+ 
+   // Map contains all matches found in Fullhash response, this field might be
+   // empty.
+@@ -288,6 +290,7 @@ struct CachedFullHashResponse {
+ 
+   CachedFullHashResponse& operator=(const CachedFullHashResponse& aOther) {
+     negativeCacheExpirySec = aOther.negativeCacheExpirySec;
++    mGoodBearFreshness = aOther.mGoodBearFreshness;
+ 
+     fullHashes = aOther.fullHashes.Clone();
+ 
+@@ -296,6 +299,7 @@ struct CachedFullHashResponse {
+ 
+   bool operator==(const CachedFullHashResponse& aOther) const {
+     if (negativeCacheExpirySec != aOther.negativeCacheExpirySec ||
++        !(mGoodBearFreshness == aOther.mGoodBearFreshness) ||
+         fullHashes.Count() != aOther.fullHashes.Count()) {
+       return false;
+     }
+diff --git a/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h b/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h
+new file mode 100644
+index 0000000..e9ddf9c
+--- /dev/null
++++ b/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h
+@@ -0,0 +1,57 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearGoogleVerdictFreshness_h
++#define GoodBearGoogleVerdictFreshness_h
++
++#include "mozilla/TimeStamp.h"
++#include "nsReadableUtils.h"
++#include "nsString.h"
++#include "prtime.h"
++
++namespace mozilla::safebrowsing {
++
++inline bool GoodBearRequiresFreshGoogleVerdict(const nsACString& aTable,
++                                               const nsACString& aProvider) {
++  // Retain the Google boundary before the list manager registers a completer
++  // or when provider prefs no longer name an on-disk Google table.
++  return aProvider.EqualsLiteral("google") ||
++         aProvider.EqualsLiteral("google4") ||
++         aProvider.EqualsLiteral("google5") ||
++         StringBeginsWith(aTable, "goog-"_ns) ||
++         StringBeginsWith(aTable, "googpub-"_ns);
++}
++
++struct GoodBearGoogleVerdictFreshness {
++  TimeStamp mStartedAt;
++  int64_t mStartedWallUsec = 0;
++
++  static GoodBearGoogleVerdictFreshness BeforeRequest() {
++    return {TimeStamp::Now(), PR_Now()};
++  }
++
++  bool IsFreshAt(const TimeStamp& aNow, int64_t aWallUsec) const {
++    // The current completion interface has no transport receipt timestamp.
++    // Start before the lookup/request instead: network and dispatch delays can
++    // only shorten the enforcement window, never make a response younger.
++    // Wall time accounts for sleep; monotonic time prevents clock rollback
++    // from extending the window. Unknown/old metadata cannot enforce.
++    constexpr int64_t kMaximumAgeUsec = 30 * 60 * PR_USEC_PER_SEC;
++    return !mStartedAt.IsNull() && !aNow.IsNull() && mStartedWallUsec > 0 &&
++           aWallUsec >= mStartedWallUsec && aNow >= mStartedAt &&
++           aWallUsec - mStartedWallUsec <= kMaximumAgeUsec &&
++           (aNow - mStartedAt) <= TimeDuration::FromSeconds(30 * 60);
++  }
++
++  bool IsFresh() const { return IsFreshAt(TimeStamp::Now(), PR_Now()); }
++
++  bool operator==(const GoodBearGoogleVerdictFreshness& aOther) const {
++    return mStartedAt == aOther.mStartedAt &&
++           mStartedWallUsec == aOther.mStartedWallUsec;
++  }
++};
++
++}  // namespace mozilla::safebrowsing
++
++#endif  // GoodBearGoogleVerdictFreshness_h
+diff --git a/toolkit/components/url-classifier/moz.build b/toolkit/components/url-classifier/moz.build
+index 0125a26..4f692af 100644
+--- a/toolkit/components/url-classifier/moz.build
++++ b/toolkit/components/url-classifier/moz.build
+@@ -71,6 +71,7 @@ EXPORTS += [
+     "chromium/safebrowsing.pb.h",
+     "chromium/safebrowsing_v5.pb.h",
+     "Entries.h",
++    "GoodBearGoogleVerdictFreshness.h",
+     "LookupCache.h",
+     "LookupCacheV4.h",
+     "nsUrlClassifierPrefixSet.h",
+diff --git a/toolkit/components/url-classifier/LookupCache.cpp b/toolkit/components/url-classifier/LookupCache.cpp
+index e754717..3109553 100644
+--- a/toolkit/components/url-classifier/LookupCache.cpp
++++ b/toolkit/components/url-classifier/LookupCache.cpp
+@@ -272,6 +272,20 @@ nsresult LookupCache::WriteFile() {
+   return NS_OK;
+ }
+ 
++GoodBearGoogleVerdictFreshness LookupCache::GoogleVerdictFreshness(
++    const Completion& aCompletion) const {
++  const CachedFullHashResponse* response =
++      mFullHashCache.Get(aCompletion.ToUint32());
++  if (!response) {
++    return {};
++  }
++  nsDependentCSubstring completion(
++      reinterpret_cast<const char*>(aCompletion.buf), COMPLETE_SIZE);
++  return response->fullHashes.Contains(completion)
++             ? response->mGoodBearFreshness
++             : GoodBearGoogleVerdictFreshness{};
++}
++
+ nsresult LookupCache::CheckCache(const Completion& aCompletion, bool* aHas,
+                                  bool* aConfirmed) {
+   // Shouldn't call this function if prefix is not in the database.
+@@ -296,6 +310,13 @@ nsresult LookupCache::CheckCache(const Completion& aCompletion, bool* aHas,
+   // Check if we can find the fullhash in positive cache
+   if (fullHashes.Get(completion, &expiryTimeSec)) {
+     if (nowSec <= expiryTimeSec) {
++      if (RequiresFreshGoogleVerdict() &&
++          !fullHashResponse->mGoodBearFreshness.IsFresh()) {
++        // Keep the server-provided cache lifetime intact, but require a fresh
++        // completion before this Google-backed positive can enforce.
++        LOG(("Found a server-valid fullhash with stale source information"));
++        return NS_OK;
++      }
+       // Url is NOT safe.
+       *aConfirmed = true;
+       LOG(("Found a valid fullhash in the positive cache"));
+diff --git a/toolkit/components/url-classifier/LookupCache.h b/toolkit/components/url-classifier/LookupCache.h
+index cba56db..6cec4f7 100644
+--- a/toolkit/components/url-classifier/LookupCache.h
++++ b/toolkit/components/url-classifier/LookupCache.h
+@@ -64,7 +64,25 @@ class LookupResult {
+     return hex;
+   }
+ 
+-  bool Confirmed() const { return mConfirmed || mProtocolConfirmed; }
++  bool ConfirmedAt(const TimeStamp& aNow, int64_t aWallUsec) const {
++    return (mConfirmed || mProtocolConfirmed) &&
++           (!mGoodBearRequiresFreshGoogleVerdict ||
++            mGoodBearFreshness.IsFreshAt(aNow, aWallUsec));
++  }
++
++  bool Confirmed() const {
++    return (mConfirmed || mProtocolConfirmed) &&
++           (!mGoodBearRequiresFreshGoogleVerdict ||
++            mGoodBearFreshness.IsFresh());
++  }
++
++  bool ConfirmWithoutCompleter() {
++    if (!Complete() || mGoodBearRequiresFreshGoogleVerdict) {
++      return false;
++    }
++    mConfirmed = true;
++    return true;
++  }
+ 
+   // True if we have a complete match for this hash in the table.
+   bool Complete() const { return mPartialHashLength == COMPLETE_SIZE; }
+@@ -87,6 +105,9 @@ class LookupResult {
+ 
+   bool mProtocolV2;
+ 
++  bool mGoodBearRequiresFreshGoogleVerdict = false;
++  GoodBearGoogleVerdictFreshness mGoodBearFreshness;
++
+  private:
+   ~LookupResult() = default;
+ };
+@@ -190,6 +211,13 @@ class LookupCache {
+ 
+   const nsCString& TableName() const { return mTableName; }
+ 
++  bool RequiresFreshGoogleVerdict() const {
++    return GoodBearRequiresFreshGoogleVerdict(mTableName, mProvider);
++  }
++
++  GoodBearGoogleVerdictFreshness GoogleVerdictFreshness(
++      const Completion& aCompletion) const;
++
+   // The directory handle where we operate will
+   // be moved away when a backup is made.
+   nsresult UpdateRootDirHandle(nsCOMPtr<nsIFile>& aRootStoreDirectory);
+diff --git a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+index 02a2030..9990662 100644
+--- a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
++++ b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+@@ -1256,6 +1256,8 @@ class nsUrlClassifierHashCompleterBase
+   nsCOMPtr<nsIUrlClassifierCallback> mCallback;
+   ConstCacheResultArray mCacheResults;
+   uint32_t mPendingCompletions = 0;
++  const GoodBearGoogleVerdictFreshness mGoodBearRequestStarted =
++      GoodBearGoogleVerdictFreshness::BeforeRequest();
+ };
+ 
+ NS_IMPL_ISUPPORTS(nsUrlClassifierHashCompleterBase,
+@@ -1303,8 +1305,7 @@ nsresult nsUrlClassifierHashCompleterBase::RequestHashCompletions(
+       } else {
+         // For tables with no hash completer, a complete hash match is
+         // good enough, we'll consider it is valid.
+-        if (result->Complete()) {
+-          result->mConfirmed = true;
++        if (result->ConfirmWithoutCompleter()) {
+           LOG(("Skipping completion in a table without a valid completer (%s).",
+                result->mTableName.get()));
+         } else {
+@@ -1332,6 +1333,9 @@ nsresult nsUrlClassifierHashCompleterBase::ProcessComplete(
+     if (!result->mNoise && result->mTableName.Equals(aCacheResult->table) &&
+         aCacheResult->findCompletion(result->CompleteHash())) {
+       result->mProtocolConfirmed = true;
++      if (result->mGoodBearRequiresFreshGoogleVerdict) {
++        result->mGoodBearFreshness = mGoodBearRequestStarted;
++      }
+     }
+   }
+ 
+@@ -1375,6 +1379,11 @@ nsUrlClassifierHashCompleterBase::CompletionV4(const nsACString& aPartialHash,
+   result->table = aTableName;
+   result->prefix.Assign(aPartialHash);
+   result->response.negativeCacheExpirySec = nowSec + aNegativeCacheDuration;
++  nsAutoCString provider;
++  nsUrlClassifierUtils::GetInstance()->GetProvider(aTableName, provider);
++  if (GoodBearRequiresFreshGoogleVerdict(aTableName, provider)) {
++    result->response.mGoodBearFreshness = mGoodBearRequestStarted;
++  }
+ 
+   uint32_t fullHashCount = 0;
+   nsresult rv = aFullHashes->GetLength(&fullHashCount);
+diff --git a/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp b/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp
+new file mode 100644
+index 0000000..134bdbc
+--- /dev/null
++++ b/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp
+@@ -0,0 +1,230 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#include "Common.h"
++#include "GoodBearGoogleVerdictFreshness.h"
++#include "LookupCacheV4.h"
++
++using ::RefPtr;
++using mozilla::TimeDuration;
++using mozilla::TimeStamp;
++
++namespace {
++
++constexpr int64_t kGoodBearTestWall = INT64_C(2000000000000000);
++
++static RefPtr<LookupCacheV4> GoodBearFreshnessCache(
++    const nsACString& aTable, const nsACString& aProvider,
++    uint8_t aPrefixSize = PREFIX_SIZE) {
++  nsCOMPtr<nsIFile> directory = GetFile(nsTArray<nsString>{u"safebrowsing"_ns});
++  RefPtr<LookupCacheV4> cache = new LookupCacheV4(aTable, aProvider, directory);
++  EXPECT_NS_SUCCEEDED(cache->Init());
++  _PrefixArray prefixes = {
++      CreatePrefixFromURL("goodbear-freshness.example/", aPrefixSize)};
++  EXPECT_NS_SUCCEEDED(BuildCache(cache, prefixes));
++  return cache;
++}
++
++static Completion GoodBearFreshnessHash() {
++  Completion completion;
++  EXPECT_NS_SUCCEEDED(
++      completion.FromPlaintext("goodbear-freshness.example/"_ns));
++  return completion;
++}
++
++static void GoodBearCacheResponse(
++    LookupCacheV4* aCache, const GoodBearGoogleVerdictFreshness& aFreshness,
++    int64_t aNegativeDurationSec = 7200, int64_t aPositiveDurationSec = 3600) {
++  FullHashResponseMap responses;
++  auto hash = GoodBearFreshnessHash();
++  auto* response = responses.GetOrInsertNew(hash.ToUint32());
++  response->negativeCacheExpirySec =
++      PR_Now() / PR_USEC_PER_SEC + aNegativeDurationSec;
++  response->mGoodBearFreshness = aFreshness;
++  response->fullHashes.InsertOrUpdate(
++      CreatePrefixFromURL("goodbear-freshness.example/", COMPLETE_SIZE),
++      PR_Now() / PR_USEC_PER_SEC + aPositiveDurationSec);
++  EXPECT_NS_SUCCEEDED(aCache->AddFullHashResponseToCache(responses));
++}
++
++static void GoodBearExpectCached(LookupCacheV4* aCache, bool aConfirmed) {
++  bool has = false;
++  bool confirmed = false;
++  uint32_t length = 0;
++  auto hash = GoodBearFreshnessHash();
++  EXPECT_NS_SUCCEEDED(aCache->Has(hash, &has, &length, &confirmed));
++  EXPECT_TRUE(has);
++  EXPECT_EQ(confirmed, aConfirmed);
++  EXPECT_TRUE(aCache->IsInCache(hash.ToUint32()));
++}
++
++}  // namespace
++
++TEST(GoodBearGoogleFreshness, ExactThirtyMinuteBoundary)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_TRUE(freshness.IsFreshAt(start, kGoodBearTestWall));
++  EXPECT_TRUE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1799.999),
++                                  kGoodBearTestWall + INT64_C(1799999000)));
++  EXPECT_TRUE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1800),
++                                  kGoodBearTestWall + INT64_C(1800000000)));
++  EXPECT_FALSE(
++      freshness.IsFreshAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++}
++
++TEST(GoodBearGoogleFreshness, UnknownOrBackwardTimeNeverConfirms)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(
++      GoodBearGoogleVerdictFreshness{}.IsFreshAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(freshness.IsFreshAt(TimeStamp{}, kGoodBearTestWall));
++  EXPECT_FALSE(freshness.IsFreshAt(start, kGoodBearTestWall - 1));
++  EXPECT_FALSE(freshness.IsFreshAt(start - TimeDuration::FromMilliseconds(1),
++                                   kGoodBearTestWall));
++}
++
++TEST(GoodBearGoogleFreshness, RollbackCannotExtendMonotonicAge)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1801),
++                                   kGoodBearTestWall + PR_USEC_PER_SEC));
++}
++
++TEST(GoodBearGoogleFreshness, SleepCannotExtendWallAge)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1),
++                                   kGoodBearTestWall + INT64_C(1801000000)));
++}
++
++TEST(GoodBearGoogleFreshness, DelayedFinalCallbackRechecksBothConfirmedPaths)
++{
++  auto start = TimeStamp::Now();
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mGoodBearRequiresFreshGoogleVerdict = true;
++  result->mGoodBearFreshness = {start, kGoodBearTestWall};
++  result->mConfirmed = true;
++  EXPECT_TRUE(result->ConfirmedAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(
++      result->ConfirmedAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++  result->mConfirmed = false;
++  result->mProtocolConfirmed = true;
++  EXPECT_TRUE(result->ConfirmedAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(
++      result->ConfirmedAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++}
++
++TEST(GoodBearGoogleFreshness,
++     DirectThirtyTwoByteGoogleMatchNeedsFreshCompletion)
++{
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mPartialHashLength = COMPLETE_SIZE;
++  result->mGoodBearRequiresFreshGoogleVerdict =
++      GoodBearRequiresFreshGoogleVerdict("goog-malware-proto"_ns, ""_ns);
++  EXPECT_FALSE(result->ConfirmWithoutCompleter());
++  EXPECT_FALSE(result->Confirmed());
++  EXPECT_FALSE(result->mConfirmed);
++}
++
++TEST(GoodBearGoogleFreshness, NonGoogleCompleterFallbackAndShortHashUnchanged)
++{
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mPartialHashLength = PREFIX_SIZE;
++  EXPECT_FALSE(result->ConfirmWithoutCompleter());
++  result->mPartialHashLength = COMPLETE_SIZE;
++  EXPECT_TRUE(result->ConfirmWithoutCompleter());
++  EXPECT_TRUE(result->Confirmed());
++}
++
++TEST(GoodBearGoogleFreshness, ProviderAndStartupTableScope)
++{
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-proto"_ns, "google5"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-proto"_ns, "google4"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-shavar"_ns, "google"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("googpub-phish-proto"_ns, ""_ns));
++  EXPECT_FALSE(GoodBearRequiresFreshGoogleVerdict("moztest-malware-proto"_ns,
++                                                  "test"_ns));
++  EXPECT_FALSE(GoodBearRequiresFreshGoogleVerdict("mozstd-track-digest256"_ns,
++                                                  "mozilla"_ns));
++}
++
++TEST(GoodBearGoogleFreshness, FreshPositiveAndStalePositivePreserveServerCache)
++{
++  auto cache = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearCacheResponse(cache, GoodBearGoogleVerdictFreshness::BeforeRequest());
++  GoodBearExpectCached(cache, true);
++  GoodBearCacheResponse(cache,
++                        {TimeStamp::Now(), PR_Now() - INT64_C(1801000000)});
++  GoodBearExpectCached(cache, false);
++  // An independent full hash sharing this prefix still uses the original
++  // negative cache lifetime. A stale positive must not disable that cache.
++  auto otherHash = GoodBearFreshnessHash();
++  otherHash.buf[COMPLETE_SIZE - 1] ^= 1;
++  bool has = true;
++  bool confirmed = true;
++  uint32_t length = 0;
++  EXPECT_NS_SUCCEEDED(cache->Has(otherHash, &has, &length, &confirmed));
++  EXPECT_FALSE(has);
++  EXPECT_FALSE(confirmed);
++}
++
++TEST(GoodBearGoogleFreshness, UnknownOldMetadataAndFullLengthPrefixNeedResponse)
++{
++  auto cache =
++      GoodBearFreshnessCache("goog-malware-proto"_ns, ""_ns, COMPLETE_SIZE);
++  GoodBearCacheResponse(cache, {});
++  GoodBearExpectCached(cache, false);
++  EXPECT_TRUE(cache->RequiresFreshGoogleVerdict());
++}
++
++TEST(GoodBearGoogleFreshness, FreshnessLimitDoesNotShortenServerCacheLifetime)
++{
++  auto cache = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearGoogleVerdictFreshness stale{TimeStamp::Now(),
++                                       PR_Now() - INT64_C(1801000000)};
++  GoodBearCacheResponse(cache, stale, 60, 3600);
++  GoodBearExpectCached(cache, false);
++  EXPECT_TRUE(cache->GoogleVerdictFreshness(GoodBearFreshnessHash()) == stale);
++}
++
++TEST(GoodBearGoogleFreshness, CloningDoesNotRenewAgeOrChangeServerExpiry)
++{
++  auto source = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  auto target = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearGoogleVerdictFreshness stale{TimeStamp::Now(),
++                                       PR_Now() - INT64_C(1801000000)};
++  GoodBearCacheResponse(source, stale);
++  target->CopyFullHashCache(source);
++  EXPECT_TRUE(target->GoogleVerdictFreshness(GoodBearFreshnessHash()) == stale);
++  GoodBearExpectCached(target, false);
++  CachedFullHashResponse original;
++  original.negativeCacheExpirySec = 999999;
++  original.mGoodBearFreshness = stale;
++  original.fullHashes.InsertOrUpdate("preserved-hash"_ns, 123456);
++  CachedFullHashResponse copy;
++  copy = original;
++  EXPECT_TRUE(copy == original);
++  EXPECT_EQ(copy.negativeCacheExpirySec, 999999);
++  EXPECT_EQ(copy.fullHashes.Get("preserved-hash"_ns), 123456);
++}
++
++TEST(GoodBearGoogleFreshness, NonGooglePositiveCacheRetainsItsServerLifetime)
++{
++  auto cache =
++      GoodBearFreshnessCache("mozstd-track-digest256"_ns, "mozilla"_ns);
++  GoodBearCacheResponse(cache, {});
++  GoodBearExpectCached(cache, true);
++  EXPECT_FALSE(cache->RequiresFreshGoogleVerdict());
++}
+diff --git a/toolkit/components/url-classifier/tests/gtest/moz.build b/toolkit/components/url-classifier/tests/gtest/moz.build
+index 33f3bdc..ac45845 100644
+--- a/toolkit/components/url-classifier/tests/gtest/moz.build
++++ b/toolkit/components/url-classifier/tests/gtest/moz.build
+@@ -17,6 +17,7 @@ UNIFIED_SOURCES += [
+     "TestClassifier.cpp",
+     "TestFailUpdate.cpp",
+     "TestFindFullHash.cpp",
++    "TestGoodBearGoogleFreshness.cpp",
+     "TestGoodBearV5Response.cpp",
+     "TestLookupCacheV4.cpp",
+     "TestPerProviderDirectory.cpp",
+

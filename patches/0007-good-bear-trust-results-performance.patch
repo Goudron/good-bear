@@ -1,0 +1,476 @@
+# Good Bear M4-05: typed trust-result UI and bounded alternate verifier cache
+#
+# Reuses only a private upstream CertVerifier for an immutable exact-anchor snapshot.
+# Each call revalidates its current TLS inputs and remains subject to M4-03 scope checks.
+
+--- a/security/manager/ssl/GoodBearRussianPKIX509Verifier.h
++++ b/security/manager/ssl/GoodBearRussianPKIX509Verifier.h
+@@ -8,16 +8,112 @@
+ #include "CertVerifier.h"
+ #include "EnterpriseRoots.h"
+ #include "mozilla/Maybe.h"
++#include "mozilla/UniquePtr.h"
+ #include "mozpkix/Result.h"
+ #include "nsTArray.h"
+ 
+ namespace mozilla::psm {
+ 
+-// Runs the normal upstream TLS server verifier with a local trust store whose
+-// only additional roots are exact DER certificates already admitted by the M3
+-// pin, provenance, role, and self-signature gates. This verifier is created for
+-// one alternate check, so the roots never enter the profile or global NSS
+-// trust store. M4-05 owns any safe cache/lifetime optimization.
++// Owns one local, upstream CertVerifier for an immutable set of exact DER
++// anchors already admitted by the M3 pin, provenance, role, and self-signature
++// gates. It intentionally does not cache TLS verification decisions: every
++// call passes the current hostname, time, flags, OriginAttributes, OCSP/SCT
++// inputs, delegated credential, and peer chain to VerifySSLServerCert. The
++// only reused state is Firefox's own signature/trust/OCSP cache inside this
++// private verifier. The cache must be owned by one policy snapshot and
++// discarded when that snapshot changes; it must never be global or shared as a
++// substitute for the M4-03 before-and-after scope check.
++class GoodBearRussianPKIAlternateVerifierCache final {
++ public:
++  static mozilla::UniquePtr<GoodBearRussianPKIAlternateVerifierCache> Create(
++      const CertVerifier& aVerificationSettings,
++      const nsTArray<nsTArray<uint8_t>>& aVerifiedExactTrustAnchors) {
++    if (aVerifiedExactTrustAnchors.IsEmpty()) {
++      return nullptr;
++    }
++
++    nsTArray<EnterpriseCert> exactTrustAnchors;
++    nsTArray<nsTArray<uint8_t>> verifiedExactTrustAnchors;
++    for (const auto& anchorDER : aVerifiedExactTrustAnchors) {
++      if (anchorDER.IsEmpty()) {
++        return nullptr;
++      }
++      exactTrustAnchors.EmplaceBack(anchorDER.Elements(), anchorDER.Length(),
++                                    true);
++      nsTArray<uint8_t> anchorCopy;
++      anchorCopy.AppendElements(anchorDER);
++      verifiedExactTrustAnchors.AppendElement(std::move(anchorCopy));
++    }
++
++    return mozilla::UniquePtr<GoodBearRussianPKIAlternateVerifierCache>(
++        new GoodBearRussianPKIAlternateVerifierCache(
++            aVerificationSettings, std::move(exactTrustAnchors),
++            std::move(verifiedExactTrustAnchors)));
++  }
++
++  mozilla::pkix::Result VerifySSLServerCert(
++      const nsTArray<uint8_t>& aPeerCert, mozilla::pkix::Time aTime,
++      void* aPinArg, const nsACString& aHostname,
++      /*out*/ nsTArray<nsTArray<uint8_t>>& aBuiltChain,
++      CertVerifier::Flags aFlags = 0,
++      const Maybe<nsTArray<nsTArray<uint8_t>>>& aExtraCertificates = Nothing(),
++      const Maybe<nsTArray<uint8_t>>& aStapledOCSPResponse = Nothing(),
++      const Maybe<nsTArray<uint8_t>>& aSctsFromTLS = Nothing(),
++      const Maybe<DelegatedCredentialInfo>& aDCInfo = Nothing(),
++      const OriginAttributes& aOriginAttributes = OriginAttributes(),
++      EVStatus* aEVStatus = nullptr,
++      CertVerifier::OCSPStaplingStatus* aOCSPStaplingStatus = nullptr,
++      KeySizeStatus* aKeySizeStatus = nullptr,
++      PinningTelemetryInfo* aPinningTelemetryInfo = nullptr,
++      CertificateTransparencyInfo* aCTInfo = nullptr,
++      bool* aIsBuiltChainRootBuiltInRoot = nullptr,
++      bool* aMadeOCSPRequests = nullptr,
++      IssuerSources* aIssuerSources = nullptr) {
++    mozilla::pkix::Result result = mAlternateVerifier.VerifySSLServerCert(
++        aPeerCert, aTime, aPinArg, aHostname, aBuiltChain, aFlags,
++        aExtraCertificates, aStapledOCSPResponse, aSctsFromTLS, aDCInfo,
++        aOriginAttributes, aEVStatus, aOCSPStaplingStatus, aKeySizeStatus,
++        aPinningTelemetryInfo, aCTInfo, aIsBuiltChainRootBuiltInRoot,
++        aMadeOCSPRequests, aIssuerSources);
++    if (result != mozilla::pkix::Success) {
++      return result;
++    }
++    if (aBuiltChain.IsEmpty()) {
++      return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
++    }
++    for (const auto& anchorDER : mVerifiedExactTrustAnchors) {
++      if (aBuiltChain.LastElement() == anchorDER) {
++        return mozilla::pkix::Success;
++      }
++    }
++
++    aBuiltChain.Clear();
++    return mozilla::pkix::Result::ERROR_UNKNOWN_ISSUER;
++  }
++
++ private:
++  GoodBearRussianPKIAlternateVerifierCache(
++      const CertVerifier& aVerificationSettings,
++      nsTArray<EnterpriseCert>&& aExactTrustAnchors,
++      nsTArray<nsTArray<uint8_t>>&& aVerifiedExactTrustAnchors)
++      : mAlternateVerifier(
++            aVerificationSettings.mOCSPDownloadConfig,
++            aVerificationSettings.mOCSPStrict ? CertVerifier::ocspStrict
++                                              : CertVerifier::ocspRelaxed,
++            aVerificationSettings.mOCSPTimeoutSoft,
++            aVerificationSettings.mOCSPTimeoutHard,
++            aVerificationSettings.mCertShortLifetimeInDays,
++            CertVerifier::CertificateTransparencyConfig(
++                aVerificationSettings.mCTConfig.mMode,
++                nsCString(aVerificationSettings.mCTConfig.mSkipForHosts),
++                aVerificationSettings.mCTConfig.mSkipForSPKIHashes.Clone()),
++            aVerificationSettings.mCRLiteMode, aExactTrustAnchors),
++        mVerifiedExactTrustAnchors(std::move(aVerifiedExactTrustAnchors)) {}
++
++  CertVerifier mAlternateVerifier;
++  const nsTArray<nsTArray<uint8_t>> mVerifiedExactTrustAnchors;
++};
++
+ inline mozilla::pkix::Result VerifyGoodBearRussianPKISSLServerCert(
+     const CertVerifier& aVerificationSettings,
+     const nsTArray<uint8_t>& aPeerCert, mozilla::pkix::Time aTime,
+@@ -38,52 +134,17 @@
+     bool* aIsBuiltChainRootBuiltInRoot = nullptr,
+     bool* aMadeOCSPRequests = nullptr,
+     IssuerSources* aIssuerSources = nullptr) {
+-  if (aVerifiedExactTrustAnchors.IsEmpty()) {
++  auto verifier = GoodBearRussianPKIAlternateVerifierCache::Create(
++      aVerificationSettings, aVerifiedExactTrustAnchors);
++  if (!verifier) {
+     return mozilla::pkix::Result::FATAL_ERROR_INVALID_ARGS;
+   }
+-
+-  nsTArray<EnterpriseCert> exactTrustAnchors;
+-  for (const auto& anchorDER : aVerifiedExactTrustAnchors) {
+-    if (anchorDER.IsEmpty()) {
+-      return mozilla::pkix::Result::FATAL_ERROR_INVALID_ARGS;
+-    }
+-    exactTrustAnchors.EmplaceBack(anchorDER.Elements(), anchorDER.Length(),
+-                                  true);
+-  }
+-
+-  CertVerifier alternateVerifier(
+-      aVerificationSettings.mOCSPDownloadConfig,
+-      aVerificationSettings.mOCSPStrict ? CertVerifier::ocspStrict
+-                                        : CertVerifier::ocspRelaxed,
+-      aVerificationSettings.mOCSPTimeoutSoft,
+-      aVerificationSettings.mOCSPTimeoutHard,
+-      aVerificationSettings.mCertShortLifetimeInDays,
+-      CertVerifier::CertificateTransparencyConfig(
+-          aVerificationSettings.mCTConfig.mMode,
+-          nsCString(aVerificationSettings.mCTConfig.mSkipForHosts),
+-          aVerificationSettings.mCTConfig.mSkipForSPKIHashes.Clone()),
+-      aVerificationSettings.mCRLiteMode, exactTrustAnchors);
+-
+-  mozilla::pkix::Result result = alternateVerifier.VerifySSLServerCert(
++  return verifier->VerifySSLServerCert(
+       aPeerCert, aTime, aPinArg, aHostname, aBuiltChain, aFlags,
+       aExtraCertificates, aStapledOCSPResponse, aSctsFromTLS, aDCInfo,
+       aOriginAttributes, aEVStatus, aOCSPStaplingStatus, aKeySizeStatus,
+       aPinningTelemetryInfo, aCTInfo, aIsBuiltChainRootBuiltInRoot,
+       aMadeOCSPRequests, aIssuerSources);
+-  if (result != mozilla::pkix::Success) {
+-    return result;
+-  }
+-  if (aBuiltChain.IsEmpty()) {
+-    return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
+-  }
+-  for (const auto& anchorDER : aVerifiedExactTrustAnchors) {
+-    if (aBuiltChain.LastElement() == anchorDER) {
+-      return mozilla::pkix::Success;
+-    }
+-  }
+-
+-  aBuiltChain.Clear();
+-  return mozilla::pkix::Result::ERROR_UNKNOWN_ISSUER;
+ }
+ 
+ }  // namespace mozilla::psm
+--- a/security/manager/ssl/GoodBearRussianPKIContainerScope.h
++++ b/security/manager/ssl/GoodBearRussianPKIContainerScope.h
+@@ -53,6 +53,24 @@
+   }
+ };
+ 
++// The counters are supplied by the bounded owner of a verification policy
++// snapshot. They deliberately record paths, not certificate names, hosts, or
++// origin attributes. A later telemetry owner may export aggregate values, but
++// must never use them to make a trust decision.
++struct GoodBearRussianPKIVerificationCounters final {
++  uint64_t mStandardResults = 0;
++  uint64_t mSecondaryChecks = 0;
++  uint64_t mSecondarySuccesses = 0;
++
++  void RecordStandardResult() { ++mStandardResults; }
++  void RecordSecondaryCheck(mozilla::pkix::Result aResult) {
++    ++mSecondaryChecks;
++    if (aResult == mozilla::pkix::Success) {
++      ++mSecondarySuccesses;
++    }
++  }
++};
++
+ // aScopeAllows must consult the current managed-container state. It is called
+ // both before and after alternate verification so disablement, deletion, or
+ // recreation while verification is in flight cannot authorize a stale
+@@ -64,8 +82,12 @@
+     const mozilla::OriginAttributes& aOriginAttributes,
+     mozilla::FunctionRef<bool(const mozilla::OriginAttributes&)> aScopeAllows,
+     mozilla::FunctionRef<mozilla::pkix::Result()>
+-        aVerifyAgainstExactRussianPKIAnchors) {
++        aVerifyAgainstExactRussianPKIAnchors,
++    GoodBearRussianPKIVerificationCounters* aCounters = nullptr) {
+   if (aStandardResult == mozilla::pkix::Success) {
++    if (aCounters) {
++      aCounters->RecordStandardResult();
++    }
+     return {nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
+             mozilla::pkix::Success};
+   }
+@@ -76,7 +98,12 @@
+             aStandardResult};
+   }
+ 
+-  if (aVerifyAgainstExactRussianPKIAnchors() != mozilla::pkix::Success ||
++  mozilla::pkix::Result alternateResult =
++      aVerifyAgainstExactRussianPKIAnchors();
++  if (aCounters) {
++    aCounters->RecordSecondaryCheck(alternateResult);
++  }
++  if (alternateResult != mozilla::pkix::Success ||
+       !aScopeAllows(aOriginAttributes)) {
+     return {nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
+             aStandardResult};
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -157,6 +157,7 @@
+ {
+   bool scopeCalled = false;
+   bool alternateCalled = false;
++  GoodBearRussianPKIVerificationCounters counters;
+   auto result = ClassifyGoodBearContainerServerCertificate(
+       Success, ChannelAttributes(17),
+       [&](const OriginAttributes&) {
+@@ -166,16 +167,45 @@
+       [&]() {
+         alternateCalled = true;
+         return PKIXResult::ERROR_UNKNOWN_ISSUER;
+-      });
++      },
++      &counters);
+ 
+   ASSERT_FALSE(scopeCalled);
+   ASSERT_FALSE(alternateCalled);
++  ASSERT_EQ(1U, counters.mStandardResults);
++  ASSERT_EQ(0U, counters.mSecondaryChecks);
++  ASSERT_EQ(0U, counters.mSecondarySuccesses);
+   ASSERT_EQ(GoodBearTrustDomain::Standard, result.mTrustDomain);
+   ASSERT_EQ(Success, result.mResult);
+   ASSERT_TRUE(result.ChannelUsable());
+ }
+ 
+ TEST(psm_GoodBearRussianPKIVerifier,
++     SecondaryCheckCountersDoNotGrantOrReuseTrust)
++{
++  GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++  GoodBearRussianPKIVerificationCounters counters;
++  auto authorize = [&](const OriginAttributes& aOriginAttributes) {
++    return scope.Allows(aOriginAttributes);
++  };
++
++  auto accepted = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(17), authorize,
++      []() { return Success; }, &counters);
++  ASSERT_EQ(GoodBearTrustDomain::RussianPKI, accepted.mTrustDomain);
++  ASSERT_EQ(0U, counters.mStandardResults);
++  ASSERT_EQ(1U, counters.mSecondaryChecks);
++  ASSERT_EQ(1U, counters.mSecondarySuccesses);
++
++  auto rejected = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(18), authorize,
++      []() { return Success; }, &counters);
++  ASSERT_EQ(GoodBearTrustDomain::Invalid, rejected.mTrustDomain);
++  ASSERT_EQ(1U, counters.mSecondaryChecks);
++  ASSERT_EQ(1U, counters.mSecondarySuccesses);
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
+      SameValidRussianChainIsAcceptedOnlyInDedicatedContainer)
+ {
+   constexpr uint32_t kDedicatedUserContextId = 17;
+@@ -326,6 +356,48 @@
+ }
+ 
+ TEST_F(GoodBearRussianPKIX509Test,
++       ReusableAlternateVerifierRechecksHostnameAndKeepsExactAnchor) {
++  nsTArray<uint8_t> leaf = ReadCertificateFixture("russian-leaf.pem"_ns);
++  nsTArray<uint8_t> intermediate =
++      ReadCertificateFixture("russian-intermediate.pem"_ns);
++  nsTArray<uint8_t> root = ReadCertificateFixture("russian-root.pem"_ns);
++  ASSERT_FALSE(leaf.IsEmpty());
++  ASSERT_FALSE(intermediate.IsEmpty());
++  ASSERT_FALSE(root.IsEmpty());
++
++  nsTArray<nsTArray<uint8_t>> roots;
++  roots.AppendElement(std::move(root));
++  auto cache =
++      GoodBearRussianPKIAlternateVerifierCache::Create(*mVerifier, roots);
++  ASSERT_TRUE(cache);
++
++  nsTArray<nsTArray<uint8_t>> intermediates;
++  intermediates.AppendElement(std::move(intermediate));
++  auto MakeExtraCertificates = [&]() {
++    nsTArray<nsTArray<uint8_t>> extraCertificates;
++    nsTArray<uint8_t> intermediateCopy;
++    intermediateCopy.AppendElements(intermediates[0]);
++    extraCertificates.AppendElement(std::move(intermediateCopy));
++    return Some(std::move(extraCertificates));
++  };
++  nsTArray<nsTArray<uint8_t>> builtChain;
++  ASSERT_EQ(Success,
++            cache->VerifySSLServerCert(
++                leaf, TimeFromEpochInSeconds(1787832000), nullptr,
++                "test-russian.example"_ns, builtChain,
++                CertVerifier::FLAG_LOCAL_ONLY, MakeExtraCertificates()));
++  ASSERT_EQ(3U, builtChain.Length());
++
++  builtChain.Clear();
++  ASSERT_EQ(PKIXResult::ERROR_BAD_CERT_DOMAIN,
++            cache->VerifySSLServerCert(
++                leaf, TimeFromEpochInSeconds(1787832000), nullptr,
++                "wrong-host.example"_ns, builtChain,
++                CertVerifier::FLAG_LOCAL_ONLY, MakeExtraCertificates()));
++  ASSERT_FALSE(builtChain.IsEmpty());
++}
++
++TEST_F(GoodBearRussianPKIX509Test,
+        AlternateVerifierDoesNotMutateOrdinaryOrGlobalTrust) {
+   ASSERT_NE(Success, VerifyStandardRussianPKI());
+   ASSERT_EQ(Success,
+--- a/browser/base/content/browser-siteIdentity.js
++++ b/browser/base/content/browser-siteIdentity.js
+@@ -836,6 +836,28 @@
+   },
+ 
+   /**
++   * The verifier-owned trust domain for the current connection. Do not infer
++   * this from a certificate subject, issuer, container colour, or URL. An
++   * absent or unrecognized value is deliberately fail-closed for UI purposes.
++   */
++  get _goodBearTrustDomain() {
++    switch (this._secInfo?.goodBearTrustDomain) {
++      case Ci.nsITransportSecurityInfo.Standard:
++      case Ci.nsITransportSecurityInfo.RussianPKI:
++        return this._secInfo.goodBearTrustDomain;
++      default:
++        return Ci.nsITransportSecurityInfo.Invalid;
++    }
++  },
++
++  get _usesGoodBearRussianPKI() {
++    return (
++      this._isSecureConnection &&
++      this._goodBearTrustDomain == Ci.nsITransportSecurityInfo.RussianPKI
++    );
++  },
++
++  /**
+    * Returns whether the current URI results in an "invalid"
+    * URL bar state, which effectively means hidden security
+    * indicators.
+@@ -962,9 +984,18 @@
+       );
+     }
+ 
+-    this._identityIconLabel.setAttribute("tooltiptext", tooltip);
+-    this._identityIconLabel.setAttribute("value", icon_label);
+-    this._identityIconLabel.collapsed = !icon_label;
++    if (this._usesGoodBearRussianPKI) {
++      document.l10n.setAttributes(
++        this._identityIconLabel,
++        "identity-goodbear-russian-pki-label"
++      );
++      this._identityIconLabel.collapsed = false;
++    } else {
++      this._identityIconLabel.removeAttribute("data-l10n-id");
++      this._identityIconLabel.setAttribute("tooltiptext", tooltip);
++      this._identityIconLabel.setAttribute("value", icon_label);
++      this._identityIconLabel.collapsed = !icon_label;
++    }
+   },
+ 
+   /**
+@@ -1165,6 +1196,11 @@
+       this._updateAttribute(element, "isbroken", this._isBrokenConnection);
+       element.toggleAttribute("customroot", this._hasCustomRoot());
+       this._updateAttribute(element, "httpsonlystatus", httpsOnlyStatus);
++      this._updateAttribute(
++        element,
++        "goodbear-trust-domain",
++        this._usesGoodBearRussianPKI ? "russian-pki" : ""
++      );
+     }
+ 
+     // Initialize the optional strings to empty values
+--- a/browser/components/controlcenter/content/identityPanel.inc.xhtml
++++ b/browser/components/controlcenter/content/identityPanel.inc.xhtml
+@@ -35,6 +35,9 @@
+                         when-connection="not-secure secure-cert-user-overridden secure-custom-root cert-error-page https-only-error-page" data-l10n-id="identity-connection-not-secure"></label>
+             <label class="identity-popup-connection-secure"
+                         when-connection="secure secure-ev secure-etsi" data-l10n-id="identity-connection-secure"></label>
++            <label id="identity-popup-goodbear-russian-pki"
++                        when-goodbear-trust-domain="russian-pki"
++                        data-l10n-id="identity-goodbear-russian-pki-connection"></label>
+             <label class="identity-popup-connection-failure"
+                         when-connection="net-error-page" data-l10n-id="identity-connection-failure"></label>
+             <label when-connection="chrome" data-l10n-id="identity-connection-internal"></label>
+@@ -58,6 +61,10 @@
+               <description id="identity-popup-security-decription-custom-root"
+                            class="identity-popup-warning-box identity-popup-warning-gray"
+                            when-customroot="true" data-l10n-id="identity-custom-root"></description>
++              <description id="identity-popup-security-goodbear-russian-pki"
++                           class="identity-popup-warning-box identity-popup-warning-gray"
++                           when-goodbear-trust-domain="russian-pki"
++                           data-l10n-id="identity-goodbear-russian-pki-description"></description>
+               <description class="identity-popup-warning-box identity-popup-warning-yellow"
+                            when-mixedcontent="passive-loaded" data-l10n-id="identity-passive-loaded"></description>
+               <description class="identity-popup-warning-box identity-popup-warning-yellow"
+--- a/browser/components/controlcenter/content/securityInformation.inc.xhtml
++++ b/browser/components/controlcenter/content/securityInformation.inc.xhtml
+@@ -57,6 +57,10 @@
+             <label data-l10n-id="identity-description-custom-root2"/>
+             <html:a is="moz-support-link" id="identity-popup-custom-root-learn-more" support-page="enterprise-roots"/>
+           </description>
++          <description id="identity-popup-securityView-goodbear-russian-pki"
++                       class="identity-popup-warning-box identity-popup-warning-gray"
++                       when-goodbear-trust-domain="russian-pki"
++                       data-l10n-id="identity-goodbear-russian-pki-description"></description>
+ 
+           <!-- Remove Certificate Exception -->
+           <button id="identity-popup-remove-cert-exception"
+--- a/browser/themes/shared/controlcenter/panel.css
++++ b/browser/themes/shared/controlcenter/panel.css
+@@ -28,7 +28,7 @@
+ }
+ 
+ /* Hide all conditional elements by default. */
+-:is([when-connection], [when-customroot], [when-tlskeylogging], [when-mixedcontent], [when-ciphers], [when-httpsonlystatus]) {
++:is([when-connection], [when-customroot], [when-tlskeylogging], [when-mixedcontent], [when-ciphers], [when-httpsonlystatus], [when-goodbear-trust-domain]) {
+   display: none;
+ }
+ 
+@@ -88,6 +88,7 @@
+ .site-information-popup[httpsonlystatus=upgraded] [when-httpsonlystatus~=upgraded],
+ .site-information-popup[httpsonlystatus=failed-top] [when-httpsonlystatus~=failed-top],
+ .site-information-popup[httpsonlystatus=failed-sub] [when-httpsonlystatus~=failed-sub],
++.site-information-popup[goodbear-trust-domain="russian-pki"] [when-goodbear-trust-domain~="russian-pki"],
+ /* Show 'disable MCB' button always when there is mixed active content blocked. */
+ #identity-popup-securityView-extended-info[mixedcontent~=active-blocked] > button[when-mixedcontent=active-blocked] {
+   display: revert;
+--- a/browser/locales/en-US/browser/browser.ftl
++++ b/browser/locales/en-US/browser/browser.ftl
+@@ -472,6 +472,10 @@
+     .label = Clear cookies and site data…
+ identity-connection-not-secure-security-view = You are not securely connected to this site.
+ identity-connection-verified = You are securely connected to this site.
++identity-goodbear-russian-pki-label = RU
++    .tooltiptext = Certificate validated through Russian PKI
++identity-goodbear-russian-pki-connection = Connection uses Russian PKI
++identity-goodbear-russian-pki-description = Certificate validation uses the Russian PKI trust domain. This trust domain is permitted only in the isolated Good Bear container.
+ identity-ev-owner-label2 = Certificate issued to
+ identity-verifier-label2 = Verified by
+ # "qualified" here refers to the qualified website authentication certificate presented by the site.

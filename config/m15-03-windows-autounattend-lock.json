@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task": "GB100-M15-03",
+  "output_version": "2026-09-13.4",
+  "inputs": {
+    "windows_server_2025_eval_iso": {
+      "path": "/home/valery/Загрузки/26100.32230.260111-0550.lt_release_svc_refresh_SERVER_EVAL_x64FRE_ru-ru.iso",
+      "sha256": "0b1b0a94c330cbd660d5ed7a4fb843665f48935df7aa1eca8ac49e0504161deb",
+      "official_source": "https://www.microsoft.com/en-us/evalcenter/download-windows-server-2025",
+      "observed_media_evidence": {
+        "udf_volume_id": "SSS_X64FREE_RU-RU_DV9",
+        "wim_paths": [
+          "sources/boot.wim",
+          "sources/install.wim"
+        ],
+        "ru_filename_evidence": "x64FRE_ru-ru.iso",
+        "server_evaluation_filename_evidence": "SERVER_EVAL"
+      }
+    },
+    "virtio_win": {
+      "path": null,
+      "sha256": null,
+      "signature_verified": false,
+      "media_volume_label": "virtio-win-0.1.302"
+    },
+    "cloudbase_init": {
+      "path": "/home/valery/.cache/goodbear-m15-03-inputs/CloudbaseInitSetup_1_1_8_x64.msi",
+      "sha256": "0e7fa42e0cbc0ce7657f85730b0c6cc7afc4087a3639df0ff51a721a0be19bd5",
+      "authenticode_verified": true,
+      "publisher": "CN=Cloudbase Solutions Srl,O=Cloudbase Solutions Srl,L=Timisoara,C=RO",
+      "official_source": "https://github.com/cloudbase/cloudbase-init/releases/download/1.1.8/CloudbaseInitSetup_1_1_8_x64.msi"
+    }
+  },
+  "windows": {
+    "architecture": "x64",
+    "edition": "Server Core",
+    "gui": false,
+    "locale": "ru-RU",
+    "image_name": "Windows Server 2025 Standard Evaluation"
+  },
+  "headless": {
+    "transport": "openssh",
+    "cloudbase_init_first_boot": true,
+    "windows_update_before_sysprep": true
+  },
+  "privacy": {
+    "ceip_enabled": 0,
+    "diagnostic_data": "required_only"
+  },
+  "virtio": {
+    "architecture_path": "amd64",
+    "scsi_driver": "vioscsi",
+    "network_driver": "NetKVM"
+  },
+  "sysprep": {
+    "arguments": [
+      "/oobe",
+      "/generalize",
+      "/shutdown"
+    ]
+  }
+}

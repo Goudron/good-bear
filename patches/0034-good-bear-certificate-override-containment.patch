@@ -1,0 +1,90 @@
+# M13-04: keep a Russian-PKI routing hint from being resumed by a host override.
+
+diff --git a/security/manager/ssl/GoodBearRussianPKIClassification.h b/security/manager/ssl/GoodBearRussianPKIClassification.h
+--- a/security/manager/ssl/GoodBearRussianPKIClassification.h
++++ b/security/manager/ssl/GoodBearRussianPKIClassification.h
+@@ -18,6 +18,16 @@ enum class GoodBearOrdinaryTrustClassification : uint8_t {
+   Invalid,
+ };
+ 
++// A successful alternate check in an ordinary context is an address-only
++// routing signal, never a certificate exception.  In particular, a matching
++// upstream per-host override must not convert the failed ordinary channel
++// into a usable one before the managed container is opened.
++inline bool GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++    GoodBearOrdinaryTrustClassification aClassification) {
++  return aClassification !=
++         GoodBearOrdinaryTrustClassification::RussianPKIRequired;
++}
++
+ struct GoodBearOrdinaryVerificationResult {
+   GoodBearOrdinaryTrustClassification mClassification;
+   mozilla::pkix::Result mOriginalResult;
+diff --git a/security/manager/ssl/SSLServerCertVerification.cpp b/security/manager/ssl/SSLServerCertVerification.cpp
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -852,6 +852,8 @@ NS_IMETHODIMP
+   nsTArray<uint8_t> certBytes(mPeerCertChain.ElementAt(0).Clone());
+   bool usedGoodBearRussianPKIAlternateTrust = false;
+   bool goodBearRussianPKIRequired = false;
++  GoodBearOrdinaryTrustClassification goodBearOrdinaryClassification =
++      GoodBearOrdinaryTrustClassification::Invalid;
+   Result result = AuthCertificate(
+       *certVerifier, mPinArg, certBytes, mPeerCertChain, mHostName,
+       mOriginAttributes, mStapledOCSPResponse, mSCTsFromTLSExtension, mDCInfo,
+@@ -885,6 +887,7 @@ NS_IMETHODIMP
+     goodBearRussianPKIRequired =
+         ordinaryResult.mClassification ==
+         GoodBearOrdinaryTrustClassification::RussianPKIRequired;
++    goodBearOrdinaryClassification = ordinaryResult.mClassification;
+   }
+ 
+   // Never turn an ordinary unknown-issuer connection into a usable channel.
+@@ -960,9 +963,13 @@ NS_IMETHODIMP
+   nsITransportSecurityInfo::OverridableErrorCategory overridableErrorCategory =
+       nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
+   nsCOMPtr<nsIX509Cert> cert(new nsNSSCertificate(std::move(certBytes)));
+-  PRErrorCode finalError = AuthCertificateParseResults(
+-      mAddrForLogging, mHostName, mPort, mOriginAttributes, cert, mTime, error,
+-      overridableErrorCategory);
++  PRErrorCode finalError = error;
++  if (GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++          goodBearOrdinaryClassification)) {
++    finalError = AuthCertificateParseResults(mAddrForLogging, mHostName, mPort,
++                                             mOriginAttributes, cert, mTime,
++                                             error, overridableErrorCategory);
++  }
+ 
+   // NB: finalError may be 0 here, in which the connection will continue.
+   nsresult rv = mResultTask->Dispatch(
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp
+@@ -45,6 +45,27 @@ TEST(psm_GoodBearRussianPKIClassification,
+   ASSERT_FALSE(result.OrdinaryChannelUsable());
+   ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
+             result.TransportTrustDomain());
++  ASSERT_FALSE(GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++      result.mClassification));
++}
++
++TEST(psm_GoodBearRussianPKIClassification,
++     ExistingCertificateOverrideCannotResumeRussianPKIRequiredChannel)
++{
++  auto routingRequired = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, []() { return Success; });
++  ASSERT_EQ(GoodBearOrdinaryTrustClassification::RussianPKIRequired,
++            routingRequired.mClassification);
++  ASSERT_FALSE(GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++      routingRequired.mClassification));
++
++  auto ordinaryInvalid = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER,
++      []() { return PKIXResult::ERROR_BAD_SIGNATURE; });
++  ASSERT_EQ(GoodBearOrdinaryTrustClassification::Invalid,
++            ordinaryInvalid.mClassification);
++  ASSERT_TRUE(GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++      ordinaryInvalid.mClassification));
+ }
+ 
+ TEST(psm_GoodBearRussianPKIClassification,

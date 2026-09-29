@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-22",
+  "target": "x86_64-unknown-linux-gnu",
+  "release_locale": "ru",
+  "components": [
+    {
+      "id": "rust-and-cargo",
+      "version": "1.98.0",
+      "archive": {
+        "url": "https://static.rust-lang.org/dist/2026-08-20/rust-1.98.0-x86_64-unknown-linux-gnu.tar.xz",
+        "sha256": "ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f",
+        "filename": "rust-1.98.0-x86_64-unknown-linux-gnu.tar.xz"
+      },
+      "provenance": {
+        "url": "https://static.rust-lang.org/dist/2026-08-20/channel-rust-1.98.0.toml",
+        "sha256": "3f7d139b73bbbd0004ef6e58b430831c68cdad2b1f64ee2eb35d54c09199489a",
+        "kind": "official-rust-release-manifest"
+      },
+      "install": {"kind": "rust-installer", "prefix": "rust"},
+      "expected_commands": {"rustc": "rustc 1.98.0", "cargo": "cargo 1.98.0"}
+    },
+    {
+      "id": "clang-llvm-lld",
+      "version": "22.1.8",
+      "archive": {
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-Linux-X64.tar.xz",
+        "sha256": "df0e1ecf16caf3489a272a5eea4eec9b0d82878f6477fa309504f918a0006384",
+        "filename": "LLVM-22.1.8-Linux-X64.tar.xz"
+      },
+      "provenance": {
+        "url": "https://api.github.com/repos/llvm/llvm-project/releases/tags/llvmorg-22.1.8",
+        "sha256": "99070dbc4d846fa8b526579459cad04490be88563467fe6ab132394330edf88c",
+        "kind": "official-llvm-release-api",
+        "observation": "The GitHub release API is mutable JSON. Verification binds the response tag and the official asset digest to the exact archive hash; this SHA-256 records the 2026-08-22 observed API response only."
+      },
+      "detached_signature": {
+        "url": "https://github.com/llvm/llvm-project/releases/download/llvmorg-22.1.8/LLVM-22.1.8-Linux-X64.tar.xz.sig",
+        "sha256": "957277dbcae172168934e1398b7d8af561d6b86dfb38e9f96853c53483804826"
+      },
+      "install": {"kind": "tar-prefix", "prefix": "llvm"},
+      "expected_commands": {
+        "clang": "clang version 22.1.8",
+        "clang++": "clang version 22.1.8",
+        "ld.lld": "LLD 22.1.8"
+      },
+      "required_paths": ["bin/lld"]
+    },
+    {
+      "id": "wasi-sdk",
+      "version": "33.0",
+      "archive": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-33/wasi-sdk-33.0-x86_64-linux.tar.gz",
+        "sha256": "0ba8b5bfaeb2adf3f29bab5841d76cf5318ab8e1642ea195f88baba1abd47bce",
+        "filename": "wasi-sdk-33.0-x86_64-linux.tar.gz"
+      },
+      "provenance": {
+        "url": "https://api.github.com/repos/WebAssembly/wasi-sdk/releases/tags/wasi-sdk-33",
+        "sha256": "4b53b975b2946440dda4c4e0e611af6943ab4962795ed26608ef2d66bf30e0a9",
+        "kind": "official-wasi-sdk-release-api",
+        "release_tag": "wasi-sdk-33",
+        "observation": "The release API is mutable JSON. Verification requires its current tag and official asset digest to match this immutable archive checksum; the SHA-256 records the 2026-08-23 observed response. The archive supplies a mutually compatible WASM compiler, C++ headers, sysroot, and compiler-rt builtins."
+      },
+      "install": {"kind": "tar-prefix", "prefix": "wasi-sdk"},
+      "expected_commands": {"clang": "clang version 22.1.0", "clang++": "clang version 22.1.0"},
+      "required_paths": [
+        "share/wasi-sysroot/include/wasm32-wasi/time.h",
+        "share/wasi-sysroot/lib/wasm32-wasi/libc.a",
+        "share/wasi-sysroot/lib/wasm32-wasi/libwasi-emulated-process-clocks.a",
+        "lib/clang/22/lib/wasm32-unknown-wasi/libclang_rt.builtins.a"
+      ]
+    },
+    {
+      "id": "node-and-npm",
+      "version": "24.19.0",
+      "npm_version": "11.17.0",
+      "archive": {
+        "url": "https://nodejs.org/dist/v24.19.0/node-v24.19.0-linux-x64.tar.xz",
+        "sha256": "14b342e71204f811bde6153be8e04b62aef63c236fef92b55f9c83154b409647",
+        "filename": "node-v24.19.0-linux-x64.tar.xz"
+      },
+      "provenance": {
+        "url": "https://nodejs.org/dist/v24.19.0/SHASUMS256.txt",
+        "sha256": "be0629ee2bcd8e40bb856abdd3407f0762101b76bd60a36b8867f637733631c0",
+        "kind": "official-node-checksum-manifest"
+      },
+      "install": {"kind": "tar-prefix", "prefix": "node"},
+      "expected_commands": {"node": "v24.19.0", "npm": "11.17.0"}
+    },
+    {
+      "id": "cbindgen",
+      "version": "0.29.4",
+      "archive": {
+        "url": "https://crates.io/api/v1/crates/cbindgen/0.29.4/download",
+        "sha256": "2ecb53484c9c167ba674026b656d8a27d7657a58e6066aa902bfb1a4aa00ae20",
+        "filename": "cbindgen-0.29.4.crate"
+      },
+      "provenance": {
+        "url": "https://crates.io/api/v1/crates/cbindgen/0.29.4",
+        "sha256": "ecbca960379cf638f97ec1e40b6506b0eff7f6aab45e11418081d154ba40d23b",
+        "kind": "official-crates-io-api"
+      },
+      "install": {"kind": "cargo-locked-crate", "prefix": "cbindgen"},
+      "expected_commands": {"cbindgen": "cbindgen 0.29.4"}
+    }
+  ]
+}
