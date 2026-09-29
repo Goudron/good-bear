@@ -762,6 +762,10 @@
     {
       "patch": "0033-good-bear-quality-format.patch",
       "reason": "M13-01 clang-format-only correction; every hunk must preserve its non-whitespace token stream."
+    },
+    {
+      "patch": "0054-good-bear-nsis-navigation-button-contrast.patch",
+      "reason": "M13-05 installer accessibility correction; it changes only NSIS navigation-button rendering and does not add a browser security or routing decision."
     }
   ]
 }

@@ -300,6 +300,11 @@
       "patch": "0053-good-bear-google-verdict-freshness.patch",
       "owner": "URL-classifier Google verdict cache, completion path and native tests",
       "disposition": "targeted_rebase_required"
+    },
+    {
+      "patch": "0054-good-bear-nsis-navigation-button-contrast.patch",
+      "owner": "Windows NSIS installer navigation controls and accessibility rendering",
+      "disposition": "targeted_rebase_required"
     }
   ],
   "migration_rules": {
