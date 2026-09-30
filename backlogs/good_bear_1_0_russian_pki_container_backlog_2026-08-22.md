@@ -394,6 +394,15 @@ mode: no signing key, MAR, updater endpoint, or auto-update claim is required or
 binary must instead be labelled unsigned and paired with its exact SHA-256, SBOM, provenance,
 source offer, notices, and Russian verification instruction.
 
+**M14 closure, 2026-09-30.** Milestone 14 is complete. The public release is the sole GitHub
+Release `v1.0.0` for Good Bear 1.0 and contains exactly the reviewed eight assets: the Ubuntu
+package, Windows installer, SHA-256 list, SBOM, provenance, notices, and source-offer metadata
+and bundle. Its tag and public source boundary were independently checked; the pinned Firefox
+156.0 source was verified from Mozilla without a Firefox mirror, and all 54 ordered Good Bear
+patches applied in a clean clone. The Russian README and source-offer contracts pass. This is a
+full unsigned 1.0 release: it makes no signature, MAR, updater, or auto-update claim. The
+independent audit directory and all temporary extracted sources were removed after verification.
+
 | ID | Task | Essence | Model | Minimal reasoning | Acceptance |
 | --- | --- | --- | --- | --- | --- |
 | `GB100-M14-01` | Assemble the minimal public corresponding-source repository. | Prepare the exact ordered Good Bear patch set, pinned Firefox source revision/hash, reproducible-build scripts, required build inputs, source-offer metadata, notices, SBOM, provenance, and checksums for `Goudron/good-bear`. Include documented native Windows and Ubuntu paths with platform-specific preflight and recovery. The Windows source patch set must include the complete Good Bear NSIS branding tree and validate all `BRANDING_FILES` through `mozmake -n -C browser/installer/windows instgen/helper.exe` before any LTO; installer-only recovery must not rerun `mach configure` or top-level `mach build`. The Ubuntu path must likewise validate its actual package prerequisites and use a package-only recovery path when source/build configuration is unchanged. Exclude the full Firefox source tree, object directories, caches, profiles, credentials, private keys, local candidates, and unreviewed artifacts. | GPT-5.6 (tier selected at execution) | High | A clean clone contains the declared material needed to fetch the pinned upstream and reproduce both native builds; every patch applies; Windows and Ubuntu preflight/recovery contracts pass before expensive LTO; a machine check rejects Firefox-source copies, build outputs, secrets, and undeclared files. |
