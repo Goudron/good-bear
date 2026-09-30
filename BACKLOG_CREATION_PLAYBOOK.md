@@ -40,6 +40,26 @@ backlogs/good_bear_<version_with_underscores>_<short_topic>_backlog_<yyyy-mm-dd>
 Do not create a docs index, documentation manifest, README entry, changelog entry, documentation
 site, PDFs, screenshots for manuals, or release-note task as a side effect of backlog creation.
 
+## Future-version release trains
+
+For a future Good Bear version, do not begin from a copy of an earlier release backlog and do not
+create one backlog for the Firefox rebase and another for product functionality. Use these three
+planning control files, in order:
+
+1. [`FIREFOX_VERSION_UPGRADE_BACKLOG_PLAYBOOK.md`](FIREFOX_VERSION_UPGRADE_BACKLOG_PLAYBOOK.md)
+   establishes the immutable upstream baseline, patch dispositions, toolchain and native-build
+   gates.
+2. [`GOOD_BEAR_FEATURE_BACKLOG_PLAYBOOK.md`](GOOD_BEAR_FEATURE_BACKLOG_PLAYBOOK.md) turns each
+   maintainer-approved product change into bounded implementation and verification tasks without
+   widening the Russian-PKI, container, privacy, or release boundaries.
+3. [`RELEASE_TRAIN_BACKLOG_PLAYBOOK.md`](RELEASE_TRAIN_BACKLOG_PLAYBOOK.md) combines both inputs
+   into one reviewed, versioned release backlog. It is the only file that creates the resulting
+   `backlogs/good_bear_<version>_...` document.
+
+The playbooks are planning controls, not product documentation. They do not authorize source
+changes, builds, VM use, a tag, a push, or publication. A requested feature for Firefox 157 is an
+input to this process only after the maintainer supplies its intended behaviour and boundary.
+
 ## Required backlog structure
 
 Every backlog contains:
