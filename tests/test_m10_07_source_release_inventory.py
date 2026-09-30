@@ -36,7 +36,10 @@ class SourceReleaseInventoryTest(unittest.TestCase):
         self.assertEqual(report["product"], "Good Bear")
         self.assertEqual(report["shipped_locales"], ["ru"])
         # The report includes patches/series itself plus every ordered patch.
-        self.assertEqual(len(report["patch_set"]["files"]), 54)
+        self.assertEqual(
+            len(report["patch_set"]["files"]),
+            len(VERIFY.series_entries(ROOT)) + 1,
+        )
         self.assertTrue(report["overlay"]["files"])
         self.assertEqual(len(report["russian_localization"]), 4)
         self.assertTrue(report["artwork"])

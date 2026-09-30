@@ -1,0 +1,39 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:good-bear-1.0-firefox-156.0",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "Good Bear",
+      "version": "1.0",
+      "properties": [
+        {"name": "goodbear:firefox-base-version", "value": "156.0"},
+        {"name": "goodbear:locale", "value": "ru"},
+        {"name": "goodbear:distribution", "value": "unsigned; no auto-update"}
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "application",
+      "name": "Good Bear Ubuntu amd64 package",
+      "version": "1.0+firefox156.0-1",
+      "hashes": [{"alg": "SHA-256", "content": "a738b9b556c90da7a1ccb601cab5a5c2e6b6dbd050046a0dbcf7dba50c02d7d0"}]
+    },
+    {
+      "type": "application",
+      "name": "Good Bear Windows x64 installer",
+      "version": "1.0+firefox156.0",
+      "hashes": [{"alg": "SHA-256", "content": "d9f67c12680758f8d39143ef2acbd6a602b193d2d2418fa183c5c334107d77c2"}]
+    },
+    {
+      "type": "application",
+      "name": "Mozilla Firefox upstream source",
+      "version": "156.0",
+      "hashes": [{"alg": "SHA-256", "content": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9"}],
+      "externalReferences": [{"type": "distribution", "url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz"}]
+    }
+  ]
+}

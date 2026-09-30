@@ -135,8 +135,91 @@
       }
     ],
     "source_offer": {
-      "assembly_owner": "GB100-M12-05",
+      "assembly_owner": "GB100-M14-01",
       "location": "https://github.com/Goudron/good-bear",
+      "document": "SOURCE_OFFER.md",
+      "machine_verifier": "tools/verify_public_source_offer.py",
+      "release_metadata": [
+        "config/m10-07-source-release-inventory.json",
+        "config/product-identity.json",
+        "config/firefox-baseline.json",
+        "release/good-bear-1.0/SHA256SUMS",
+        "release/good-bear-1.0/notices.json",
+        "release/good-bear-1.0/provenance.intoto.json",
+        "release/good-bear-1.0/sbom.cdx.json",
+        "release/good-bear-1.0/source-offer.json"
+      ],
+      "public_repository": {
+        "full_firefox_source_mirror": "forbidden",
+        "forbidden_material": [
+          "Firefox source trees and archives",
+          "object directories and dist outputs",
+          "build caches and browser profiles",
+          "credentials, private keys and local candidate artifacts"
+        ],
+        "tracked_path_allowlist": [
+          ".github/**",
+          ".gitignore",
+          "AGENTS.md",
+          "BACKLOG_CREATION_PLAYBOOK.md",
+          "CLOUD_RU_API_SETUP_RU.md",
+          "README.md",
+          "SOURCE_OFFER.md",
+          "artifacts/.gitkeep",
+          "artwork/final/m10-03/**",
+          "backlogs/**",
+          "build/ubuntu/Dockerfile",
+          "build/ubuntu/install-packages.sh",
+          "build/ubuntu/mozconfig.dev",
+          "build/ubuntu/mozconfig.host",
+          "build/ubuntu/mozconfig.release-lto",
+          "build/windows/mozconfig.engine-test",
+          "build/windows/mozconfig.release-lto",
+          "config/**",
+          "docs/**",
+          "overlay/**",
+          "patches/**",
+          "project-inputs/**",
+          "release/good-bear-1.0/**",
+          "source/.gitkeep",
+          "tests/**",
+          "third_party/**",
+          "tools/**"
+        ]
+      },
+      "native_build_paths": {
+        "windows_x64": {
+          "platform": "Windows Server 2022 x64",
+          "preflight": [
+            "tools/verify_nsis_branding_assets.py",
+            "mozmake -n -C browser/installer/windows instgen/helper.exe",
+            "tools/preflight_m15_cloud_windows.py"
+          ],
+          "lto_build": [
+            "./mach build -j4",
+            "./mach build installers-ru"
+          ],
+          "installer_only_recovery": "./mach build installers-ru",
+          "recovery_forbidden_commands": [
+            "./mach configure",
+            "./mach build"
+          ]
+        },
+        "ubuntu_amd64": {
+          "platform": "Ubuntu 24.04 LTS amd64",
+          "preflight": [
+            "tools/verify_ubuntu_environment.py",
+            "build/ubuntu/install-packages.sh",
+            "tools/host_build_context.py"
+          ],
+          "lto_build": "tools/build_host_russian.py --release-lto",
+          "package_only_recovery": "tools/build_m13_06_ubuntu_deb.py",
+          "recovery_forbidden_commands": [
+            "mach configure",
+            "mach build"
+          ]
+        }
+      },
       "required_inputs": [
         "config/firefox-baseline.json",
         "config/firefox-l10n-ru-lock.json",

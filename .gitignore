@@ -3,6 +3,7 @@ obj-*/
 dist/
 artifacts/*
 !artifacts/.gitkeep
+artwork/candidates/
 *.log
 
 # Remote-build evidence, returned artifacts, encrypted inputs, VM diagnostics,

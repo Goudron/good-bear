@@ -1,0 +1,28 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {"name": "goodbear-browser_1.0+firefox156.0-1_amd64.deb", "digest": {"sha256": "a738b9b556c90da7a1ccb601cab5a5c2e6b6dbd050046a0dbcf7dba50c02d7d0"}},
+    {"name": "GoodBear.Setup.1.0+firefox156.0.x64.ru.exe", "digest": {"sha256": "d9f67c12680758f8d39143ef2acbd6a602b193d2d2418fa183c5c334107d77c2"}}
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://good-bear.local/build/native-full-lto",
+      "externalParameters": {
+        "product": "Good Bear 1.0",
+        "firefox": "156.0",
+        "locale": "ru",
+        "distribution": "unsigned; no auto-update",
+        "candidate_source_revision": "4affb9064494b129a272ff21307af169c6e3b0e8"
+      },
+      "resolvedDependencies": [
+        {"uri": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz", "digest": {"sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9"}},
+        {"uri": "goodbear:patch-set", "digest": {"sha256": "2a23ce2176344cdb2afc70b98c31359d758775f36e3ae90435c82a89d62b42cf"}}
+      ]
+    },
+    "runDetails": {
+      "builder": {"id": "Good Bear M13 native candidate builders; promoted by immutable Git tag v1.0.0"},
+      "metadata": {"reproducible": false, "completeness": {"parameters": true, "environment": true, "materials": true}}
+    }
+  }
+}

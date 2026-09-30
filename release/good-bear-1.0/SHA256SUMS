@@ -1,0 +1,4 @@
+# Good Bear 1.0 / Firefox 156.0 — unsigned release artifacts.
+# Verify the downloaded file name and its SHA-256 before installation.
+a738b9b556c90da7a1ccb601cab5a5c2e6b6dbd050046a0dbcf7dba50c02d7d0  goodbear-browser_1.0+firefox156.0-1_amd64.deb
+d9f67c12680758f8d39143ef2acbd6a602b193d2d2418fa183c5c334107d77c2  GoodBear.Setup.1.0+firefox156.0.x64.ru.exe

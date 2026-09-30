@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source_inventory": "config/m10-07-source-release-inventory.json",
+  "bundled_notice_entrypoint": "about:license",
+  "installed_notices_authoritative": true,
+  "policy": "Mozilla and third-party notices are preserved. This index does not replace notices in the upstream source archive or installed application.",
+  "components": [
+    {"id": "mozilla-firefox-upstream-and-vendored-materials", "license": "MPL-2.0 and individual upstream/third-party notices"},
+    {"id": "good-bear-software-and-build-inputs", "license": "MPL-2.0 unless a file carries another compatible notice"},
+    {"id": "mozilla-russian-localization-with-good-bear-messages", "license": "MPL-2.0"},
+    {"id": "good-bear-original-artwork", "license": "All rights reserved unless otherwise stated."},
+    {"id": "russian-pki-certificates", "license": "issuer rights retained; controlled official-source import"},
+    {"id": "fstec-public-leaf-test-fixture", "license": "source-only test fixture; not a runtime trust input"},
+    {"id": "ubuntu-build-toolchain", "license": "component-specific licenses recorded in the source inventory"}
+  ]
+}
