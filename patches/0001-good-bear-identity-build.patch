@@ -1,0 +1,970 @@
+# Good Bear theme: identity-build
+# Final owner deltas; separate overlays are listed in config/patch-themes.json.
+
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -78,6 +78,11 @@
+ 
+ // Dictionary download preference
+ pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/language-tools/");
++
++// Good Bear ships Russian RusSpell and Firefox's built-in English dictionary.
++// This default enables checking in new profiles only; it does not lock a
++// language or a later user preference.
++pref("layout.spellcheckDefault", 1);
+ 
+ // Whether the Nova Themes picker should be enabled in the about:addons page.
+ // (needs also browser.nova.enabled for the Nova Themes picker to be shown
+@@ -1647,7 +1652,7 @@
+ pref("browser.zoom.updateBackgroundTabs", true);
+ 
+ // The breakpad report server to link to in about:crashes
+-pref("breakpad.reportURL", "https://crash-stats.mozilla.org/report/index/");
++pref("breakpad.reportURL", "");
+ 
+ // URL for "Learn More" for DataCollection
+ pref("toolkit.datacollection.infoURL",
+@@ -1663,6 +1668,12 @@
+ pref("security.certerrors.mitm.priming.enabled", true);
+ pref("security.certerrors.mitm.priming.endpoint", "https://mitmdetection.services.mozilla.com/");
+ pref("security.certerrors.mitm.auto_enable_enterprise_roots", true);
++
++// Good Bear is security-first: never send a top-level HTTP request when its
++// HTTPS equivalent is available. The browser's built-in HTTPS-Only exception
++// UI remains the explicit recovery path for genuinely HTTP-only sites.
++pref("dom.security.https_only_mode", true);
++pref("dom.security.https_only_mode_pbm", true);
+ 
+ // Whether the bookmark panel should be shown when bookmarking a page.
+ pref("browser.bookmarks.editDialog.showForNewBookmarks", true);
+@@ -2824,7 +2835,7 @@
+ pref("browser.tabs.remote.warmup.unloadDelayMs", 2000);
+ 
+ // For the about:tabcrashed page
+-pref("browser.tabs.crashReporting.sendReport", true);
++pref("browser.tabs.crashReporting.sendReport", false);
+ pref("browser.tabs.crashReporting.includeURL", false);
+ 
+ // Enables the "Unload Tab" context menu item
+@@ -3789,3 +3800,126 @@
+ #ifdef XP_MACOSX
+   pref("browser.macAppMenu.setAsDefaultShown", false);
+ #endif
++
++// Good Bear hosted-service boundary. These final defaults intentionally
++// override upstream product-service defaults. A future rebase must classify
++// every new endpoint and Remote Settings collection before promotion.
++pref("identity.fxaccounts.enabled", false);
++pref("identity.fxaccounts.pairing.enabled", false);
++pref("identity.fxaccounts.commands.remoteTabManagement.enabled", false);
++pref("identity.fxaccounts.telemetry.clientAssociationPing.enabled", false);
++pref("identity.fxaccounts.telemetry.clientInfoPing.enabled", false);
++pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "");
++pref("identity.fxaccounts.remote.root", "");
++pref("identity.fxaccounts.remote.profile.uri", "");
++pref("identity.fxaccounts.remote.oauth.uri", "");
++pref("identity.fxaccounts.remote.pairing.uri", "");
++pref("identity.sync.tokenserver.uri", "");
++
++pref("signon.firefoxRelay.feature", "disabled");
++pref("browser.promo.relay.enabled", false);
++pref("signon.firefoxRelay.base_url", "");
++pref("browser.contentblocking.report.monitor.enabled", false);
++pref("browser.contentblocking.report.endpoint_url", "");
++
++pref("extensions.pocket.enabled", false);
++pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);
++pref("browser.newtabpage.activity-stream.discoverystream.enabled", false);
++pref("browser.newtabpage.activity-stream.discoverystream.merino-provider.endpoint", "");
++pref("browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL", "");
++pref("browser.newtabpage.activity-stream.discoverystream.ohttp.configURL", "");
++
++pref("browser.search.suggest.enabled", false);
++pref("browser.urlbar.suggest.searches", false);
++pref("browser.urlbar.quicksuggest.enabled", false);
++pref("browser.urlbar.quicksuggest.online.available", false);
++pref("browser.urlbar.quicksuggest.online.enabled", false);
++pref("browser.urlbar.suggest.quicksuggest.all", false);
++pref("browser.urlbar.suggest.quicksuggest.nonsponsored", false);
++pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
++pref("browser.urlbar.sponsoredTopSites", false);
++pref("browser.topsites.contile.enabled", false);
++pref("browser.topsites.useRemoteSetting", false);
++pref("browser.urlbar.merino.endpointURL", "");
++pref("browser.urlbar.merino.ohttpConfigURL", "");
++pref("browser.urlbar.merino.ohttpRelayURL", "");
++pref("browser.topsites.contile.endpoint", "");
++pref("browser.partnerlink.attributionURL", "");
++
++pref("browser.vpn_promo.enabled", false);
++pref("browser.contentblocking.report.hide_vpn_banner", true);
++pref("browser.ipProtection.enabled", false);
++pref("browser.ipProtection.blockIPProtectionCallouts", true);
++pref("browser.ipProtection.features.autoStart", false);
++pref("browser.ipProtection.userEnabled", false);
++pref("browser.contentblocking.report.vpn.url", "");
++pref("browser.contentblocking.report.vpn-promo.url", "");
++pref("browser.ipProtection.guardian.endpoint", "");
++
++pref("app.normandy.enabled", false);
++pref("app.normandy.first_run", false);
++pref("app.normandy.api_url", "");
++pref("app.shield.optoutstudies.enabled", false);
++pref("nimbus.rollouts.enabled", false);
++pref("nimbus.telemetry.targetingContextEnabled", false);
++pref("browser.aboutwelcome.experimentsGate.enabled", false);
++pref("browser.newtabpage.activity-stream.asrouter.useRemoteL10n", false);
++
++pref("datareporting.policy.dataSubmissionEnabled", false);
++pref("datareporting.healthreport.uploadEnabled", false);
++pref("datareporting.usage.uploadEnabled", false);
++pref("toolkit.telemetry.unified", false);
++pref("toolkit.telemetry.archive.enabled", false);
++pref("toolkit.telemetry.server", "");
++pref("toolkit.telemetry.shutdownPingSender.enabled", false);
++pref("toolkit.telemetry.firstShutdownPing.enabled", false);
++pref("toolkit.telemetry.newProfilePing.enabled", false);
++pref("toolkit.telemetry.updatePing.enabled", false);
++pref("toolkit.telemetry.bhrPing.enabled", false);
++pref("browser.newtabpage.activity-stream.telemetry.privatePing.enabled", false);
++pref("browser.tabs.crashReporting.sendReport", false);
++pref("browser.crashReports.unsubmittedCheck.enabled", false);
++pref("browser.crashReports.unsubmittedCheck.autoSubmit2", false);
++// Good Bear usage telemetry is a separate future transport. The visible user
++// choice defaults on, but an absent endpoint or closed transport gate means
++// no serialization, DNS lookup, connection, queue, retry, or transmission.
++// Good Bear presents its own local supplier disclosure before browser startup.
++// Do not ask its users to accept the separate Mozilla Firefox product agreement.
++pref("browser.preonboarding.enabled", false);
++pref("termsofuse.bypassNotification", true);
++pref("datareporting.policy.firstRunURL", "about:rights#privacy");
++
++pref("goodbear.telemetry.enabled", true);
++pref("goodbear.telemetry.transport.enabled", false);
++pref("goodbear.telemetry.endpoint", "");
++
++pref("extensions.getAddons.cache.enabled", false);
++pref("extensions.update.enabled", false);
++pref("extensions.update.autoUpdateDefault", false);
++pref("extensions.systemAddon.update.enabled", false);
++pref("browser.discovery.enabled", false);
++pref("browser.dictionaries.download.url", "");
++pref("extensions.getAddons.get.url", "");
++pref("extensions.getAddons.search.browseURL", "");
++pref("extensions.getAddons.link.url", "");
++pref("extensions.getAddons.langpacks.url", "");
++pref("extensions.getAddons.discovery.api_url", "");
++pref("extensions.getAddons.browserMappings.url", "");
++pref("extensions.update.url", "");
++pref("extensions.update.background.url", "");
++pref("extensions.systemAddon.update.url", "");
++
++// Optional provider-backed features stay off pending a supplier contract.
++// Retain upstream anti-phishing, malware and certificate-revocation protection.
++pref("dom.push.connection.enabled", false);
++pref("dom.push.serverURL", "");
++pref("network.trr.mode", 5);
++pref("doh-rollout.enabled", false);
++pref("network.trr.uri", "");
++pref("network.trr.custom_uri", "");
++pref("geo.enabled", false);
++pref("geo.provider.network.url", "");
++pref("browser.translations.enable", false);
++pref("browser.translations.select.enable", false);
++pref("browser.translations.quickAction.enabled", false);
++pref("extensions.formautofill.useml", false);
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js b/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js
+@@ -0,0 +1,60 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++add_task(
++  async function test_navigator_user_agent_matches_native_firefox_token() {
++    await SpecialPowers.pushPrefEnv({
++      clear: [["general.useragent.override"]],
++      set: [["privacy.userContext.enabled", true]],
++    });
++    const nativeUserAgent = Services.io
++      .getProtocolHandler("http")
++      .QueryInterface(Ci.nsIHttpProtocolHandler).userAgent;
++    const majorVersion = Services.appinfo.platformVersion.match(/^\d+/)[0];
++    ok(
++      nativeUserAgent.endsWith(" Firefox/" + majorVersion + ".0"),
++      "native HTTP identity preserves the reduced Firefox version"
++    );
++    ok(
++      !/Good\s*Bear\//i.test(nativeUserAgent),
++      "the compatibility token does not expose public Good Bear branding"
++    );
++
++    for (const userContextId of [0, 1]) {
++      await BrowserTestUtils.withNewTab(
++        {
++          gBrowser,
++          opening() {
++            gBrowser.selectedTab = BrowserTestUtils.addTab(
++              gBrowser,
++              "https://example.com/browser/browser/components/contextualidentity/test/browser/empty_file.html",
++              { userContextId }
++            );
++          },
++        },
++        async browser => {
++          is(
++            browser.browsingContext.originAttributes.userContextId,
++            userContextId,
++            "the requested context is actually exercised"
++          );
++          const navigatorUserAgent = await SpecialPowers.spawn(
++            browser,
++            [],
++            () => {
++              return content.navigator.userAgent;
++            }
++          );
++          is(
++            navigatorUserAgent,
++            nativeUserAgent,
++            "navigator and HTTP agree in context " + userContextId
++          );
++        }
++      );
++    }
++  }
++);
+diff --git a/browser/config/version_display.txt b/browser/config/version_display.txt
+--- a/browser/config/version_display.txt
++++ b/browser/config/version_display.txt
+@@ -1 +1 @@
+-157.0
++1.0.1
+diff --git a/browser/confvars.sh b/browser/confvars.sh
+--- a/browser/confvars.sh
++++ b/browser/confvars.sh
+@@ -3,11 +3,12 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
++MOZ_APP_NAME=goodbear
+ # MOZ_APP_DISPLAYNAME will be set by branding/configure.sh
+ # MOZ_BRANDING_DIRECTORY is the default branding directory used when none is
+ # specified. It should never point to the "official" branding directory.
+ # For mozilla-beta, mozilla-release, or mozilla-central repositories, use
+ # "unofficial" branding.
+ # For the mozilla-aurora repository, use "aurora".
+-MOZ_BRANDING_DIRECTORY=browser/branding/unofficial
++MOZ_BRANDING_DIRECTORY=browser/branding/goodbear
+ MOZ_OFFICIAL_BRANDING_DIRECTORY=browser/branding/official
+diff --git a/browser/installer/linux/app/debian/changelog.in b/browser/installer/linux/app/debian/changelog.in
+--- a/browser/installer/linux/app/debian/changelog.in
++++ b/browser/installer/linux/app/debian/changelog.in
+@@ -2,4 +2,4 @@
+ 
+   * N/A
+ 
+- -- Mozilla <release@mozilla.com>  ${CHANGELOG_DATE}
++ -- Good Bear Project <valery@ledovskoy.com>  ${CHANGELOG_DATE}
+diff --git a/browser/installer/linux/app/debian/control.in b/browser/installer/linux/app/debian/control.in
+--- a/browser/installer/linux/app/debian/control.in
++++ b/browser/installer/linux/app/debian/control.in
+@@ -1,5 +1,5 @@
+ Source: ${PKG_NAME}
+-Maintainer: Mozilla <release@mozilla.com>
++Maintainer: Good Bear Project <valery@ledovskoy.com>
+ Priority: optional
+ Section: web
+ Build-Depends: debhelper (>= 9)
+diff --git a/browser/installer/linux/app/debian/distribution.ini b/browser/installer/linux/app/debian/distribution.ini
+--- a/browser/installer/linux/app/debian/distribution.ini
++++ b/browser/installer/linux/app/debian/distribution.ini
+@@ -1,7 +1,7 @@
+ [Global]
+-id=mozilla-deb
++id=goodbear-ubuntu
+ version=1.0
+-about=Mozilla Firefox Debian Package
++about=Good Bear Ubuntu Package
+ 
+ [Preferences]
+ intl.locale.requested=""
+diff --git a/browser/installer/linux/app/debian/install.in b/browser/installer/linux/app/debian/install.in
+--- a/browser/installer/linux/app/debian/install.in
++++ b/browser/installer/linux/app/debian/install.in
+@@ -1,2 +1,2 @@
+-firefox/* ${PKG_INSTALL_PATH}
+-debian/${PKG_NAME}.desktop usr/share/applications
++${APP_BINARY_NAME}/* ${PKG_INSTALL_PATH}
++debian/${DESKTOP_FILE_ID} usr/share/applications
+diff --git a/browser/installer/linux/app/debian/links.in b/browser/installer/linux/app/debian/links.in
+--- a/browser/installer/linux/app/debian/links.in
++++ b/browser/installer/linux/app/debian/links.in
+@@ -1,4 +1,4 @@
+-${PKG_INSTALL_PATH}/firefox usr/bin/${PKG_NAME}
++${PKG_INSTALL_PATH}/${APP_BINARY_NAME} usr/bin/${PUBLIC_EXECUTABLE_NAME}
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default16.png usr/share/icons/hicolor/16x16/apps/${PKG_NAME}.png
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default32.png usr/share/icons/hicolor/32x32/apps/${PKG_NAME}.png
+ ${PKG_INSTALL_PATH}/browser/chrome/icons/default/default48.png usr/share/icons/hicolor/48x48/apps/${PKG_NAME}.png
+diff --git a/browser/installer/linux/app/debian/manpage.1.in b/browser/installer/linux/app/debian/manpage.1.in
+--- a/browser/installer/linux/app/debian/manpage.1.in
++++ b/browser/installer/linux/app/debian/manpage.1.in
+@@ -1,12 +1,12 @@
+-.TH ${DISPLAY_NAME} 1 "${MANPAGE_DATE}" ${PKG_NAME} "Linux User's Manual"
++.TH ${DISPLAY_NAME} 1 "${MANPAGE_DATE}" ${PUBLIC_EXECUTABLE_NAME} "Linux User's Manual"
+ .SH NAME
+-${PKG_NAME} - ${DISPLAY_NAME} offers safe and easy web browsing
++${PUBLIC_EXECUTABLE_NAME} - ${DISPLAY_NAME} offers safe and easy web browsing
+ 
+ .SH SYNOPSIS
+-.B ${PKG_NAME}
++.B ${PUBLIC_EXECUTABLE_NAME}
+ [\fIOPTIONS\fR] [\fIURL\fR]
+ 
+-.B /usr/lib/${PKG_NAME}/${PKG_NAME}
++.B /${PKG_INSTALL_PATH}/${APP_BINARY_NAME}
+ [\fIOPTIONS\fR] [\fIURL\fR]
+ 
+ .SH DESCRIPTION
+@@ -14,12 +14,12 @@
+ standards compliance, performance and portability.
+ 
+ .SH USAGE
+-If there is an ${DISPLAY_NAME} browser already running, \fB${PKG_NAME}\fR will
++If there is an ${DISPLAY_NAME} browser already running, \fB${PUBLIC_EXECUTABLE_NAME}\fR will
+ arrange for it to create a new browser window; otherwise it will start
+ a new instance.
+ 
+ .SH OPTIONS
+-A summary of the options supported by \fB${PKG_NAME}\fR is included below.
++A summary of the options supported by \fB${PUBLIC_EXECUTABLE_NAME}\fR is included below.
+ 
+ .SS "X11 options"
+ .TP
+@@ -39,7 +39,7 @@
+ .B \-\-g\-fatal\-warnings
+ Make all warnings fatal
+ 
+-.SS "Mozilla options"
++.SS "Browser options"
+ .TP
+ .B \-h, \-help
+ Show summary of options.
+@@ -87,18 +87,21 @@
+ (the ones that appear at the about:plugins url)
+ 
+ .SH FILES
+-\fI/usr/bin/${PKG_NAME}\fR - symbolic link to \fB/usr/lib/${PKG_NAME}/${PKG_NAME}\fR.
++\fI/usr/bin/${PUBLIC_EXECUTABLE_NAME}\fR - symbolic link to \fB/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\fR.
+ .br
+ 
+-\fI/usr/lib/${PKG_NAME}/${PKG_NAME}\fR - ${DISPLAY_NAME} executable.
++\fI/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\fR - ${DISPLAY_NAME} executable.
+ 
+-\fI/usr/lib/${PKG_NAME}/firefox\-bin\fR - Legacy executable.
++\fI/${PKG_INSTALL_PATH}/${APP_BINARY_NAME}\-bin\fR - Legacy executable.
+ .br
+ 
+ .SH BUGS
+-To report a bug, please visit \fIhttp://bugzilla.mozilla.org/\fR
++For Good Bear support, contact \fIvalery@ledovskoy.com\fR.
+ 
+ .SH AUTHORS
+ .TP
+-.B The Mozilla Organization
+-.I https://www.mozilla.org/en-US/about/
++.B Good Bear Project
++.I Valery Ledovskoy <valery@ledovskoy.com>
++.PP
++Good Bear is an independent browser based on Mozilla Firefox open-source code.
++Good Bear is not affiliated with or endorsed by Mozilla.
+diff --git a/browser/installer/linux/app/debian/manpages.in b/browser/installer/linux/app/debian/manpages.in
+--- a/browser/installer/linux/app/debian/manpages.in
++++ b/browser/installer/linux/app/debian/manpages.in
+@@ -1 +1 @@
+-debian/${PKG_NAME}.1
++debian/${PUBLIC_EXECUTABLE_NAME}.1
+diff --git a/browser/installer/linux/app/debian/postinst.in b/browser/installer/linux/app/debian/postinst.in
+--- a/browser/installer/linux/app/debian/postinst.in
++++ b/browser/installer/linux/app/debian/postinst.in
+@@ -2,14 +2,14 @@
+ 
+ if [ "$$1" = "configure" ] || [ "$$1" = "abort-upgrade" ] || [ "$$1" = "abort-remove" ] ; then
+     update-alternatives --install /usr/bin/gnome-www-browser \
+-        gnome-www-browser /usr/bin/${PKG_NAME} 100 \
++        gnome-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME} 100 \
+         --slave /usr/share/man/man1/gnome-www-browser.1.gz \
+-        gnome-www-browser.1.gz /usr/share/man/man1/${PKG_NAME}.1.gz
++        gnome-www-browser.1.gz /usr/share/man/man1/${PUBLIC_EXECUTABLE_NAME}.1.gz
+ 
+     update-alternatives --install /usr/bin/x-www-browser \
+-        x-www-browser /usr/bin/${PKG_NAME} 100 \
++        x-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME} 100 \
+         --slave /usr/share/man/man1/x-www-browser.1.gz \
+-        x-www-browser.1.gz /usr/share/man/man1/${PKG_NAME}.1.gz
++        x-www-browser.1.gz /usr/share/man/man1/${PUBLIC_EXECUTABLE_NAME}.1.gz
+ fi
+ 
+ # Canonical shipped an AppArmor configuration via that file until 20.04 release
+diff --git a/browser/installer/linux/app/debian/prerm.in b/browser/installer/linux/app/debian/prerm.in
+--- a/browser/installer/linux/app/debian/prerm.in
++++ b/browser/installer/linux/app/debian/prerm.in
+@@ -1,6 +1,6 @@
+ #!/bin/sh -e
+ 
+ if [ "$$1" = "remove" ] || [ "$$1" = "deconfigure" ] ; then
+-    update-alternatives --remove x-www-browser /usr/bin/${PKG_NAME}
+-    update-alternatives --remove gnome-www-browser /usr/bin/${PKG_NAME}
++    update-alternatives --remove x-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME}
++    update-alternatives --remove gnome-www-browser /usr/bin/${PUBLIC_EXECUTABLE_NAME}
+ fi
+diff --git a/browser/installer/windows/Makefile.in b/browser/installer/windows/Makefile.in
+--- a/browser/installer/windows/Makefile.in
++++ b/browser/installer/windows/Makefile.in
+@@ -8,7 +8,7 @@
+ ifeq ($(TARGET_CPU), aarch64)
+ SFX_MODULE = $(topsrcdir)/other-licenses/7zstub/firefox/7zSD.ARM64.sfx
+ else
+-SFX_MODULE = $(topsrcdir)/other-licenses/7zstub/firefox/7zSD.Win32.sfx
++SFX_MODULE = $(topsrcdir)/other-licenses/7zstub/goodbear/7zSD.Win32.sfx
+ endif
+ 
+ INSTALLER_FILES = \
+@@ -47,6 +47,7 @@
+ BRANDING_FILES = \
+ 	branding.nsi \
+ 	firefox64.ico \
++	setup.ico \
+ 	stubinstaller/bgstub.jpg \
+ 	stubinstaller/installing_page.css \
+ 	stubinstaller/profile_cleanup_page.css \
+diff --git a/browser/installer/windows/nsis/installer.nsi b/browser/installer/windows/nsis/installer.nsi
+--- a/browser/installer/windows/nsis/installer.nsi
++++ b/browser/installer/windows/nsis/installer.nsi
+@@ -181,6 +181,22 @@
+ ; override that with GetSysColor(COLOR_WINDOW) (this string ends up getting
+ ; passed to SetCtlColors, which uses this custom syntax to mean that).
+ !define MUI_BGCOLOR SYSCLR:WINDOW
++
++; On current Windows builds the Modern UI page background can leave the
++; navigation buttons visually transparent, even though the underlying Button
++; controls are present and enabled.  Keep the controls native and give them the
++; system button colours used by the rest of the Windows shell.
++!macro EnsureNavigationButtonContrast
++  GetDlgItem $0 $HWNDPARENT 1 ; Next / Finish
++  System::Call 'uxtheme::SetWindowTheme(i $0, w "", w "")'
++  SetCtlColors $0 SYSCLR:BTNTEXT SYSCLR:BTNFACE
++  ShowWindow $0 ${SW_SHOW}
++
++  GetDlgItem $0 $HWNDPARENT 2 ; Cancel
++  System::Call 'uxtheme::SetWindowTheme(i $0, w "", w "")'
++  SetCtlColors $0 SYSCLR:BTNTEXT SYSCLR:BTNFACE
++  ShowWindow $0 ${SW_SHOW}
++!macroend
+ 
+ ; Use a right to left header image when the language is right to left
+ !ifdef ${AB_CD}_rtl
+@@ -1185,6 +1201,7 @@
+   ; We need to overwrite the sidebar image so that we get it drawn with proper
+   ; scaling if the display is scaled at anything above 100%.
+   ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
++  !insertmacro EnsureNavigationButtonContrast
+ FunctionEnd
+ 
+ Function leaveWelcome
+@@ -1534,6 +1551,8 @@
+   ; We need to overwrite the sidebar image so that we get it drawn with proper
+   ; scaling if the display is scaled at anything above 100%.
+   ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
++
++  !insertmacro EnsureNavigationButtonContrast
+ 
+   ; Field 4 is the launch checkbox. Since it's a checkbox, we need to
+   ; clear the theme from it before we can set its background color.
+diff --git a/browser/moz.configure b/browser/moz.configure
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -3,16 +3,20 @@
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ imply_option("MOZ_PLACES", True)
+-imply_option("MOZ_SERVICES_HEALTHREPORT", True)
+-imply_option("MOZ_SERVICES_SYNC", True)
++imply_option("MOZ_SERVICES_HEALTHREPORT", False)
++imply_option("MOZ_SERVICES_SYNC", False)
+ imply_option("MOZ_DEDICATED_PROFILES", True)
+ imply_option("MOZ_BLOCK_PROFILE_DOWNGRADE", True)
+-imply_option("MOZ_NORMANDY", True)
++imply_option("MOZ_NORMANDY", False)
+ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ 
+-imply_option("MOZ_APP_VENDOR", "Mozilla")
++imply_option("MOZ_APP_VENDOR", "Good Bear Project")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
++imply_option("MOZ_APP_PROFILE", "goodbear")
++# Keep the native Firefox compatibility token independent of public branding.
++# The HTTP handler retains upstream version reduction for this product name.
++imply_option("MOZ_APP_UA_NAME", "Firefox")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
+diff --git a/netwerk/test/unit/test_goodbear_user_agent.js b/netwerk/test/unit/test_goodbear_user_agent.js
+new file mode 100644
+--- /dev/null
++++ b/netwerk/test/unit/test_goodbear_user_agent.js
+@@ -0,0 +1,85 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const { AppConstants: UserAgentAppConstants } = ChromeUtils.importESModule(
++  "resource://gre/modules/AppConstants.sys.mjs"
++);
++
++const { HttpServer: UserAgentHttpServer } = ChromeUtils.importESModule(
++  "resource://testing-common/httpd.sys.mjs"
++);
++const USER_AGENT_OVERRIDE_PREF = "general.useragent.override";
++let userAgentServer;
++let userAgentRequestNumber = 0;
++
++add_setup(function setup_user_agent_echo_server() {
++  do_get_profile();
++  Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++  userAgentServer = new UserAgentHttpServer();
++  userAgentServer.registerPathHandler("/user-agent", (request, response) => {
++    response.setHeader("Content-Type", "text/plain", false);
++    response.setHeader("Cache-Control", "no-store", false);
++    response.write(request.getHeader("User-Agent"));
++  });
++  userAgentServer.start(-1);
++  registerCleanupFunction(async () => {
++    Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++    await new Promise(resolve => userAgentServer.stop(resolve));
++  });
++});
++
++function receivedUserAgent() {
++  const channel = NetUtil.newChannel({
++    uri:
++      "http://127.0.0.1:" +
++      userAgentServer.identity.primaryPort +
++      "/user-agent?request=" +
++      ++userAgentRequestNumber,
++    loadUsingSystemPrincipal: true,
++  });
++  return new Promise(resolve => {
++    channel.asyncOpen(
++      new ChannelListener((request, body) => resolve(body), null)
++    );
++  });
++}
++
++function assertFirefoxCompatibilityUserAgent(userAgent) {
++  const majorVersion = UserAgentAppConstants.MOZ_APP_VERSION.match(/^\d+/)[0];
++  Assert.ok(
++    userAgent.endsWith(" Firefox/" + majorVersion + ".0"),
++    "the server receives the upstream reduced Firefox compatibility token"
++  );
++  Assert.ok(
++    !/Good\s*Bear\//i.test(userAgent),
++    "public product branding is absent from the technical User-Agent"
++  );
++}
++
++add_task(
++  async function test_native_http_user_agent_preserves_firefox_compatibility() {
++    Assert.equal(
++      Services.prefs.getPrefType(USER_AGENT_OVERRIDE_PREF),
++      Ci.nsIPrefBranch.PREF_INVALID,
++      "native compatibility must work without a production preference override"
++    );
++    assertFirefoxCompatibilityUserAgent(await receivedUserAgent());
++  }
++);
++
++add_task(
++  async function test_clearing_override_never_restores_goodbear_product_token() {
++    const temporaryOverride = "GoodBear-UA-Regression-Sentinel/0";
++    Services.prefs.setStringPref(USER_AGENT_OVERRIDE_PREF, temporaryOverride);
++    Assert.equal(
++      await receivedUserAgent(),
++      temporaryOverride,
++      "the negative control observes the actual network preference override"
++    );
++    Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++    assertFirefoxCompatibilityUserAgent(await receivedUserAgent());
++  }
++);
+diff --git a/python/mozbuild/mozbuild/action/l10n_repackage.py b/python/mozbuild/mozbuild/action/l10n_repackage.py
+--- a/python/mozbuild/mozbuild/action/l10n_repackage.py
++++ b/python/mozbuild/mozbuild/action/l10n_repackage.py
+@@ -19,10 +19,14 @@
+ from __future__ import annotations
+ 
+ import argparse
++import os
+ import shutil
++import stat
+ import subprocess
+ import sys
++import zipfile
+ from pathlib import Path
++from pathlib import PurePosixPath, PureWindowsPath
+ 
+ import buildconfig
+ from mozpack.packager import l10n as packager_l10n
+@@ -68,7 +72,7 @@
+     is_cocoa = moz_widget_toolkit == "cocoa"
+     is_winnt = os_arch == "WINNT"
+ 
+-    if result := _unpack(mach, l10n_stage, unpack_distdir):
++    if result := _unpack(mach, l10n_stage, unpack_distdir, tar):
+         return result
+ 
+     _do_l10n_repack(stagedist, xpi_stage, extra_l10n, non_resources, minify)
+@@ -127,8 +131,44 @@
+     mach: Path,
+     l10n_stage: Path,
+     distdir: Path,
++    tar: Path,
+ ) -> int:
+     shutil.rmtree(l10n_stage, ignore_errors=True)
++    if base_package := os.environ.get("GOODBEAR_BASE_PACKAGE"):
++        package = Path(base_package)
++        if package.is_symlink() or not package.is_file():
++            print("GOODBEAR_BASE_PACKAGE must name a regular local archive", file=sys.stderr)
++            return 1
++        l10n_stage.mkdir(parents=True, exist_ok=True)
++        # Windows desktop packages are ZIP archives.  The MSYS tar provided by
++        # MozillaBuild cannot unpack ZIPs and also interprets a native `C:`
++        # path as a remote host.  Keep the local base-package path independent
++        # of the host tar implementation.
++        try:
++            with zipfile.ZipFile(package) as archive:
++                stage_root = l10n_stage.resolve()
++                for member in archive.infolist():
++                    posix_path = PurePosixPath(member.filename)
++                    windows_path = PureWindowsPath(member.filename)
++                    if (
++                        posix_path.is_absolute()
++                        or windows_path.is_absolute()
++                        or windows_path.drive
++                        or ".." in posix_path.parts
++                        or ".." in windows_path.parts
++                        or stat.S_ISLNK(member.external_attr >> 16)
++                    ):
++                        raise ValueError(f"unsafe archive member: {member.filename!r}")
++                    target = stage_root.joinpath(*posix_path.parts).resolve()
++                    target.relative_to(stage_root)
++                archive.extractall(l10n_stage)
++        except (OSError, ValueError, zipfile.BadZipFile) as error:
++            print(
++                f"GOODBEAR_BASE_PACKAGE must be a safe ZIP archive: {error}",
++                file=sys.stderr,
++            )
++            return 1
++        return 0
+     result = subprocess.run(
+         [
+             sys.executable,
+@@ -164,6 +204,10 @@
+         non_resources=non_resources,
+         non_chrome=_NON_CHROME,
+         minify=minify,
++        source_locale_fallback=os.environ.get("GOODBEAR_RUSSIAN_ONLY") != "1",
++        # RusSpell is a reviewed opaque distribution XPI, not l10n content.
++        # Keeping source XPIs packed preserves every dictionary member.
++        unpack_xpi=False,
+     )
+ 
+ 
+diff --git a/python/mozbuild/mozbuild/repackaging/utils.py b/python/mozbuild/mozbuild/repackaging/utils.py
+--- a/python/mozbuild/mozbuild/repackaging/utils.py
++++ b/python/mozbuild/mozbuild/repackaging/utils.py
+@@ -91,14 +91,25 @@
+     """
+     Massage the application.ini info and other metadata into a dict suitable for passing into packaging templates
+     """
++    app_binary_name = application_ini_data["remoting_name"].lower()
+     if product == "devedition":
+         pkg_install_path = "usr/lib/firefox-devedition"
+         pkg_name = f"firefox-devedition{package_name_suffix}"
+     else:
+-        pkg_install_path = f"usr/lib/{application_ini_data['remoting_name'].lower()}"
+-        pkg_name = (
+-            f"{application_ini_data['remoting_name'].lower()}{package_name_suffix}"
+-        )
++        pkg_install_path = f"usr/lib/{app_binary_name}"
++        pkg_name = f"{app_binary_name}{package_name_suffix}"
++
++    public_executable_name = pkg_name
++    desktop_file_id = f"{pkg_name}.desktop"
++    if application_ini_data["name"] == "Good Bear":
++        # The public package and desktop IDs are deliberately independent of
++        # Firefox. Keep the shorter remoting name as the actual executable so
++        # existing Gecko single-instance plumbing sees one stable identifier.
++        pkg_name = f"goodbear-browser{package_name_suffix}"
++        public_executable_name = "goodbear"
++        desktop_file_id = "com.ledovskoy.goodbear.desktop"
++        if package_name_suffix:
++            desktop_file_id = f"goodbear-browser{package_name_suffix}.desktop"
+     timestamp = datetime.strptime(application_ini_data["build_id"], "%Y%m%d%H%M%S")
+ 
+     return {
+@@ -114,6 +125,9 @@
+         "ARCH_NAME": arch,
+         "Icon": pkg_name,
+         "REMOTING_NAME": application_ini_data["remoting_name"],
++        "APP_BINARY_NAME": app_binary_name,
++        "PUBLIC_EXECUTABLE_NAME": public_executable_name,
++        "DESKTOP_FILE_ID": desktop_file_id,
+     }
+ 
+ 
+@@ -138,7 +152,7 @@
+     desktop_entry_template_path = mozpath.join(
+         source_dir, f"{build_variables['PRODUCT_NAME'].lower()}.desktop"
+     )
+-    desktop_entry_file_filename = f"{build_variables['PKG_NAME']}.desktop"
++    desktop_entry_file_filename = build_variables["DESKTOP_FILE_ID"]
+ 
+     # Check to see if a .desktop file is already supplied in the templates directory
+     # If not, continue to generate default Firefox .desktop file
+@@ -185,7 +199,7 @@
+ def mv_manpage_files(source_dir, build_variables):
+     src = mozpath.join(source_dir, "manpage.1")
+     if os.path.exists(src):
+-        dst = mozpath.join(source_dir, f"{build_variables['PKG_NAME']}.1")
++        dst = mozpath.join(source_dir, f"{build_variables['PUBLIC_EXECUTABLE_NAME']}.1")
+         shutil.move(src, dst)
+     src = mozpath.join(source_dir, "manpages")
+     if os.path.exists(src):
+diff --git a/python/mozbuild/mozpack/packager/l10n.py b/python/mozbuild/mozpack/packager/l10n.py
+--- a/python/mozbuild/mozpack/packager/l10n.py
++++ b/python/mozbuild/mozpack/packager/l10n.py
+@@ -119,7 +119,14 @@
+ OmniJarFormatter = L10NRepackFormatter(OmniJarFormatter)
+ 
+ 
+-def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
++def _repack(
++    app_finder,
++    l10n_finder,
++    copier,
++    formatter,
++    non_chrome=set(),
++    source_locale_fallback=True,
++):
+     app = LocaleManifestFinder(app_finder)
+     l10n = LocaleManifestFinder(l10n_finder)
+ 
+@@ -187,6 +194,11 @@
+     # package, and localized bits coming from the langpack.
+     packager = SimplePackager(formatter)
+     for p, f in app_finder:
++        if not source_locale_fallback and (
++            p.startswith(f"localization/{locale}/")
++            or f"/localization/{locale}/" in p
++        ):
++            continue
+         if is_manifest(p):
+             # Remove localized manifest entries.
+             for e in [e for e in f if e.localized]:
+@@ -243,10 +255,16 @@
+ 
+     # Resources in `localization` directories are packaged from the source and then
+     # if localized versions are present in the l10n dir, we package them as well
+-    # keeping the source dir resources as a runtime fallback.
+-    for p, f in l10n_finder.find("**/localization"):
+-        if not formatter.contains(p):
+-            formatter.add(p, f)
++    # keeping the source dir resources as a runtime fallback. Downstreams may opt
++    # out when they must ship exactly one localized resource tree.
++    if source_locale_fallback:
++        for p, f in l10n_finder.find("**/localization"):
++            if not formatter.contains(p):
++                formatter.add(p, f)
++    else:
++        for p, f in l10n_finder.find(f"**/localization/{l10n_locale}"):
++            if not formatter.contains(p):
++                formatter.add(p, f)
+ 
+     # Transplant jar preloading information.
+     for path, log in app_finder.jarlogs.items():
+@@ -255,7 +273,14 @@
+ 
+ 
+ def repack(
+-    source, l10n, extra_l10n={}, non_resources=[], non_chrome=set(), minify=False
++    source,
++    l10n,
++    extra_l10n={},
++    non_resources=[],
++    non_chrome=set(),
++    minify=False,
++    source_locale_fallback=True,
++    unpack_xpi=True,
+ ):
+     """
+     Replace localized data from the `source` directory with localized data
+@@ -276,8 +301,10 @@
+     The `non_chrome` argument gives a list of file/directory patterns for
+     localized files that are not listed in a chrome.manifest.
+     If `minify`, `.properties` files are minified.
++    If `unpack_xpi` is false, packed extensions from the source package stay
++    as XPI files instead of being expanded for the repack.
+     """
+-    app_finder = UnpackFinder(source, minify=minify)
++    app_finder = UnpackFinder(source, minify=minify, unpack_xpi=unpack_xpi)
+     l10n_finder = UnpackFinder(l10n, minify=minify)
+     if extra_l10n:
+         finders = {
+@@ -298,6 +325,13 @@
+         )
+ 
+     with errors.accumulate():
+-        _repack(app_finder, l10n_finder, copier, formatter, non_chrome)
++        _repack(
++            app_finder,
++            l10n_finder,
++            copier,
++            formatter,
++            non_chrome,
++            source_locale_fallback,
++        )
+     copier.copy(source, skip_if_older=False)
+     generate_precomplete(source)
+diff --git a/toolkit/locales/gen_multilocale.py b/toolkit/locales/gen_multilocale.py
+--- a/toolkit/locales/gen_multilocale.py
++++ b/toolkit/locales/gen_multilocale.py
+@@ -2,12 +2,13 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
++import os
+ import sys
+ 
+ 
+ def main(output, *locales):
+     locales = list(locales)
+-    if "en-US" not in locales:
++    if "en-US" not in locales and os.environ.get("GOODBEAR_RUSSIAN_ONLY") != "1":
+         locales.append("en-US")
+ 
+     print(",".join(locales), file=output)
+diff --git a/toolkit/locales/l10n.mk b/toolkit/locales/l10n.mk
+--- a/toolkit/locales/l10n.mk
++++ b/toolkit/locales/l10n.mk
+@@ -70,7 +70,17 @@
+ 
+ unpack:
+ 	$(RM) -r -f '$(ABS_DIST)/l10n-stage'
++# Good Bear host builds materialize Firefox from a pinned archive rather than a
++# VCS checkout. For a Russian repack, reuse the just-produced local base
++# package instead of asking `mach artifact install` to resolve a remote VCS
++# artifact. Ordinary Firefox and other downstream repacks retain upstream's
++# artifact-install path.
++ifdef GOODBEAR_BASE_PACKAGE
++	$(NSINSTALL) -D '$(ABS_DIST)/l10n-stage'
++	$(TAR) -xf '$(GOODBEAR_BASE_PACKAGE)' -C '$(ABS_DIST)/l10n-stage'
++else
+ 	$(PYTHON3) $(topsrcdir)/mach --log-no-times artifact install --unfiltered-project-package --distdir '$(ABS_DIST)/l10n-stage/$(MOZ_PKG_DIR)' --verbose
++endif
+ 
+ # The path to the object dir for the mozilla-central build system,
+ # may be overridden if necessary.
+@@ -79,6 +89,7 @@
+ repackage-zip:
+ 	$(PYTHON3) $(MOZILLA_DIR)/toolkit/mozapps/installer/l10n-repack.py '$(STAGEDIST)' $(ABS_DIST)/xpi-stage/locale-$(AB_CD) \
+ 		$(MOZ_PKG_EXTRAL10N) \
++		$(if $(filter 1,$(GOODBEAR_RUSSIAN_ONLY)),--without-source-l10n-fallback) \
+ 		$(if $(MOZ_PACKAGER_MINIFY),--minify) \
+ 		$(if $(filter omni,$(MOZ_PACKAGER_FORMAT)),$(if $(NON_OMNIJAR_FILES),--non-resource $(NON_OMNIJAR_FILES)))
+ 
+diff --git a/toolkit/mozapps/installer/l10n-repack.py b/toolkit/mozapps/installer/l10n-repack.py
+--- a/toolkit/mozapps/installer/l10n-repack.py
++++ b/toolkit/mozapps/installer/l10n-repack.py
+@@ -14,7 +14,9 @@
+ # Set of files or directories not listed in a chrome.manifest but that are
+ # localized.
+ NON_CHROME = set([
+-    "dictionaries",
++    # Preserve built-in en-US. Russian spelling is the exact distribution XPI;
++    # replacing dictionaries from the locale would remove English and add a
++    # competing upstream Russian dictionary during repack.
+     "defaultagent_localized.ini",
+     "defaults/profile",
+     "defaults/pref*/*-l10n.js",
+@@ -58,6 +60,11 @@
+         default=False,
+         help="Make some files more compact while packaging",
+     )
++    parser.add_argument(
++        "--without-source-l10n-fallback",
++        action="store_true",
++        help="do not retain the source locale under localization/",
++    )
+     args = parser.parse_args()
+ 
+     buildconfig.substs["USE_ELF_HACK"] = False
+@@ -69,6 +76,7 @@
+         non_resources=args.non_resource,
+         non_chrome=NON_CHROME,
+         minify=args.minify,
++        source_locale_fallback=not args.without_source_l10n_fallback,
+     )
+ 
+ 
+diff --git a/toolkit/mozapps/installer/packager.mk b/toolkit/mozapps/installer/packager.mk
+--- a/toolkit/mozapps/installer/packager.mk
++++ b/toolkit/mozapps/installer/packager.mk
+@@ -184,7 +184,11 @@
+ 		$(UPLOAD_PATH)
+ 	$(PYTHON3) -u $(MOZILLA_DIR)/build/upload.py --base-path $(ABS_DIST) $(CHECKSUM_FILE)
+ 
++ifeq ($(GOODBEAR_RUSSIAN_ONLY),1)
++ALL_LOCALES = $(LOCALES)
++else
+ ALL_LOCALES = $(if $(filter en-US,$(LOCALES)),$(LOCALES),$(LOCALES) en-US)
++endif
+ 
+ # Firefox uses @RESPATH@.
+ # Fennec uses @BINPATH@ and doesn't have the @RESPATH@ variable defined.
+diff --git a/toolkit/mozapps/installer/windows/nsis/makensis.mk b/toolkit/mozapps/installer/windows/nsis/makensis.mk
+--- a/toolkit/mozapps/installer/windows/nsis/makensis.mk
++++ b/toolkit/mozapps/installer/windows/nsis/makensis.mk
+@@ -27,6 +27,10 @@
+ 	overrides.nsh \
+ 	setup.ico \
+ 	$(NULL)
++
++ifeq ($(MOZ_BRANDING_DIRECTORY),browser/branding/goodbear)
++TOOLKIT_NSIS_FILES := $(filter-out setup.ico,$(TOOLKIT_NSIS_FILES))
++endif
+ 
+ CUSTOM_NSIS_PLUGINS = \
+ 	AccessControl.dll \
+diff --git a/toolkit/mozapps/update/updater/moz.build b/toolkit/mozapps/update/updater/moz.build
+--- a/toolkit/mozapps/update/updater/moz.build
++++ b/toolkit/mozapps/update/updater/moz.build
+@@ -107,7 +107,10 @@
+ dep1_cert.script = "gen_cert_header.py:create_header"
+ dep2_cert.script = "gen_cert_header.py:create_header"
+ 
+-if CONFIG["MOZ_UPDATE_CHANNEL"] in ("beta", "release", "esr"):
++if CONFIG["MOZ_UPDATE_CHANNEL"] == "goodbear":
++    primary_cert.inputs += ["goodbear_mar_primary.der"]
++    secondary_cert.inputs += ["goodbear_mar_backup.der"]
++elif CONFIG["MOZ_UPDATE_CHANNEL"] in ("beta", "release", "esr"):
+     primary_cert.inputs += ["release_primary.der"]
+     secondary_cert.inputs += ["release_secondary.der"]
+ elif CONFIG["MOZ_UPDATE_CHANNEL"] in (

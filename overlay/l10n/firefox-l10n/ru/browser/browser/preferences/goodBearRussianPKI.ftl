@@ -4,9 +4,9 @@
 
 goodbear-russian-pki-settings-header = Российская PKI Good Bear
 goodbear-russian-pki-settings-enable = Включить поддержку Российской PKI
-goodbear-russian-pki-settings-enable-failed = Не удалось изменить поддержку Российской PKI. Состояние настройки не изменилось.
+goodbear-russian-pki-settings-enable-failed = Не удалось завершить изменение поддержки Российской PKI. Флажок показывает сохранённую настройку; эта ошибка не подтверждает, что доступ включён.
 goodbear-russian-pki-settings-enabled-state = Поддержка Российской PKI включена. Доверие Российской PKI ограничено изолированным контейнером Good Bear.
-goodbear-russian-pki-settings-disabled-state = Поддержка Российской PKI выключена. Для назначенных сайтов применяется обычная проверка сертификатов Firefox.
+goodbear-russian-pki-settings-disabled-state = Поддержка Российской PKI выключена. Соединения с утверждённым российским корневым сертификатом заблокированы, даже если ему доверяет операционная система. Остальные сайты с действительными сертификатами доступны.
 goodbear-russian-pki-settings-sites-header = Сайты Российской PKI
 goodbear-russian-pki-settings-sites-description = Это точные HTTPS-origin, сохранённые локально для изолированной маршрутизации. Они не добавляют центр сертификации в общее хранилище доверенных сертификатов браузера.
 goodbear-russian-pki-settings-sites-list =
@@ -20,3 +20,4 @@ goodbear-russian-pki-settings-reset-all-confirm = Очистить всё
 goodbear-russian-pki-settings-reset-failed = Не удалось изменить список назначений. Действующая изоляция сохранена.
 goodbear-russian-pki-settings-credentials-header = Учётные данные
 goodbear-russian-pki-settings-credentials-description = В контейнере Российской PKI сохранение и автозаполнение паролей, адресов и платёжных данных отключены. Учётные данные здесь не отображаются.
+goodbear-russian-pki-settings-unavailable = Настройки защищённого контейнера недоступны. Откройте эту страницу повторно.

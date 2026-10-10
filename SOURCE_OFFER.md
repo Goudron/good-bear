@@ -1,15 +1,15 @@
-# Corresponding source Good Bear 1.0.0
+# Corresponding source Good Bear 1.0.1
 
 Этот репозиторий содержит только исходные изменения Good Bear: упорядоченную
 серию patches, overlay и закреплённые сведения о Firefox. Внутренние планы,
 playbooks, журналы сборок, облачная инфраструктура, учётные данные и build
 outputs в corresponding source не публикуются.
 
-Good Bear основан на Firefox 156.0. Получите точный исходный архив по адресу
-`https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz` и проверьте SHA-256:
+Good Bear основан на Firefox 157.0. Получите точный исходный архив по адресу
+`https://archive.mozilla.org/pub/firefox/releases/157.0/source/firefox-157.0.source.tar.xz` и проверьте SHA-256:
 
 ```text
-1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9  firefox-156.0.source.tar.xz
+259c564dd4bbd56bbe8a9a6cf001fc8812853567fd3a78e77c9ddf10d7d4e982  firefox-157.0.source.tar.xz
 ```
 
 Распакуйте архив, примените patches из `patches/series` строго по порядку с

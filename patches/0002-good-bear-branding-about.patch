@@ -1,0 +1,653 @@
+# Good Bear theme: branding-about
+# Final owner deltas; separate overlays are listed in config/patch-themes.json.
+
+diff --git a/browser/base/content/aboutDialog.js b/browser/base/content/aboutDialog.js
+--- a/browser/base/content/aboutDialog.js
++++ b/browser/base/content/aboutDialog.js
+@@ -46,28 +46,21 @@
+   }
+
+   // Include the build ID and display warning if this is an "a#" (nightly or aurora) build
+-  let versionIdMap = new Map([
+-    ["base", "aboutDialog-version"],
+-    ["base-nightly", "aboutDialog-version-nightly"],
+-    ["base-arch", "aboutdialog-version-arch"],
+-    ["base-arch-nightly", "aboutdialog-version-arch-nightly"],
+-  ]);
+-  let versionIdKey = "base";
+   let versionAttributes = {
+     version: AppConstants.MOZ_APP_VERSION_DISPLAY,
++    goodBearVersion: AppConstants.MOZ_APP_VERSION_DISPLAY,
++    firefoxVersion: Services.appinfo.version,
+   };
+
+   let arch = Services.sysinfo.get("arch");
+   if (["x86", "x86-64"].includes(arch)) {
+     versionAttributes.bits = Services.appinfo.is64Bit ? 64 : 32;
+   } else {
+-    versionIdKey += "-arch";
+     versionAttributes.arch = arch;
+   }
+
+   let version = Services.appinfo.version;
+   if (/a\d+$/.test(version)) {
+-    versionIdKey += "-nightly";
+     let buildID = Services.appinfo.appBuildID;
+     let year = buildID.slice(0, 4);
+     let month = buildID.slice(4, 6);
+@@ -83,7 +76,7 @@
+
+   document.l10n.setAttributes(
+     versionField,
+-    versionIdMap.get(versionIdKey),
++    "goodbear-about-version",
+     versionAttributes
+   );
+
+@@ -119,10 +112,7 @@
+
+   // contributeDescReferrals contains the Share Firefox link, so we
+   // toggle which description based on the referrals config flag
+-  let referralsEnabled = Services.prefs.getBoolPref(
+-    "browser.referrals.enabled",
+-    false
+-  );
++  const referralsEnabled = lazy.Referrals.isEnabled;
+   document.getElementById("contributeDesc").hidden = referralsEnabled;
+   let contributeDescReferrals = document.getElementById(
+     "contributeDescReferrals"
+diff --git a/browser/base/content/aboutDialog.xhtml b/browser/base/content/aboutDialog.xhtml
+--- a/browser/base/content/aboutDialog.xhtml
++++ b/browser/base/content/aboutDialog.xhtml
+@@ -14,7 +14,7 @@
+         data-l10n-id="aboutDialog-title"
+ #endif
+         role="dialog"
+-        aria-describedby="version distribution distributionId communityDesc contributeDesc trademark"
++        aria-describedby="version distribution distributionId communityDesc trademark"
+         >
+ #ifdef XP_MACOSX
+ #include macWindow.inc.xhtml
+@@ -35,6 +35,7 @@
+
+     <html:link rel="localization" href="branding/brand.ftl"/>
+     <html:link rel="localization" href="browser/aboutDialog.ftl"/>
++    <html:link rel="localization" href="browser/goodbearSafeBrowsing.ftl"/>
+   </linkset>
+
+   <html:div id="aboutDialogContainer">
+@@ -49,8 +50,12 @@
+         <!-- This HBOX is duplicated below with class="update" -->
+         <hbox align="baseline">
+           <label id="version"/>
+-          <label id="releasenotes" is="text-link" hidden="true" data-l10n-id="releaseNotes-link"/>
++          <label id="goodbearAuthorHabrLink" is="text-link"
++                 href="https://habr.com/ru/users/Goudron/articles/"
++                 data-l10n-id="goodbear-about-author-habr"/>
+         </hbox>
++        <description id="goodbearUpdateInfo" class="text-blurb"
++                     data-l10n-id="goodbear-about-update-terminal"/>
+ #endif
+
+         <label id="distribution" class="text-blurb"/>
+@@ -100,7 +105,9 @@
+               <!-- This HBOX is duplicated above without class="update" -->
+               <hbox align="baseline">
+                 <label id="version" class="update"/>
+-                <label id="releasenotes" is="text-link" hidden="true" data-l10n-id="releaseNotes-link"/>
++                <label id="goodbearAuthorHabrLink" is="text-link"
++                       href="https://habr.com/ru/users/Goudron/articles/"
++                       data-l10n-id="goodbear-about-author-habr"/>
+               </hbox>
+               <description class="text-blurb">
+                 <label id="aboutDialogHelpLink" is="text-link" data-l10n-id="aboutdialog-help-user"/>
+@@ -124,28 +131,21 @@
+               <label is="text-link" useoriginprincipal="true" href="about:credits" data-l10n-name="community-exp-creditsLink"/>
+             </description>
+           </vbox>
+-          <description class="text-blurb" id="communityDesc" data-l10n-id="community-2">
+-            <label is="text-link" href="https://www.mozilla.org/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="community-mozillaLink"/>
+-            <label is="text-link" useoriginprincipal="true" href="about:credits" data-l10n-name="community-creditsLink"/>
+-          </description>
+-          <description class="text-blurb" id="contributeDesc" data-l10n-id="helpus">
+-            <label is="text-link" href="https://foundation.mozilla.org/?form=firefox-about" data-l10n-name="helpus-donateLink"/>
+-            <label is="text-link" href="https://www.mozilla.org/contribute/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="helpus-getInvolvedLink"/>
+-          </description>
+-          <description class="text-blurb" id="contributeDescReferrals" data-l10n-id="helpus-referrals2" hidden="true">
+-            <label is="text-link" href="https://foundation.mozilla.org/?form=firefox-about" data-l10n-name="helpus-donateLink"/>
+-            <label is="text-link" useoriginprincipal="true" href="about:referrals" data-l10n-name="helpus-shareFirefoxLink"/>
+-            <label is="text-link" href="https://www.mozilla.org/contribute/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-name="helpus-getInvolvedLink"/>
+-          </description>
++          <description class="text-blurb" id="communityDesc" data-l10n-id="goodbear-about-description"></description>
++          <description class="text-blurb" id="contributeDesc" hidden="true"></description>
++          <description class="text-blurb" id="contributeDescReferrals" hidden="true"></description>
+
+         </vbox>
+       </vbox>
+     </hbox>
+     <vbox id="bottomBox">
+       <hbox pack="center">
+-        <label is="text-link" class="bottom-link" useoriginprincipal="true" href="about:license" data-l10n-id="bottomLinks-license"/>
+-        <label is="text-link" class="bottom-link" href="https://www.mozilla.org/about/legal/terms/firefox/" data-l10n-id="bottom-links-terms"/>
+-        <label is="text-link" class="bottom-link" href="https://www.mozilla.org/privacy/firefox/?utm_source=firefox-browser&#38;utm_medium=firefox-desktop&#38;utm_campaign=about-dialog" data-l10n-id="bottom-links-privacy"/>
++        <label is="text-link" class="bottom-link" useoriginprincipal="true" href="about:rights" data-l10n-id="goodbear-legal-title"/>
++      </hbox>
++      <hbox id="goodbearAuthorLinks" pack="center">
++        <label id="goodbearAuthorSupportLink" is="text-link" class="bottom-link" href="https://boosty.to/goodbear" data-l10n-id="goodbear-about-author-support"/>
++        <label id="goodbearAuthorHireLink" is="text-link" class="bottom-link" href="https://hh.ru/resume/08072c72ff0c8e15930039ed1f73616e327262" data-l10n-id="goodbear-about-author-hire"/>
++        <label id="goodbearAuthorProjectsLink" is="text-link" class="bottom-link" href="https://github.com/Goudron" data-l10n-id="goodbear-about-author-projects"/>
+       </hbox>
+       <description id="trademark" data-l10n-id="trademarkInfo"></description>
+     </vbox>
+diff --git a/browser/base/content/goodbearLegal.xhtml b/browser/base/content/goodbearLegal.xhtml
+new file mode 100644
+--- /dev/null
++++ b/browser/base/content/goodbearLegal.xhtml
+@@ -0,0 +1,32 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++<!DOCTYPE html>
++<html xmlns="http://www.w3.org/1999/xhtml">
++  <head>
++    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src chrome: 'unsafe-inline'" />
++    <meta name="color-scheme" content="light dark" />
++    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
++    <link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
++    <title data-l10n-id="goodbear-legal-title"></title>
++  </head>
++  <body style="max-width: 52em; margin: 2em auto; padding: 0 1.5em">
++    <h1 data-l10n-id="goodbear-legal-title"></h1>
++    <p data-l10n-id="goodbear-legal-product"></p>
++    <p data-l10n-id="goodbear-legal-mozilla"></p>
++    <p><a href="about:license" data-l10n-id="goodbear-legal-licenses"></a></p>
++    <section id="privacy">
++      <h2 data-l10n-id="goodbear-safebrowsing-notice-title"></h2>
++      <p data-l10n-id="goodbear-safebrowsing-attribution"></p>
++      <p data-l10n-id="goodbear-safebrowsing-reliability"></p>
++      <p data-l10n-id="goodbear-safebrowsing-url-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-download-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-connection-data"></p>
++      <p data-l10n-id="goodbear-safebrowsing-settings"></p>
++      <p><a href="https://developers.google.com/safe-browsing/v4/advisory" data-l10n-id="goodbear-safebrowsing-advisory-link"></a></p>
++      <p><a href="https://developers.google.com/safe-browsing/terms" data-l10n-id="goodbear-safebrowsing-terms-link"></a></p>
++      <p><a href="https://policies.google.com/privacy" data-l10n-id="goodbear-safebrowsing-privacy-link"></a></p>
++    </section>
++  </body>
++</html>
+diff --git a/browser/base/jar.mn b/browser/base/jar.mn
+index 783c67d..b2d0212 100644
+--- a/browser/base/jar.mn
++++ b/browser/base/jar.mn
+@@ -58,7 +58,9 @@ browser.jar:
+         content/browser/browser-siteIdentity.js             (content/browser-siteIdentity.js)
+         content/browser/browser-sitePermissionPanel.js      (content/browser-sitePermissionPanel.js)
+         content/browser/browser-siteProtections.js          (content/browser-siteProtections.js)
++#ifdef MOZ_SERVICES_SYNC
+         content/browser/browser-sync.js                     (content/browser-sync.js)
++#endif
+         content/browser/browser-customtitlebar.js           (content/browser-customtitlebar.js)
+         content/browser/browser-toolbarKeyNav.js            (content/browser-toolbarKeyNav.js)
+         content/browser/browser-thumbnails.js               (content/browser-thumbnails.js)
+@@ -67,6 +69,8 @@ browser.jar:
+         content/browser/browser-graphics-utils.js           (content/browser-graphics-utils.js)
+         content/browser/browser-webrtc.js                   (content/browser-webrtc.js)
+         content/browser/global-scripts.js                   (content/global-scripts.js)
++        content/browser/goodbearRussianPKIInterstitial.xhtml (content/goodbearRussianPKIInterstitial.xhtml)
++        content/browser/goodbearRussianPKIInterstitial.js (content/goodbearRussianPKIInterstitial.js)
+         content/browser/main-popupset.js                    (content/main-popupset.js)
+ *       content/browser/pageinfo/pageInfo.xhtml             (content/pageinfo/pageInfo.xhtml)
+         content/browser/pageinfo/pageInfo.js                (content/pageinfo/pageInfo.js)
+@@ -78,6 +82,9 @@ browser.jar:
+         content/browser/safeMode.css                        (content/safeMode.css)
+         content/browser/safeMode.js                         (content/safeMode.js)
+         content/browser/safeMode.xhtml                      (content/safeMode.xhtml)
++        content/browser/goodbearSafeBrowsingNotice.xhtml     (content/goodbearSafeBrowsingNotice.xhtml)
++        content/browser/goodbearSafeBrowsingNotice.js        (content/goodbearSafeBrowsingNotice.js)
++        content/browser/goodbearLegal.xhtml                  (content/goodbearLegal.xhtml)
+         content/browser/sanitize_v2.xhtml                   (content/sanitize_v2.xhtml)
+         content/browser/sanitizeDialog.js                   (content/sanitizeDialog.js)
+         content/browser/utilityOverlay.js                   (content/utilityOverlay.js)
+diff --git a/browser/branding/branding-common.mozbuild b/browser/branding/branding-common.mozbuild
+--- a/browser/branding/branding-common.mozbuild
++++ b/browser/branding/branding-common.mozbuild
+@@ -25,6 +25,17 @@
+             "VisualElements_150.png",
+             "VisualElements_70.png",
+         ]
++    elif CONFIG["MOZ_BRANDING_DIRECTORY"] == "browser/branding/goodbear":
++        # Good Bear 1.0 ships on Ubuntu only. Keep every approved public icon
++        # size explicit in this build owner so an omitted size cannot silently
++        # fall back to an upstream placeholder or product mark.
++        FINAL_TARGET_FILES.chrome.icons.default += [
++            "default128.png",
++            "default16.png",
++            "default32.png",
++            "default48.png",
++            "default64.png",
++        ]
+     elif CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+         FINAL_TARGET_FILES.chrome.icons.default += [
+             "default128.png",
+diff --git a/browser/components/about/AboutRedirector.cpp b/browser/components/about/AboutRedirector.cpp
+--- a/browser/components/about/AboutRedirector.cpp
++++ b/browser/components/about/AboutRedirector.cpp
+@@ -18,7 +18,6 @@
+ #include "mozilla/browser/NimbusFeatures.h"
+
+ #define AITAB_ENABLED_PREF "browser.smartwindow.aitab.enabled"
+-#define REFERRALS_ENABLED_PREF "browser.referrals.enabled"
+ #define PROFILES_ENABLED_PREF "browser.profiles.enabled"
+ #define ABOUT_WELCOME_CHROME_URL \
+   "chrome://browser/content/aboutwelcome/aboutwelcome.html"
+@@ -124,13 +123,13 @@
+      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+          nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+-    {"referrals", "https://www.firefox.com/invite/",
++    {"referrals", "about:blank",
+      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+          nsIAboutModule::URI_MUST_LOAD_IN_CHILD |
+          nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+     {"restartrequired", "chrome://browser/content/aboutRestartRequired.xhtml",
+      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
+-    {"rights", "https://www.mozilla.org/about/legal/terms/firefox/",
++    {"rights", "chrome://browser/content/goodbearLegal.xhtml",
+      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
+          nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
+     {"robots", "chrome://browser/content/aboutRobots.xhtml",
+@@ -227,8 +226,7 @@
+     return NS_ERROR_NOT_AVAILABLE;
+   }
+
+-  if (path.EqualsASCII("referrals") &&
+-      !mozilla::Preferences::GetBool(REFERRALS_ENABLED_PREF, false)) {
++  if (path.EqualsASCII("referrals")) {
+     return NS_ERROR_NOT_AVAILABLE;
+   }
+
+@@ -261,15 +259,6 @@
+         }
+       }
+
+-      if (path.EqualsLiteral("referrals")) {
+-        nsAutoCString query;
+-        if (nsresult rv = aURI->GetQuery(query); NS_SUCCEEDED(rv)) {
+-          url.AssignASCII(nsPrintfCString("%s?%s", redir.url, query.get()));
+-        } else {
+-          url.AssignASCII(redir.url);
+-        }
+-      }
+-
+       // fall back to the specified url in the map
+       if (url.IsEmpty()) {
+         url.AssignASCII(redir.url);
+diff --git a/browser/components/aboutwelcome/jar.mn b/browser/components/aboutwelcome/jar.mn
+--- a/browser/components/aboutwelcome/jar.mn
++++ b/browser/components/aboutwelcome/jar.mn
+@@ -14,9 +14,10 @@
+   content/activity-stream/data/content/assets/confetti.svg                                  (./assets/confetti.svg)
+   content/activity-stream/data/content/assets/euo-chatbot.svg                               (./assets/euo-chatbot.svg)
+   content/activity-stream/data/content/assets/euo-tab-orientation.svg                       (./assets/euo-tab-orientation.svg)
+-  content/activity-stream/data/content/assets/fox-doodle-tail.png                           (./assets/fox-doodle-tail.png)
+-  content/activity-stream/data/content/assets/fox-doodle-waving.gif                         (./assets/fox-doodle-waving.gif)
+-  content/activity-stream/data/content/assets/fox-doodle-waving-static.png                  (./assets/fox-doodle-waving-static.png)
++  content/activity-stream/data/content/assets/goodbear-doodle-waving.gif                    (./assets/goodbear-doodle-waving.gif)
++  content/activity-stream/data/content/assets/goodbear-doodle-waving-static.png             (./assets/goodbear-doodle-waving-static.png)
++  content/activity-stream/data/content/assets/goodbear-welcome.png                          (./assets/goodbear-welcome.png)
++  content/activity-stream/data/content/assets/goodbear-thinking-setup.png                   (./assets/goodbear-thinking-setup.png)
+   content/activity-stream/data/content/assets/heart.webp                                    (./assets/heart.webp)
+   content/activity-stream/data/content/assets/long-zap.svg                                  (./assets/long-zap.svg)
+   content/activity-stream/data/content/assets/mobile-download-qr-existing-user.svg          (./assets/mobile-download-qr-existing-user.svg)
+@@ -37,17 +38,13 @@
+   content/activity-stream/data/content/assets/tabs-side-zap-transparent.svg                 (./assets/tabs-side-zap-transparent.svg)
+   content/activity-stream/data/content/assets/tabs-top-zap-transparent.svg                  (./assets/tabs-top-zap-transparent.svg)
+   content/activity-stream/data/content/assets/nuo-taborientation.svg                        (./assets/nuo-taborientation.svg)
+-  content/activity-stream/data/content/assets/fox-doodle-backup-restore.svg                 (./assets/fox-doodle-backup-restore.svg)
+-  content/activity-stream/data/content/assets/br-set-default-fox-heart.svg                  (./assets/br-set-default-fox-heart.svg)
+-  content/activity-stream/data/content/assets/br-import-fox-house.svg                       (./assets/br-import-fox-house.svg)
+-  content/activity-stream/data/content/assets/br-fxa-fox-mirror.svg                         (./assets/br-fxa-fox-mirror.svg)
+-  content/activity-stream/data/content/assets/br-amo-fox-paint.svg                          (./assets/br-amo-fox-paint.svg)
+-  content/activity-stream/data/content/assets/br-gratitude-fox-rock.svg                     (./assets/br-gratitude-fox-rock.svg)
+-  content/activity-stream/data/content/assets/splash-logo.svg                               (./assets/splash-logo.svg)
+-  content/activity-stream/data/content/assets/splash-screen.webm                             (./assets/splash-screen.webm)
+-  content/activity-stream/data/content/assets/br-migration-fox-juggle.svg                   (./assets/br-migration-fox-juggle.svg)
+-  content/activity-stream/data/content/assets/br-backup-fox-in-box.svg                      (./assets/br-backup-fox-in-box.svg)
+-  content/activity-stream/data/content/assets/br-backup-fox-outside-box.svg                 (./assets/br-backup-fox-outside-box.svg)
++  content/activity-stream/data/content/assets/goodbear-generic-error.png                    (./assets/goodbear-generic-error.png)
++  content/activity-stream/data/content/assets/goodbear-success.png                          (./assets/goodbear-success.png)
++  content/activity-stream/data/content/assets/goodbear-import-setup.png                     (./assets/goodbear-import-setup.png)
++  content/activity-stream/data/content/assets/goodbear-devices-sync.png                     (./assets/goodbear-devices-sync.png)
++  content/activity-stream/data/content/assets/goodbear-gratitude.png                        (./assets/goodbear-gratitude.png)
++  content/activity-stream/data/content/assets/goodbear-backup-restore.png                   (./assets/goodbear-backup-restore.png)
++  content/activity-stream/data/content/assets/goodbear-empty-state.png                      (./assets/goodbear-empty-state.png)
+   content/activity-stream/data/content/assets/backdrop-adaptive.svg                         (./assets/backdrop-adaptive.svg)
+   content/activity-stream/data/content/assets/kit-sit-look-up.svg                           (./assets/kit-sit-look-up.svg)
+   content/activity-stream/data/content/assets/pic-cursor.svg                                (./assets/pic-cursor.svg)
+diff --git a/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs b/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
+--- a/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
++++ b/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
+@@ -64,7 +64,7 @@
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -123,7 +123,7 @@
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -150,7 +150,7 @@
+           string_id: "onboarding-device-migration-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-migration-fox-juggle.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -376,7 +376,7 @@
+           string_id: "mr2022-onboarding-default-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-set-default-fox-heart.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-success.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         logo: {},
+@@ -491,7 +491,7 @@
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -571,7 +571,7 @@
+           string_id: "onboarding-refresh-import-subtitle",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-import-fox-house.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-import-setup.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         migrate_start: {
+@@ -668,7 +668,7 @@
+         fullscreen: true,
+         split_narrow_bkg_position: "-58px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-amo-fox-paint.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-thinking-setup.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -725,7 +725,7 @@
+           string_id: "mr2022-onboarding-gratitude-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-gratitude-fox-rock.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-gratitude.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -755,7 +755,7 @@
+           string_id: "mr2022-onboarding-gratitude-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-fxa-fox-mirror.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+diff --git a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
+--- a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
++++ b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
+@@ -1297,7 +1297,7 @@
+         data: [
+           {
+             icon: {
+-              background: `center / contain no-repeat url("chrome://activity-stream/content/data/content/assets/fox-doodle-waving.gif")`,
++              background: `center / contain no-repeat url("chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif")`,
+               width: "150px",
+               height: "100px",
+               marginInline: "10px",
+@@ -1358,7 +1358,7 @@
+     // Expected styles:
+     {
+       "background-image":
+-        'url("chrome://activity-stream/content/data/content/assets/fox-doodle-waving.gif")',
++        'url("chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif")',
+       "background-repeat": "no-repeat",
+       "background-size": "contain",
+       width: "150px",
+diff --git a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
+--- a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
++++ b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
+@@ -168,7 +168,7 @@
+         position: "split",
+         split_narrow_bkg_position: "-228px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-gratitude-fox-rock.svg') var(--mr-secondary-position) no-repeat, var(--mr-screen-background-color)",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-gratitude.png') var(--mr-secondary-position) no-repeat, var(--mr-screen-background-color)",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -847,7 +847,7 @@
+         position: "split",
+         split_narrow_bkg_position: "-228px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-fxa-fox-mirror.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+diff --git a/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs b/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
+--- a/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
++++ b/browser/components/asrouter/modules/OnboardingMessageProvider.sys.mjs
+@@ -3151,7 +3151,9 @@
+           },
+           logo: {
+             imageURL:
+-              "chrome://activity-stream/content/data/content/assets/splash-logo.svg",
++              "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif",
++            reducedMotionImageURL:
++              "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving-static.png",
+             height: "500px",
+             width: "500px",
+             style: {
+diff --git a/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js b/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
+--- a/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
++++ b/browser/components/asrouter/tests/xpcshell/test_PreonboardingSplash.js
+@@ -32,6 +32,10 @@
+ const SPLASH_SHOWN_PREF = "browser.preonboarding.splashShown";
+ const ABOUT_WELCOME_ENABLED_PREF = "browser.aboutwelcome.enabled";
+ const WELCOME_URL_PREF = "startup.homepage_welcome_url";
++const GOOD_BEAR_SPLASH_ANIMATION_URL =
++  "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif";
++const GOOD_BEAR_SPLASH_STATIC_URL =
++  "chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving-static.png";
+
+ add_setup(async function () {
+   do_get_profile();
+@@ -292,6 +296,20 @@
+     "the single screen is the loading screen (TOU acceptance excluded)"
+   );
+   Assert.equal(
++    content.screens[0].content.logo.imageURL,
++    GOOD_BEAR_SPLASH_ANIMATION_URL,
++    "the first-run splash shows the Good Bear animation"
++  );
++  Assert.equal(
++    content.screens[0].content.logo.reducedMotionImageURL,
++    GOOD_BEAR_SPLASH_STATIC_URL,
++    "reduced motion uses the approved static Good Bear frame"
++  );
++  Assert.ok(
++    !content.screens[0].content.logo.videoURL,
++    "the Good Bear animation is not replaced with upstream Firefox video"
++  );
++  Assert.equal(
+     content.disableEscClose,
+     false,
+     "the splash does not disable Esc-to-close"
+diff --git a/browser/locales/en-US/browser/aboutDialog.ftl b/browser/locales/en-US/browser/aboutDialog.ftl
+--- a/browser/locales/en-US/browser/aboutDialog.ftl
++++ b/browser/locales/en-US/browser/aboutDialog.ftl
+@@ -93,6 +93,7 @@
+ #   $version (String): version of Firefox, e.g. 66.0.1
+ #   $bits (Number): bits of the architecture (32 or 64)
+ aboutDialog-version = { $version } ({ $bits }-bit)
++goodbear-about-version = Good Bear { $goodBearVersion } (Firefox { $firefoxVersion })
+
+ # Example of resulting string: 66.0a1 (2019-01-16) (64-bit)
+ # Variables:
+diff --git a/browser/themes/shared/customizableui/panelUI-shared.css b/browser/themes/shared/customizableui/panelUI-shared.css
+--- a/browser/themes/shared/customizableui/panelUI-shared.css
++++ b/browser/themes/shared/customizableui/panelUI-shared.css
+@@ -1234,16 +1234,17 @@
+   }
+
+   /**
+-   * Similar to the above for the fox variant of the icon, we only want to show
++   * For the legacy experimental avatar variant, show the selected Good Bear
++   * artwork instead of shipping the Firefox fox asset. We only want to show
+    * the cutout variant if we're showing the glowing badge.
+    */
+   &[fxastatus="not_configured"][fxa-avatar-icon-variant="fox-circle"] {
+     #fxa-toolbar-menu-button {
+-      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox-circle.svg);
++      --avatar-image-url: url(chrome://browser/skin/fxa/goodbear-avatar-circle.png);
+     }
+
+     #fxa-toolbar-menu-button[showing-callout] {
+-      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox.svg);
++      --avatar-image-url: url(chrome://browser/skin/fxa/goodbear-avatar.png);
+     }
+   }
+
+diff --git a/browser/themes/shared/jar.inc.mn b/browser/themes/shared/jar.inc.mn
+--- a/browser/themes/shared/jar.inc.mn
++++ b/browser/themes/shared/jar.inc.mn
+@@ -196,8 +196,8 @@
+   skin/classic/browser/fxa/avatar-color.svg                    (../shared/fxa/avatar-color.svg)
+   skin/classic/browser/fxa/avatar-empty.svg                    (../shared/fxa/avatar-empty.svg)
+   skin/classic/browser/fxa/avatar-empty-circle.svg             (../shared/fxa/avatar-empty-circle.svg)
+-  skin/classic/browser/fxa/avatar-fox.svg                      (../shared/fxa/avatar-fox.svg)
+-  skin/classic/browser/fxa/avatar-fox-circle.svg               (../shared/fxa/avatar-fox-circle.svg)
++  skin/classic/browser/fxa/goodbear-avatar.png                 (../shared/fxa/goodbear-avatar.png)
++  skin/classic/browser/fxa/goodbear-avatar-circle.png          (../shared/fxa/goodbear-avatar-circle.png)
+   skin/classic/browser/fxa/circle.svg                          (../shared/fxa/circle.svg)
+   skin/classic/browser/fxa/sync-devices.svg                    (../shared/fxa/sync-devices.svg)
+   skin/classic/browser/fxa/send.svg                            (../shared/fxa/send.svg)
+@@ -339,7 +339,7 @@
+   skin/classic/browser/places/tree-icons.css                   (../shared/places/tree-icons.css)
+   skin/classic/browser/privatebrowsing/aboutPrivateBrowsing.css (../shared/privatebrowsing/aboutPrivateBrowsing.css)
+   skin/classic/browser/privatebrowsing/favicon.svg             (../shared/privatebrowsing/favicon.svg)
+-  skin/classic/browser/privatebrowsing/fox-tail.svg            (../shared/privatebrowsing/fox-tail.svg)
++  skin/classic/browser/privatebrowsing/goodbear-private-browsing.png (../shared/privatebrowsing/goodbear-private-browsing.png)
+   skin/classic/browser/privatebrowsing/pbm-logo.svg            (../shared/privatebrowsing/pbm-logo.svg)
+
+   skin/classic/browser/syncedtabs/sidebar.css                  (../shared/syncedtabs/sidebar.css)
+diff --git a/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css b/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
+--- a/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
++++ b/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
+@@ -483,7 +483,7 @@
+       content: "";
+       position: fixed;
+       inset: 0;
+-      background: url("chrome://browser/skin/privatebrowsing/fox-tail.svg") no-repeat bottom right / cover;
++      background: url("chrome://browser/skin/privatebrowsing/goodbear-private-browsing.png") no-repeat bottom right / cover;
+       pointer-events: none;
+       z-index: -1;
+     }
+diff --git a/toolkit/content/errors/net-error-illustrations.mjs b/toolkit/content/errors/net-error-illustrations.mjs
+--- a/toolkit/content/errors/net-error-illustrations.mjs
++++ b/toolkit/content/errors/net-error-illustrations.mjs
+@@ -4,10 +4,11 @@
+
+ export const NET_ERROR_ILLUSTRATIONS = {
+   noConnection: {
+-    src: "chrome://global/skin/illustrations/no-connection.svg",
+-    className: "no-connection",
++    src: "chrome://global/skin/illustrations/goodbear-no-connection.png",
++    className: "goodbear-error-illustration no-connection",
+   },
+   securityError: {
+-    src: "chrome://global/skin/illustrations/security-error.svg",
++    src: "chrome://global/skin/illustrations/goodbear-security-error.png",
++    className: "goodbear-error-illustration",
+   },
+ };
+diff --git a/toolkit/themes/shared/aboutNetError.css b/toolkit/themes/shared/aboutNetError.css
+--- a/toolkit/themes/shared/aboutNetError.css
++++ b/toolkit/themes/shared/aboutNetError.css
+@@ -267,6 +267,16 @@
+     display: flex;
+     flex-direction: row;
+
++    > .img-container {
++      /*
++       * Good Bear artwork is strictly decorative. Keep it in this reserved
++       * flex item so it cannot cover the title, warning icon, controls, or
++       * certificate details in the adjacent content column.
++       */
++      flex: 0 0 auto;
++      pointer-events: none;
++    }
++
+     > .container {
+       width: 100%;
+     }
+@@ -278,13 +288,23 @@
+     }
+   }
+
+-  .img-container > img {
+-    width: 8.75em;
++  .img-container > img.goodbear-error-illustration {
++    box-sizing: border-box;
++    display: block;
++    inline-size: min(8.75em, 20vw);
++    block-size: min(8.75em, 20vw);
++    max-inline-size: 8.75em;
++    max-block-size: 8.75em;
+     margin-block-start: 2em;
+     margin-inline-end: 2.5em;
++    object-fit: contain;
++    object-position: center;
+
+     &.no-connection {
+-      width: 13em;
++      inline-size: min(13em, 24vw);
++      block-size: min(13em, 24vw);
++      max-inline-size: 13em;
++      max-block-size: 13em;
+     }
+
+     @media (max-width: 640px) {
+diff --git a/toolkit/themes/shared/desktop-jar.inc.mn b/toolkit/themes/shared/desktop-jar.inc.mn
+--- a/toolkit/themes/shared/desktop-jar.inc.mn
++++ b/toolkit/themes/shared/desktop-jar.inc.mn
+@@ -149,10 +149,10 @@
+   skin/classic/global/icons/shaft-arrow-right.svg          (../../shared/icons/shaft-arrow-right.svg)
+   skin/classic/global/icons/warning-fill-12.svg            (../../shared/icons/warning-fill-12.svg)
+   skin/classic/global/illustrations/about-license.svg      (../../shared/illustrations/about-license.svg)
+-  skin/classic/global/illustrations/security-error.svg     (../../shared/illustrations/security-error.svg)
++  skin/classic/global/illustrations/goodbear-security-error.png (../../shared/illustrations/goodbear-security-error.png)
+   skin/classic/global/illustrations/shield-check.svg       (../../shared/illustrations/shield-check.svg)
+   skin/classic/global/illustrations/shield-alert.svg       (../../shared/illustrations/shield-alert.svg)
+-  skin/classic/global/illustrations/no-connection.svg      (../../shared/illustrations/no-connection.svg)
++  skin/classic/global/illustrations/goodbear-no-connection.png (../../shared/illustrations/goodbear-no-connection.png)
+   skin/classic/global/illustrations/kit-concerned.svg      (../../shared/illustrations/kit-concerned.svg)
+   skin/classic/global/illustrations/kit-confetti.svg       (../../shared/illustrations/kit-confetti.svg)
+   skin/classic/global/illustrations/kit-happy.svg	   (../../shared/illustrations/kit-happy.svg)

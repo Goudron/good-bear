@@ -1,26 +1,29 @@
-# Good Bear 1.0
+# Good Bear 1.0.1
 
-## Скачать Good Bear 1.0
+## Выпуск 1.0.1
 
-Ниже указаны versioned-ссылки на неизменяемый релиз Good Bear 1.0. Проверяйте,
-что имя скачанного файла и SHA-256 совпадают с приведёнными ниже.
+Good Bear 1.0.1 опубликован в GitHub Releases. Это неизменяемый выпуск на
+основе Firefox 157.0 для Ubuntu 24.04 LTS amd64 и Windows x64.
+Подробный список изменений приведён в [`CHANGELOG.md`](CHANGELOG.md).
 
-* [Ubuntu 24.04 LTS amd64, `.deb`](https://github.com/Goudron/good-bear/releases/download/v1.0.0/goodbear-browser_1.0%2Bfirefox156.0-1_amd64.deb) — unsigned
-* [Windows x64 installer `.exe`](https://github.com/Goudron/good-bear/releases/download/v1.0.0/GoodBear.Setup.1.0%2Bfirefox156.0.x64.ru.exe) — unsigned
-* [SHA256SUMS](https://github.com/Goudron/good-bear/releases/download/v1.0.0/SHA256SUMS)
-* [SBOM CycloneDX](https://github.com/Goudron/good-bear/releases/download/v1.0.0/sbom.cdx.json)
-* [Provenance](https://github.com/Goudron/good-bear/releases/download/v1.0.0/provenance.intoto.json)
-* [Notices](https://github.com/Goudron/good-bear/releases/download/v1.0.0/notices.json)
-* [Описание corresponding source](https://github.com/Goudron/good-bear/releases/download/v1.0.0/source-offer.json) и [исходные материалы](https://github.com/Goudron/good-bear/blob/v1.0.0/SOURCE_OFFER.md)
+## Загрузка
+
+Используйте versioned-ссылки неизменяемого релиза Good Bear 1.0.1. Проверяйте,
+что имя скачанного файла и SHA-256 совпадают с опубликованным `SHA256SUMS`.
+
+* [Ubuntu 24.04 LTS amd64, `.deb`](https://github.com/Goudron/good-bear/releases/download/v1.0.1/goodbear-browser_1.0.1%2Bfirefox157.0-2_amd64.deb) — unsigned
+* [Windows x64 installer `.exe`](https://github.com/Goudron/good-bear/releases/download/v1.0.1/GoodBear.Setup.1.0.1%2Bfirefox157.0.x64.ru.exe) — unsigned
+* [SHA256SUMS](https://github.com/Goudron/good-bear/releases/download/v1.0.1/SHA256SUMS)
+* [SBOM CycloneDX](https://github.com/Goudron/good-bear/releases/download/v1.0.1/sbom.cdx.json)
+* [Provenance](https://github.com/Goudron/good-bear/releases/download/v1.0.1/provenance.intoto.json)
+* [Notices](https://github.com/Goudron/good-bear/releases/download/v1.0.1/notices.json)
+* [Описание соответствующих исходных материалов](https://github.com/Goudron/good-bear/releases/download/v1.0.1/source-offer.json) и [исходные материалы](https://github.com/Goudron/good-bear/blob/v1.0.1/SOURCE_OFFER.md)
+* [Архив corresponding source](https://github.com/Goudron/good-bear/releases/download/v1.0.1/good-bear-1.0.1-source-offer.tar.gz)
 
 ### SHA-256
 
-Проверяйте имя скачанного файла и его хеш до установки:
-
-```text
-a738b9b556c90da7a1ccb601cab5a5c2e6b6dbd050046a0dbcf7dba50c02d7d0  goodbear-browser_1.0+firefox156.0-1_amd64.deb
-d9f67c12680758f8d39143ef2acbd6a602b193d2d2418fa183c5c334107d77c2  GoodBear.Setup.1.0+firefox156.0.x64.ru.exe
-```
+Перед установкой проверяйте имя скачанного файла и его хеш по файлу
+[`SHA256SUMS`](https://github.com/Goudron/good-bear/releases/download/v1.0.1/SHA256SUMS).
 
 ## Что такое Good Bear
 
@@ -34,7 +37,9 @@ Good Bear — русскоязычный браузер для безопасн�
 подход «добавить корень в систему или браузер» дал бы ему право подтверждать
 подлинность любого сайта. Good Bear решает именно эту задачу иначе. Точно
 закреплённая российская PKI действует только внутри отдельного встроенного
-контейнера и только для сайтов, к которым применима политика Good Bear.
+контейнера и только для сайтов, к которым применима политика Good Bear. Это
+правило сохраняется, когда такой корень уже принят системным или профильным
+хранилищем доверия.
 
 Практические преимущества Good Bear:
 
@@ -42,7 +47,8 @@ Good Bear — русскоязычный браузер для безопасн�
   доверия к их корневому сертификату;
 * состояние контейнера изолировано: cookies, пароли, localStorage, кэш,
   service workers, HTTP-аутентификация, клиентские сертификаты и соединения не
-  смешиваются с обычным браузерным контекстом;
+  смешиваются с обычным браузерным контекстом; контейнер Russian PKI использует
+  отдельную постоянную зашифрованную базу паролей;
 * стандартная X.509-проверка Firefox сохраняется: проверяются имя хоста, срок,
   цепочка, подписи и назначение сертификата; Good Bear не добавляет
   универсальных исключений и не доверяет сертификатам по их названию;
@@ -51,7 +57,7 @@ Good Bear — русскоязычный браузер для безопасн�
 * русские индикаторы контейнера и PKI делают особый контекст заметным, а не
   маскируют его под обычное соединение.
 
-Версия продукта — 1.0; база браузера — Firefox 156.0. В поставке используется
+Версия продукта — 1.0.1; база браузера — Firefox 157.0. В поставке используется
 только локаль `ru`. Дистрибутивы этого релиза намеренно unsigned: ключ подписи,
 MAR, сервер обновлений и автоматическое обновление не заявляются.
 
@@ -72,26 +78,31 @@ Public License 2.0 (MPL 2.0)**. Соответствующие исходные 
 
 ## Отличия от Firefox
 
-Good Bear основан на Firefox 156.0, но в релизе 1.0:
+Good Bear основан на Firefox 157.0, но в релизе 1.0.1:
 
 * используется отдельная идентичность Good Bear, собственное имя профиля и
   русскоязычная поставка;
+* интерфейс Good Bear адаптирован к Nova;
 * сайты, для которых это предусмотрено политикой Good Bear, направляются в
   отдельный встроенный контейнер; российская PKI применяется только внутри
-  этого контейнера;
+  этого контейнера, в том числе при доверии к российскому корню со стороны ОС;
 * добавлены проверенные русские индикаторы контейнера и состояния доверия, а
   обычная проверка сертификатов сохраняет приоритет;
-* русская проверка орфографии использует словарь связанного проекта
-  [RusSpell Lab](https://github.com/Goudron/ru-spelling-dictionary); это его
-  канонический публичный репозиторий и источник словаря;
+* русский словарь RusSpell обновлён до версии 1.0.9. Его канонический публичный
+  репозиторий — [RusSpell Lab](https://github.com/Goudron/ru-spelling-dictionary);
+* контейнер Russian PKI использует отдельную зашифрованную базу паролей с
+  сохранением, автозаполнением и явным CSV import/export;
+* восстановление сессии готовит управляемый контейнер до возобновления вкладок;
+* первый запуск корректно обрабатывает уведомление Safe Browsing и параметры
+  Ubuntu launcher;
 * исходные изменения Good Bear, overlay локализации, branding и настройки
   поставки распространяются как corresponding source, а уведомления Mozilla и
   сторонних компонентов сохраняются;
 * встроенное приложение обновления и crash reporter отключены, а активная
   телеметрия продукта не используется.
 
-Это не форк с глобальным российским хранилищем доверия: Good Bear не подменяет обычную
-X.509-проверку, не выдаёт сертификатам доверие по имени и не переносит
+Это не форк с глобальным российским хранилищем доверия: Good Bear не подменяет
+обычную X.509-проверку, не выдаёт сертификатам доверие по имени и не переносит
 запросы или содержимое между контейнерами. Российские корневые сертификаты не
 становятся глобально доверенными. Для подробностей о границах и воспроизводимой
 сборке см. [`SOURCE_OFFER.md`](SOURCE_OFFER.md).
@@ -100,14 +111,14 @@ X.509-проверку, не выдаёт сертификатам довери�
 
 В публичном репозитории находится corresponding source Good Bear, а не полная
 копия исходного дерева Firefox. Для восстановления исходного дерева скачайте
-исходный архив Firefox 156.0, проверьте его SHA-256 из
+исходный архив Firefox 157.0, проверьте его SHA-256 из
 [`config/firefox-baseline.json`](config/firefox-baseline.json), затем примените
 патчи в порядке [`patches/series`](patches/series) и наложите `overlay/`.
 Точный порядок и ссылки приведены в [`SOURCE_OFFER.md`](SOURCE_OFFER.md).
 
-Релиз построен из закреплённой пары версий `Good Bear 1.0 (Firefox
-156.0)` с locale `ru`. GitHub Release опубликован под неизменяемым тегом
-[`v1.0.0`](https://github.com/Goudron/good-bear/tree/v1.0.0).
+Релиз построен из закреплённой пары версий `Good Bear 1.0.1 (Firefox
+157.0)` с locale `ru`. GitHub Release опубликован под неизменяемым тегом
+[`v1.0.1`](https://github.com/Goudron/good-bear/tree/v1.0.1).
 
 ## Загрузка и добровольная поддержка
 

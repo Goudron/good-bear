@@ -1,0 +1,1614 @@
+# Good Bear theme: privacy-suppliers
+# Final owner deltas; separate overlays are listed in config/patch-themes.json.
+
+diff --git a/browser/actors/BlockedSiteChild.sys.mjs b/browser/actors/BlockedSiteChild.sys.mjs
+--- a/browser/actors/BlockedSiteChild.sys.mjs
++++ b/browser/actors/BlockedSiteChild.sys.mjs
+@@ -44,6 +44,20 @@
+     let doc = aEvent.target;
+     let blockedInfo = getSiteBlockedErrorDetails(this.docShell);
+     let provider = blockedInfo.provider || "";
++    // Attribute only Google's own results, never Mozilla or another provider.
++    if (["google", "google4", "google5"].includes(provider)) {
++      doc.getElementById("goodbearGoogleNotice").hidden = false;
++      if (aEvent.detail.err === "phishing") {
++        doc.l10n.setAttributes(
++          doc.getElementById("errorTitleText"),
++          "goodbear-safebrowsing-phishing-title"
++        );
++        doc.l10n.setAttributes(
++          doc.querySelector("title"),
++          "goodbear-safebrowsing-phishing-title"
++        );
++      }
++    }
+
+     /**
+      * Set error description link in error details.
+diff --git a/browser/base/content/appmenu-viewcache.inc.xhtml b/browser/base/content/appmenu-viewcache.inc.xhtml
+--- a/browser/base/content/appmenu-viewcache.inc.xhtml
++++ b/browser/base/content/appmenu-viewcache.inc.xhtml
+@@ -26,6 +26,7 @@
+       </toolbaritem>
+       <toolbaritem id="appMenu-fxa-status2"
+                    closemenu="none"
++                   hidden="true"
+                    class="subviewbutton toolbaritem-combined-buttons">
+         <html:div id="appMenu-fxa-text" data-l10n-id="appmenu-fxa-sync-and-save-data2"/>
+         <toolbarbutton id="appMenu-fxa-label2"
+@@ -57,7 +58,8 @@
+         <html:moz-button id="appMenu-nova-fxa-label"/>
+       </toolbaritem>
+       <hbox id="appMenu-fxa-sign-in-promo"
+-            align="center">
++            align="center"
++            hidden="true">
+         <html:img class="fxa-menu-sign-in-promo-image"
+                   alt=""
+                   src="chrome://browser/content/kit-signed-out.svg"/>
+@@ -81,7 +83,7 @@
+                      class="subviewbutton subviewbutton-iconic subviewbutton-nav profile-item"
+                      closemenu="none"
+                      hidden="true"/>
+-      <toolbarseparator id="appMenu-fxa-separator" class="proton-zap"/>
++      <toolbarseparator id="appMenu-fxa-separator" class="proton-zap" hidden="true"/>
+       <toolbarbutton id="appMenu-new-tab-button2"
+                      class="subviewbutton"
+                      data-l10n-id="appmenuitem-new-tab"
+diff --git a/browser/base/content/blockedSite.xhtml b/browser/base/content/blockedSite.xhtml
+--- a/browser/base/content/blockedSite.xhtml
++++ b/browser/base/content/blockedSite.xhtml
+@@ -24,6 +24,7 @@
+     />
+     <link rel="localization" href="branding/brand.ftl" />
+     <link rel="localization" href="browser/safebrowsing/blockedSite.ftl" />
++    <link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
+   </head>
+   <body>
+     <div id="errorPageContainer" class="container">
+@@ -46,6 +47,13 @@
+         </div>
+
+         <!-- Action buttons -->
++        <div id="goodbearGoogleNotice" hidden="true">
++          <p data-l10n-id="goodbear-safebrowsing-warning-notice"></p>
++          <p>
++            <a href="about:rights#privacy" data-l10n-id="goodbear-safebrowsing-warning-details"></a>
++          </p>
++        </div>
++
+         <div id="buttons" class="button-container">
+           <!-- Commands handled in browser.js -->
+           <button
+diff --git a/browser/base/content/browser-init.js b/browser/base/content/browser-init.js
+index 28ac959..f8d93ae 100644
+--- a/browser/base/content/browser-init.js
++++ b/browser/base/content/browser-init.js
+@@ -972,10 +972,12 @@ var gBrowserInit = {
+       }, options);
+     }
+ 
+-    scheduleIdleTask(() => {
+-      // Initialize the Sync UI
+-      gSync.init();
+-    });
++    if (AppConstants.MOZ_SERVICES_SYNC) {
++      scheduleIdleTask(() => {
++        // Initialize the Sync UI only when the implementation is present.
++        gSync.init();
++      });
++    }
+ 
+     scheduleIdleTask(() => {
+       // Read prefers-reduced-motion setting
+@@ -1131,7 +1133,9 @@ var gBrowserInit = {
+ 
+     gHistorySwipeAnimation.uninit();
+ 
+-    gSync.uninit();
++    if (AppConstants.MOZ_SERVICES_SYNC) {
++      gSync.uninit();
++    }
+ 
+     try {
+       gBrowser.removeProgressListener(window.XULBrowserWindow);
+diff --git a/browser/base/content/browser.js b/browser/base/content/browser.js
+index 6ea9b0d..46fa1cb 100644
+--- a/browser/base/content/browser.js
++++ b/browser/base/content/browser.js
+@@ -246,11 +246,13 @@ XPCOMUtils.defineLazyScriptGetter(
+   "gSafeBrowsing",
+   "chrome://browser/content/browser-safebrowsing.js"
+ );
+-XPCOMUtils.defineLazyScriptGetter(
+-  this,
+-  "gSync",
+-  "chrome://browser/content/browser-sync.js"
+-);
++if (AppConstants.MOZ_SERVICES_SYNC) {
++  XPCOMUtils.defineLazyScriptGetter(
++    this,
++    "gSync",
++    "chrome://browser/content/browser-sync.js"
++  );
++}
+ XPCOMUtils.defineLazyScriptGetter(
+   this,
+   "gBrowserThumbnails",
+diff --git a/browser/base/content/browser-sync.js b/browser/base/content/browser-sync.js
+--- a/browser/base/content/browser-sync.js
++++ b/browser/base/content/browser-sync.js
+@@ -4035,10 +4035,7 @@
+       document,
+       "PanelUI-fxa-menu-share-firefox"
+     );
+-    shareFirefoxPanelEl.hidden = !Services.prefs.getBoolPref(
+-      "browser.referrals.enabled",
+-      false
+-    );
++    shareFirefoxPanelEl.hidden = !Referrals.isEnabled;
+
+     let privacyToolsSeparatorEl = PanelMultiView.getViewNode(
+       document,
+diff --git a/browser/base/content/goodbearSafeBrowsingNotice.js b/browser/base/content/goodbearSafeBrowsingNotice.js
+new file mode 100644
+--- /dev/null
++++ b/browser/base/content/goodbearSafeBrowsingNotice.js
+@@ -0,0 +1,68 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// Copyright 2026 Valery Ledovskoy.
++
++let continueButton;
++let noticeResult;
++
++document.addEventListener("dialogaccept", event => {
++  try {
++    if (
++      window.closed || document.hidden ||
++      !continueButton || continueButton.disabled ||
++      !noticeResult?.getPropertyAsBool("rendered")
++    ) {
++      event.preventDefault();
++      return;
++    }
++    noticeResult.setPropertyAsBool("continued", true);
++  } catch {
++    event.preventDefault();
++  }
++});
++
++window.addEventListener("load", async () => {
++  try {
++    // The dialog custom element creates its buttons while the window loads.
++    // Querying it earlier leaves its internal button map uninitialized.
++    continueButton = document
++      .getElementById("goodbearSafeBrowsingNotice")
++      .getButton("accept");
++    continueButton.disabled = true;
++    noticeResult = window.arguments[0].QueryInterface(
++      Ci.nsIWritablePropertyBag2
++    );
++    await document.l10n.ready;
++    const ids = [
++      "goodbear-safebrowsing-notice-title",
++      "goodbear-safebrowsing-attribution",
++      "goodbear-safebrowsing-reliability",
++      "goodbear-safebrowsing-url-data",
++      "goodbear-safebrowsing-download-data",
++      "goodbear-safebrowsing-connection-data",
++      "goodbear-safebrowsing-settings",
++      "goodbear-safebrowsing-continue",
++    ];
++    const text = await document.l10n.formatValues(ids.map(id => ({ id })));
++    if (!Array.isArray(text) || text.length !== ids.length ||
++        text.some((value, index) => typeof value !== "string" ||
++          !value.trim() || value === ids[index])) {
++      throw new Error("Safe Browsing notice localization is unavailable");
++    }
++    await document.l10n.translateFragment(document.documentElement);
++    await new Promise(resolve =>
++      window.requestAnimationFrame(() => window.requestAnimationFrame(resolve))
++    );
++    if (window.closed || document.hidden) {
++      return;
++    }
++    noticeResult.setPropertyAsBool("rendered", true);
++    continueButton.disabled = false;
++    continueButton.focus();
++  } catch {
++    // Do not claim that an untranslated or incomplete notice was displayed.
++    window.close();
++  }
++});
+diff --git a/browser/base/content/goodbearSafeBrowsingNotice.xhtml b/browser/base/content/goodbearSafeBrowsingNotice.xhtml
+new file mode 100644
+--- /dev/null
++++ b/browser/base/content/goodbearSafeBrowsingNotice.xhtml
+@@ -0,0 +1,32 @@
++<?xml version="1.0"?>
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++<?csp default-src chrome: resource:; style-src chrome: 'unsafe-inline'; ?>
++<window
++  xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
++  xmlns:html="http://www.w3.org/1999/xhtml"
++  data-l10n-id="goodbear-safebrowsing-notice-window"
++  data-l10n-attrs="title"
++>
++  <dialog
++    id="goodbearSafeBrowsingNotice"
++    buttons="accept"
++    buttonidaccept="goodbear-safebrowsing-continue"
++  >
++    <linkset>
++      <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
++      <html:link rel="localization" href="browser/goodbearSafeBrowsing.ftl" />
++    </linkset>
++    <html:main style="max-width: 38em; padding: 0.5em 1em">
++      <html:h1 data-l10n-id="goodbear-safebrowsing-notice-title" />
++      <html:p data-l10n-id="goodbear-safebrowsing-attribution" />
++      <html:p data-l10n-id="goodbear-safebrowsing-reliability" />
++      <html:p data-l10n-id="goodbear-safebrowsing-url-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-download-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-connection-data" />
++      <html:p data-l10n-id="goodbear-safebrowsing-settings" />
++    </html:main>
++    <script src="chrome://browser/content/goodbearSafeBrowsingNotice.js" />
++  </dialog>
++</window>
+diff --git a/browser/base/content/utilityOverlay.js b/browser/base/content/utilityOverlay.js
+--- a/browser/base/content/utilityOverlay.js
++++ b/browser/base/content/utilityOverlay.js
+@@ -572,7 +572,7 @@
+     !Services.policies.isAllowed("aboutSupport");
+
+   document.getElementById("menu_referralsPage").hidden =
+-    !Services.prefs.getBoolPref("browser.referrals.enabled");
++    !Referrals.isEnabled;
+
+   let supportMenu = Services.policies.getSupportMenu();
+   if (supportMenu) {
+diff --git a/browser/components/GoodBearSafeBrowsingNotice.sys.mjs b/browser/components/GoodBearSafeBrowsingNotice.sys.mjs
+new file mode 100644
+--- /dev/null
++++ b/browser/components/GoodBearSafeBrowsingNotice.sys.mjs
+@@ -0,0 +1,119 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++// Copyright 2026 Valery Ledovskoy.
++
++export const GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION = 1;
++export const GOOD_BEAR_SAFEBROWSING_NOTICE_PREF =
++  "goodbear.safebrowsing.notice.version";
++const NOTICE_URI = "chrome://browser/content/goodbearSafeBrowsingNotice.xhtml";
++
++export const GoodBearSafeBrowsingNotice = {
++  // The disclosure is modal, but its native window opens asynchronously.
++  // Safe Browsing remains disabled until its returned promise records a real
++  // user acknowledgement.
++  Policy: {
++    openNotice(result) {
++      return Services.ww.openWindow(
++        null,
++        NOTICE_URI,
++        "_blank",
++        "chrome,centerscreen,modal,resizable=no",
++        result
++      );
++    },
++    savePrefs() {
++      Services.prefs.savePrefFile(null);
++    },
++  },
++
++  get wasShown() {
++    return (
++      Services.prefs.prefHasUserValue(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF) &&
++      !Services.prefs.prefIsLocked(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF) &&
++      Services.prefs.getIntPref(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF, 0) ===
++      GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION
++    );
++  },
++
++  async ensureShown() {
++    if (this.wasShown) {
++      return true;
++    }
++    if (Services.prefs.prefIsLocked(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF)) {
++      return false;
++    }
++
++    const result = Cc["@mozilla.org/hash-property-bag;1"].createInstance(
++      Ci.nsIWritablePropertyBag2
++    );
++    result.setPropertyAsBool("rendered", false);
++    result.setPropertyAsBool("continued", false);
++    let observer;
++    try {
++      await new Promise(resolve => {
++        let notice;
++        observer = {
++          observe(subject, topic) {
++            if (topic === "domwindowopened") {
++              const win = subject;
++              win.addEventListener(
++                "load",
++                () => {
++                  if (win.document.documentURI === NOTICE_URI) {
++                    notice = win;
++                  }
++                },
++                { once: true }
++              );
++              return;
++            }
++            if (
++              topic === "domwindowclosed" &&
++              (subject === notice || subject.location == NOTICE_URI)
++            ) {
++              resolve();
++            }
++          },
++        };
++        Services.ww.registerNotification(observer);
++        const opened = this.Policy.openNotice(result);
++        if (opened) {
++          notice = opened;
++          // Modal/open failure can close the returned window before load or
++          // even before openWindow returns. Never wait forever for its load.
++          if (opened.closed) {
++            resolve();
++          }
++        }
++      });
++      if (
++        !result.getPropertyAsBool("rendered") ||
++        !result.getPropertyAsBool("continued") ||
++        Services.prefs.prefIsLocked(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF)
++      ) {
++        return false;
++      }
++      Services.prefs.setIntPref(
++        GOOD_BEAR_SAFEBROWSING_NOTICE_PREF,
++        GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION
++      );
++      this.Policy.savePrefs();
++      return this.wasShown;
++    } catch {
++      // A failed render, locked preference or failed persistence never counts
++      // as a completed notice, including for an existing profile.
++      try {
++        Services.prefs.clearUserPref(GOOD_BEAR_SAFEBROWSING_NOTICE_PREF);
++      } catch {
++        // A locked preference is left locked; the caller stops startup.
++      }
++      return false;
++    } finally {
++      if (observer) {
++        Services.ww.unregisterNotification(observer);
++      }
++    }
++  },
++};
+diff --git a/browser/components/attribution/AttributionCode.sys.mjs b/browser/components/attribution/AttributionCode.sys.mjs
+--- a/browser/components/attribution/AttributionCode.sys.mjs
++++ b/browser/components/attribution/AttributionCode.sys.mjs
+@@ -46,7 +46,6 @@
+ const ATTR_CODE_KEY_VALUE_SEPARATOR = "%3D"; // URL-encoded =
+ const MSCLKID_KEY_PREFIX = "storeBingAd_";
+ const REFERRAL_PREFIX = "fxrefer";
+-const REFERRAL_SUBMITTED_PREF = "browser.referrals.pingSubmitted";
+ const ATTR_CODE_KEYS = [
+   "source",
+   "medium",
+@@ -181,17 +180,9 @@
+    * into the referral code 0123456789ABCXYZ and submits via a separate
+    * referrals Glean ping.
+    */
+-  submitReferralCode(data) {
+-    const referralCode = data.replace(REFERRAL_PREFIX, "");
+-    if (
+-      !referralCode ||
+-      Services.prefs.getBoolPref(REFERRAL_SUBMITTED_PREF, false)
+-    ) {
+-      return;
+-    }
+-    Glean.browser.referralCode.set(referralCode);
+-    GleanPings.referrals.submit();
+-    Services.prefs.setBoolPref(REFERRAL_SUBMITTED_PREF, true);
++  submitReferralCode(_data) {
++    // Mozilla referrals are not a Good Bear supplier. Do not read/write a
++    // per-profile referral identifier or submit a product invitation ping.
+   },
+
+   /**
+diff --git a/browser/components/customizableui/content/panelUI.js b/browser/components/customizableui/content/panelUI.js
+--- a/browser/components/customizableui/content/panelUI.js
++++ b/browser/components/customizableui/content/panelUI.js
+@@ -1269,7 +1269,7 @@
+       document,
+       "appMenu-referrals-separator"
+     );
+-    const hidden = !this.referralsEnabled;
++    const hidden = true; // Good Bear does not offer Mozilla referrals.
+     button.hidden = hidden;
+     separator.hidden = hidden;
+   },
+diff --git a/browser/components/referrals/Referrals.sys.mjs b/browser/components/referrals/Referrals.sys.mjs
+--- a/browser/components/referrals/Referrals.sys.mjs
++++ b/browser/components/referrals/Referrals.sys.mjs
+@@ -2,106 +2,20 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
++// The Firefox invitation service is not a Good Bear supplier. Keep the public
++// module API for native consumers, without dormant identifier or ping paths.
++class ReferralsClass {
++  maybeLockPref() {}
+
+-const lazy = {};
+-XPCOMUtils.defineLazyPreferenceGetter(
+-  lazy,
+-  "REFERRALS_ENABLED",
+-  "browser.referrals.enabled",
+-  false
+-);
+-
+-const REFERRAL_CODE_PREF = "browser.referrals.code";
+-const REFERRAL_CODE_LENGTH = 16;
+-// Crockford base32
+-const REFERRAL_CODE_CHARSET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+-
+-/**
+- * Manages the Firefox Referral program's per-profile referral code.
+- */
+-class ReferralsClass {
+-  maybeLockPref() {
+-    if (Services.prefs.prefIsLocked(REFERRAL_CODE_PREF)) {
+-      return;
+-    }
+-
+-    // Lock the pref if it exists so that it can't be changed. Locking the pref
+-    // will reset the value to the default. If the pref doesn't exist yet,
+-    // locking the pref will cause the default pref value to be an empty string
+-    // meaning a new code will be generated every time.
+-    let code = Services.prefs.getStringPref(REFERRAL_CODE_PREF, "");
+-    if (code.length) {
+-      Services.prefs.lockPref(REFERRAL_CODE_PREF);
+-    }
++  get isEnabled() {
++    return false;
+   }
+
+-  get isEnabled() {
+-    return lazy.REFERRALS_ENABLED;
++  getReferralCode() {
++    return "";
+   }
+
+-  /**
+-   * Returns the profile's referral code, generating and storing one on first
+-   * access. Returns an empty string when referrals are disabled.
+-   *
+-   * @returns {string} The referral code || ""
+-   */
+-  getReferralCode() {
+-    if (!this.isEnabled) {
+-      return "";
+-    }
+-
+-    // A locked pref reads its default, so unlock to read the user-branch code.
+-    if (Services.prefs.prefIsLocked(REFERRAL_CODE_PREF)) {
+-      Services.prefs.unlockPref(REFERRAL_CODE_PREF);
+-    }
+-
+-    let code = Services.prefs.getStringPref(REFERRAL_CODE_PREF, "");
+-    if (!code) {
+-      code = this.#generateCode();
+-      Services.prefs.setStringPref(REFERRAL_CODE_PREF, code);
+-    }
+-
+-    Services.prefs.lockPref(REFERRAL_CODE_PREF);
+-    return code;
+-  }
+-
+-  /**
+-   * Opens about:referrals in a new tab. No-op when referrals are disabled.
+-   *
+-   * @param {Window} window The browser window to open the tab in.
+-   * @param {string} entrypoint
+-   *   The UI surface the tab was opened from. One of: app_menu,
+-   *   accounts_menu, preferences, help_menu, about_dialog.
+-   */
+-  openReferralsTab(window, entrypoint) {
+-    if (!this.isEnabled) {
+-      return;
+-    }
+-    Glean.referrals.entrypointClicked.record({ entrypoint });
+-    let referralCode = this.getReferralCode();
+-    let aboutPageURL = new URL(`about:referrals`);
+-
+-    aboutPageURL.searchParams.set("ref_key", referralCode);
+-
+-    window.openTrustedLinkIn(aboutPageURL.toString(), "tab");
+-  }
+-
+-  /**
+-   * Generates a Referral code that will persist and be saved per-profile
+-   *
+-   * @returns {string} A newly generated referral code.
+-   */
+-  #generateCode() {
+-    const bytes = new Uint8Array(REFERRAL_CODE_LENGTH);
+-    crypto.getRandomValues(bytes);
+-
+-    let code = "";
+-    for (const byte of bytes) {
+-      code += REFERRAL_CODE_CHARSET[byte % REFERRAL_CODE_CHARSET.length];
+-    }
+-    return code;
+-  }
++  openReferralsTab(_window, _entrypoint) {}
+ }
+
+ export const Referrals = new ReferralsClass();
+diff --git a/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js b/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/tests/browser/browser_goodbear_safebrowsing_notice.js
+@@ -0,0 +1,191 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearSafeBrowsingNotice: SupplierNotice,
++  GOOD_BEAR_SAFEBROWSING_NOTICE_PREF: NOTICE_PREF,
++  GOOD_BEAR_SAFEBROWSING_NOTICE_VERSION: NOTICE_VERSION,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearSafeBrowsingNotice.sys.mjs"
++);
++
++const NOTICE_URI = "chrome://browser/content/goodbearSafeBrowsingNotice.xhtml";
++
++async function exerciseNotice({ continued, existingProfile }) {
++  await SpecialPowers.pushPrefEnv({
++    set: [
++      [NOTICE_PREF, 0],
++      ["trailhead.firstrun.didSeeAboutWelcome", existingProfile],
++      ["browser.aboutwelcome.enabled", false],
++      ["browser.preonboarding.enabled", false],
++    ],
++  });
++  const opened = BrowserTestUtils.domWindowOpenedAndLoaded(
++    null,
++    win => win.document.documentURI === NOTICE_URI
++  );
++  const handled = opened.then(async win => {
++    const dialog = win.document.getElementById("goodbearSafeBrowsingNotice");
++    await TestUtils.waitForCondition(
++      () => !dialog.getButton("accept").disabled,
++      "The translated disclosure must be rendered before Continue"
++    );
++    Assert.equal(Services.prefs.getIntPref(NOTICE_PREF), 0);
++    Assert.ok(!win.document.hidden, "The actual disclosure window is visible");
++    Assert.ok(win.document.querySelector("main").textContent.trim());
++    const closed = BrowserTestUtils.windowClosed(win);
++    if (continued) {
++      dialog.acceptDialog();
++    } else {
++      win.close();
++    }
++    await closed;
++  });
++  const result = await SupplierNotice.ensureShown();
++  await handled;
++  Assert.equal(result, continued);
++  Assert.equal(
++    Services.prefs.getIntPref(NOTICE_PREF),
++    continued ? NOTICE_VERSION : 0
++  );
++  if (continued) {
++    Assert.ok(
++      Services.prefs.prefHasUserValue(NOTICE_PREF),
++      "Only a persisted profile acknowledgement satisfies the gate"
++    );
++    Assert.ok(
++      !Services.prefs.prefIsLocked(NOTICE_PREF),
++      "A locked policy value is not a rendered user acknowledgement"
++    );
++  }
++  await SpecialPowers.popPrefEnv();
++}
++
++add_task(async function test_supplier_notice_new_and_existing_profiles() {
++  await exerciseNotice({ continued: true, existingProfile: false });
++  await exerciseNotice({ continued: true, existingProfile: true });
++});
++
++add_task(async function test_supplier_notice_close_does_not_enable_service() {
++  await exerciseNotice({ continued: false, existingProfile: true });
++});
++
++add_task(async function test_supplier_notice_failure_is_not_acknowledgement() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, 0]] });
++  const original = SupplierNotice.Policy.openNotice;
++  try {
++    SupplierNotice.Policy.openNotice = () => {
++      throw new Error("local notice unavailable");
++    };
++    Assert.ok(!(await SupplierNotice.ensureShown()));
++    Assert.ok(!SupplierNotice.wasShown);
++  } finally {
++    SupplierNotice.Policy.openNotice = original;
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_supplier_notice_already_shown_does_not_repeat() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, NOTICE_VERSION]] });
++  const original = SupplierNotice.Policy.openNotice;
++  try {
++    SupplierNotice.Policy.openNotice = () => {
++      throw new Error("already-informed profile must not reopen the notice");
++    };
++    Assert.ok(await SupplierNotice.ensureShown());
++  } finally {
++    SupplierNotice.Policy.openNotice = original;
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_locked_notice_preference_never_opens_or_acknowledges() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, 0]] });
++  const original = SupplierNotice.Policy.openNotice;
++  Services.prefs.lockPref(NOTICE_PREF);
++  try {
++    SupplierNotice.Policy.openNotice = () => {
++      throw new Error("A policy lock must be checked before opening the notice");
++    };
++    Assert.ok(!(await SupplierNotice.ensureShown()));
++    Assert.ok(!SupplierNotice.wasShown);
++  } finally {
++    Services.prefs.unlockPref(NOTICE_PREF);
++    SupplierNotice.Policy.openNotice = original;
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_native_notice_rejects_accept_before_load_handler() {
++  await SpecialPowers.pushPrefEnv({ set: [[NOTICE_PREF, 0]] });
++  let intercepted = false;
++  const observer = {
++    observe(win, topic) {
++      if (topic !== "domwindowopened") {
++        return;
++      }
++      win.addEventListener("load", () => {
++        if (win.document.documentURI !== NOTICE_URI) {
++          return;
++        }
++        // Capture precedes the dialog's load handler and its l10n/paint gate.
++        // Dispatch the real cancelable event without requiring initialized
++        // dialog buttons, reproducing the premature-accept lifecycle boundary.
++        intercepted = true;
++        const event = new win.Event("dialogaccept", { cancelable: true });
++        win.document.dispatchEvent(event);
++        Assert.ok(event.defaultPrevented, "Premature native accept is denied");
++        Assert.equal(Services.prefs.getIntPref(NOTICE_PREF), 0);
++        win.close();
++      }, { once: true, capture: true });
++    },
++  };
++  Services.ww.registerNotification(observer);
++  try {
++    Assert.ok(!(await SupplierNotice.ensureShown()));
++    Assert.ok(intercepted, "Exercised the actual notice document lifecycle");
++    Assert.equal(Services.prefs.getIntPref(NOTICE_PREF), 0);
++  } finally {
++    Services.ww.unregisterNotification(observer);
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_unattributed_warning_has_no_google_notice() {
++  await BrowserTestUtils.withNewTab(
++    "about:blocked?e=deceptiveBlocked&u=https%3A%2F%2Fexample.com%2F&o=1&",
++    async browser => {
++      await SpecialPowers.spawn(browser, [], async () => {
++        await content.document.l10n.ready;
++        Assert.ok(
++          content.document.getElementById("goodbearGoogleNotice").hidden
++        );
++        Assert.ok(!content.document.getElementById("advisory_provider"));
++      });
++    }
++  );
++});
++
++add_task(
++  async function test_bundled_legal_retains_licenses_and_supplier_links() {
++    await BrowserTestUtils.withNewTab("about:rights", async browser => {
++      await SpecialPowers.spawn(browser, [], async () => {
++        await content.document.l10n.ready;
++        Assert.ok(content.document.querySelector('a[href="about:license"]'));
++        Assert.ok(
++          content.document.querySelector(
++            'a[href="https://policies.google.com/privacy"]'
++          )
++        );
++        Assert.ok(
++          content.document.querySelector(
++            'a[href="https://developers.google.com/safe-browsing/terms"]'
++          )
++        );
++        Assert.ok(
++          content.document.querySelector("#privacy").textContent.trim()
++        );
++      });
++    });
++  }
++);
+diff --git a/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl b/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl
+new file mode 100644
+--- /dev/null
++++ b/browser/locales/en-US/browser/goodbearSafeBrowsing.ftl
+@@ -0,0 +1,26 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++# Copyright 2026 Valery Ledovskoy.
++
++goodbear-safebrowsing-notice-window =
++    .title = Good Bear — protection against unsafe sites
++goodbear-safebrowsing-notice-title = Protection against unsafe sites and downloads
++goodbear-safebrowsing-attribution = Good Bear uses Google Safe Browsing. Advisory provided by Google.
++goodbear-safebrowsing-reliability = This protection cannot guarantee that a site or download is safe. Some threats may go undetected, and safe sites or files may be flagged in error.
++goodbear-safebrowsing-url-data = To check sites, Good Bear downloads threat lists from Google and may send partial hashes of web addresses for verification.
++goodbear-safebrowsing-download-data = To check downloaded programs, Good Bear may send Google the download and redirect addresses, the referring address, the file name, size and SHA256 hash, digital signature information, and the browser language.
++goodbear-safebrowsing-connection-data = Google also receives connection information, including your IP address. Google processes this information under its privacy policy.
++goodbear-safebrowsing-settings = You can manage this protection in Settings → Privacy & Security. This notice and links to the provider’s terms and privacy policy remain available under Legal and privacy notices in About Good Bear.
++goodbear-safebrowsing-continue = Continue
++    .label = Continue
++goodbear-safebrowsing-advisory-link = Google Safe Browsing advisory
++goodbear-safebrowsing-terms-link = Google Safe Browsing terms
++goodbear-safebrowsing-privacy-link = Google privacy policy
++goodbear-safebrowsing-phishing-title = This site may be deceptive
++goodbear-safebrowsing-warning-notice = Google Safe Browsing may miss threats or flag safe sites in error. The reliability and accuracy of the service’s information cannot be guaranteed.
++goodbear-safebrowsing-warning-details = Protection and privacy details
++goodbear-legal-title = Legal and privacy notices
++goodbear-legal-product = Good Bear is an independent browser. Original Good Bear contributions: © 2026 Valery Ledovskoy.
++goodbear-legal-mozilla = Good Bear is based on Mozilla Firefox open-source code and is not affiliated with, sponsored by, or endorsed by Mozilla. Mozilla and Firefox are trademarks of the Mozilla Foundation. The original Mozilla and third-party notices and licenses remain applicable.
++goodbear-legal-licenses = Open-source licenses and third-party notices
+diff --git a/testing/profiles/base/user.js b/testing/profiles/base/user.js
+--- a/testing/profiles/base/user.js
++++ b/testing/profiles/base/user.js
+@@ -30,3 +30,8 @@
+ // browser.ml.onnxNativeAvailabilityReported gates a non-trivial probe run on idle startup.
+ // Setting to true to avoid running it in every browser test.
+ user_pref("browser.ml.onnxNativeAvailabilityReported", true);
++
++// Test fixture: this profile has already displayed Good Bear's supplier notice.
++// Dedicated startup-notice tests clear this value and exercise the real dialog.
++// Shipping defaults deliberately do not contain this acknowledgement.
++user_pref("goodbear.safebrowsing.notice.version", 1);
+diff --git a/toolkit/components/reputationservice/ApplicationReputation.cpp b/toolkit/components/reputationservice/ApplicationReputation.cpp
+--- a/toolkit/components/reputationservice/ApplicationReputation.cpp
++++ b/toolkit/components/reputationservice/ApplicationReputation.cpp
+@@ -1597,6 +1597,17 @@
+ }
+
+ nsresult PendingLookup::SendRemoteQueryInternal(Reason& aReason) {
++  // Download reputation can run independently of SafeBrowsing.init(). Do not
++  // contact Google before the local startup disclosure has been shown.
++  static constexpr auto kGoodBearNoticePref =
++      "goodbear.safebrowsing.notice.version";
++  if (!Preferences::HasUserValue(kGoodBearNoticePref) ||
++      Preferences::IsLocked(kGoodBearNoticePref) ||
++      Preferences::GetInt(kGoodBearNoticePref, 0) != 1) {
++    aReason = Reason::eRemotelookupdisabled;
++    return NS_ERROR_NOT_AVAILABLE;
++  }
++
+   auto scopeExit = mozilla::MakeScopeExit([&aReason]() {
+     if (aReason == Reason::eNotset) {
+       aReason = Reason::eInternalerror;
+diff --git a/toolkit/components/url-classifier/Classifier.cpp b/toolkit/components/url-classifier/Classifier.cpp
+--- a/toolkit/components/url-classifier/Classifier.cpp
++++ b/toolkit/components/url-classifier/Classifier.cpp
+@@ -577,6 +577,11 @@
+       result->mTableName.Assign(cache->TableName());
+       result->mPartialHashLength = confirmed ? COMPLETE_SIZE : matchLength;
+       result->mProtocolV2 = LookupCache::Cast<LookupCacheV2>(cache);
++      result->mGoodBearRequiresFreshGoogleVerdict =
++          cache->RequiresFreshGoogleVerdict();
++      if (result->mGoodBearRequiresFreshGoogleVerdict) {
++        result->mGoodBearFreshness = cache->GoogleVerdictFreshness(lookupHash);
++      }
+
+       hasAnyHit = true;
+     }
+diff --git a/toolkit/components/url-classifier/Entries.h b/toolkit/components/url-classifier/Entries.h
+--- a/toolkit/components/url-classifier/Entries.h
++++ b/toolkit/components/url-classifier/Entries.h
+@@ -18,6 +18,7 @@
+ #include "nsClassHashtable.h"
+ #include "nsComponentManagerUtils.h"
+ #include "nsTHashMap.h"
++#include "GoodBearGoogleVerdictFreshness.h"
+
+ namespace mozilla {
+ namespace safebrowsing {
+@@ -281,6 +282,7 @@
+
+ struct CachedFullHashResponse {
+   int64_t negativeCacheExpirySec;
++  GoodBearGoogleVerdictFreshness mGoodBearFreshness;
+
+   // Map contains all matches found in Fullhash response, this field might be
+   // empty.
+@@ -288,6 +290,7 @@
+
+   CachedFullHashResponse& operator=(const CachedFullHashResponse& aOther) {
+     negativeCacheExpirySec = aOther.negativeCacheExpirySec;
++    mGoodBearFreshness = aOther.mGoodBearFreshness;
+
+     fullHashes = aOther.fullHashes.Clone();
+
+@@ -296,6 +299,7 @@
+
+   bool operator==(const CachedFullHashResponse& aOther) const {
+     if (negativeCacheExpirySec != aOther.negativeCacheExpirySec ||
++        !(mGoodBearFreshness == aOther.mGoodBearFreshness) ||
+         fullHashes.Count() != aOther.fullHashes.Count()) {
+       return false;
+     }
+diff --git a/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h b/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h
+new file mode 100644
+--- /dev/null
++++ b/toolkit/components/url-classifier/GoodBearGoogleVerdictFreshness.h
+@@ -0,0 +1,57 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearGoogleVerdictFreshness_h
++#define GoodBearGoogleVerdictFreshness_h
++
++#include "mozilla/TimeStamp.h"
++#include "nsReadableUtils.h"
++#include "nsString.h"
++#include "prtime.h"
++
++namespace mozilla::safebrowsing {
++
++inline bool GoodBearRequiresFreshGoogleVerdict(const nsACString& aTable,
++                                               const nsACString& aProvider) {
++  // Retain the Google boundary before the list manager registers a completer
++  // or when provider prefs no longer name an on-disk Google table.
++  return aProvider.EqualsLiteral("google") ||
++         aProvider.EqualsLiteral("google4") ||
++         aProvider.EqualsLiteral("google5") ||
++         StringBeginsWith(aTable, "goog-"_ns) ||
++         StringBeginsWith(aTable, "googpub-"_ns);
++}
++
++struct GoodBearGoogleVerdictFreshness {
++  TimeStamp mStartedAt;
++  int64_t mStartedWallUsec = 0;
++
++  static GoodBearGoogleVerdictFreshness BeforeRequest() {
++    return {TimeStamp::Now(), PR_Now()};
++  }
++
++  bool IsFreshAt(const TimeStamp& aNow, int64_t aWallUsec) const {
++    // The current completion interface has no transport receipt timestamp.
++    // Start before the lookup/request instead: network and dispatch delays can
++    // only shorten the enforcement window, never make a response younger.
++    // Wall time accounts for sleep; monotonic time prevents clock rollback
++    // from extending the window. Unknown/old metadata cannot enforce.
++    constexpr int64_t kMaximumAgeUsec = 30 * 60 * PR_USEC_PER_SEC;
++    return !mStartedAt.IsNull() && !aNow.IsNull() && mStartedWallUsec > 0 &&
++           aWallUsec >= mStartedWallUsec && aNow >= mStartedAt &&
++           aWallUsec - mStartedWallUsec <= kMaximumAgeUsec &&
++           (aNow - mStartedAt) <= TimeDuration::FromSeconds(30 * 60);
++  }
++
++  bool IsFresh() const { return IsFreshAt(TimeStamp::Now(), PR_Now()); }
++
++  bool operator==(const GoodBearGoogleVerdictFreshness& aOther) const {
++    return mStartedAt == aOther.mStartedAt &&
++           mStartedWallUsec == aOther.mStartedWallUsec;
++  }
++};
++
++}  // namespace mozilla::safebrowsing
++
++#endif  // GoodBearGoogleVerdictFreshness_h
+diff --git a/toolkit/components/url-classifier/LookupCache.cpp b/toolkit/components/url-classifier/LookupCache.cpp
+--- a/toolkit/components/url-classifier/LookupCache.cpp
++++ b/toolkit/components/url-classifier/LookupCache.cpp
+@@ -272,6 +272,20 @@
+   return NS_OK;
+ }
+
++GoodBearGoogleVerdictFreshness LookupCache::GoogleVerdictFreshness(
++    const Completion& aCompletion) const {
++  const CachedFullHashResponse* response =
++      mFullHashCache.Get(aCompletion.ToUint32());
++  if (!response) {
++    return {};
++  }
++  nsDependentCSubstring completion(
++      reinterpret_cast<const char*>(aCompletion.buf), COMPLETE_SIZE);
++  return response->fullHashes.Contains(completion)
++             ? response->mGoodBearFreshness
++             : GoodBearGoogleVerdictFreshness{};
++}
++
+ nsresult LookupCache::CheckCache(const Completion& aCompletion, bool* aHas,
+                                  bool* aConfirmed) {
+   // Shouldn't call this function if prefix is not in the database.
+@@ -296,6 +310,13 @@
+   // Check if we can find the fullhash in positive cache
+   if (fullHashes.Get(completion, &expiryTimeSec)) {
+     if (nowSec <= expiryTimeSec) {
++      if (RequiresFreshGoogleVerdict() &&
++          !fullHashResponse->mGoodBearFreshness.IsFresh()) {
++        // Keep the server-provided cache lifetime intact, but require a fresh
++        // completion before this Google-backed positive can enforce.
++        LOG(("Found a server-valid fullhash with stale source information"));
++        return NS_OK;
++      }
+       // Url is NOT safe.
+       *aConfirmed = true;
+       LOG(("Found a valid fullhash in the positive cache"));
+diff --git a/toolkit/components/url-classifier/LookupCache.h b/toolkit/components/url-classifier/LookupCache.h
+--- a/toolkit/components/url-classifier/LookupCache.h
++++ b/toolkit/components/url-classifier/LookupCache.h
+@@ -64,7 +64,25 @@
+     return hex;
+   }
+
+-  bool Confirmed() const { return mConfirmed || mProtocolConfirmed; }
++  bool ConfirmedAt(const TimeStamp& aNow, int64_t aWallUsec) const {
++    return (mConfirmed || mProtocolConfirmed) &&
++           (!mGoodBearRequiresFreshGoogleVerdict ||
++            mGoodBearFreshness.IsFreshAt(aNow, aWallUsec));
++  }
++
++  bool Confirmed() const {
++    return (mConfirmed || mProtocolConfirmed) &&
++           (!mGoodBearRequiresFreshGoogleVerdict ||
++            mGoodBearFreshness.IsFresh());
++  }
++
++  bool ConfirmWithoutCompleter() {
++    if (!Complete() || mGoodBearRequiresFreshGoogleVerdict) {
++      return false;
++    }
++    mConfirmed = true;
++    return true;
++  }
+
+   // True if we have a complete match for this hash in the table.
+   bool Complete() const { return mPartialHashLength == COMPLETE_SIZE; }
+@@ -87,6 +105,9 @@
+
+   bool mProtocolV2;
+
++  bool mGoodBearRequiresFreshGoogleVerdict = false;
++  GoodBearGoogleVerdictFreshness mGoodBearFreshness;
++
+  private:
+   ~LookupResult() = default;
+ };
+@@ -189,6 +210,13 @@
+   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(LookupCache);
+
+   const nsCString& TableName() const { return mTableName; }
++
++  bool RequiresFreshGoogleVerdict() const {
++    return GoodBearRequiresFreshGoogleVerdict(mTableName, mProvider);
++  }
++
++  GoodBearGoogleVerdictFreshness GoogleVerdictFreshness(
++      const Completion& aCompletion) const;
+
+   // The directory handle where we operate will
+   // be moved away when a backup is made.
+diff --git a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+--- a/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
++++ b/toolkit/components/url-classifier/SafeBrowsing.sys.mjs
+@@ -352,6 +352,17 @@
+
+ export var SafeBrowsing = {
+   init() {
++    // This is a startup disclosure, not a switch for phishing/malware protection.
++    // BrowserGlue stops startup if the local notice cannot be displayed.
++    const noticePref = "goodbear.safebrowsing.notice.version";
++    if (
++      !Services.prefs.prefHasUserValue(noticePref) ||
++      Services.prefs.prefIsLocked(noticePref) ||
++      Services.prefs.getIntPref(noticePref, 0) !== 1
++    ) {
++      return;
++    }
++
+     if (this.initialized) {
+       log("Already initialized");
+       return;
+diff --git a/toolkit/components/url-classifier/moz.build b/toolkit/components/url-classifier/moz.build
+--- a/toolkit/components/url-classifier/moz.build
++++ b/toolkit/components/url-classifier/moz.build
+@@ -72,6 +72,7 @@
+     "chromium/safebrowsing.pb.h",
+     "chromium/safebrowsing_v5.pb.h",
+     "Entries.h",
++    "GoodBearGoogleVerdictFreshness.h",
+     "LookupCache.h",
+     "LookupCacheV4.h",
+     "nsUrlClassifierPrefixSet.h",
+diff --git a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+--- a/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
++++ b/toolkit/components/url-classifier/nsUrlClassifierDBService.cpp
+@@ -1256,6 +1256,8 @@
+   nsCOMPtr<nsIUrlClassifierCallback> mCallback;
+   ConstCacheResultArray mCacheResults;
+   uint32_t mPendingCompletions = 0;
++  const GoodBearGoogleVerdictFreshness mGoodBearRequestStarted =
++      GoodBearGoogleVerdictFreshness::BeforeRequest();
+ };
+
+ NS_IMPL_ISUPPORTS(nsUrlClassifierHashCompleterBase,
+@@ -1303,8 +1305,7 @@
+       } else {
+         // For tables with no hash completer, a complete hash match is
+         // good enough, we'll consider it is valid.
+-        if (result->Complete()) {
+-          result->mConfirmed = true;
++        if (result->ConfirmWithoutCompleter()) {
+           LOG(("Skipping completion in a table without a valid completer (%s).",
+                result->mTableName.get()));
+         } else {
+@@ -1332,6 +1333,9 @@
+     if (!result->mNoise && result->mTableName.Equals(aCacheResult->table) &&
+         aCacheResult->findCompletion(result->CompleteHash())) {
+       result->mProtocolConfirmed = true;
++      if (result->mGoodBearRequiresFreshGoogleVerdict) {
++        result->mGoodBearFreshness = mGoodBearRequestStarted;
++      }
+     }
+   }
+
+@@ -1375,6 +1379,11 @@
+   result->table = aTableName;
+   result->prefix.Assign(aPartialHash);
+   result->response.negativeCacheExpirySec = nowSec + aNegativeCacheDuration;
++  nsAutoCString provider;
++  nsUrlClassifierUtils::GetInstance()->GetProvider(aTableName, provider);
++  if (GoodBearRequiresFreshGoogleVerdict(aTableName, provider)) {
++    result->response.mGoodBearFreshness = mGoodBearRequestStarted;
++  }
+
+   uint32_t fullHashCount = 0;
+   nsresult rv = aFullHashes->GetLength(&fullHashCount);
+diff --git a/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp b/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
+--- a/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
++++ b/toolkit/components/url-classifier/nsUrlClassifierUtils.cpp
+@@ -987,6 +987,14 @@
+     nsAutoCString tableNames;
+
+     for (auto& fullHashDetail : fullHash.full_hash_details()) {
++      // This completion callback has no frame context. Never promote a
++      // frame-only signal to an unrestricted unsafe-URL classification.
++      // CANARY is non-enforcing, and unspecified/future attributes require
++      // ignoring the entire detail under the V5 forward-compatibility rule.
++      // Thus no currently defined attribute permits this generic callback.
++      if (fullHashDetail.attributes_size() != 0) {
++        continue;
++      }
+       const auto& threatType = fullHashDetail.threat_type();
+
+       nsresult rv = ConvertThreatTypeToListNamesV5(threatType, tableNames);
+@@ -996,9 +1004,11 @@
+       }
+     }
+
+-    aCallback->OnCompleteHashFound(
+-        nsDependentCString(hash.c_str(), hash.length()), tableNames,
+-        cacheDurationSec);
++    if (!tableNames.IsEmpty()) {
++      aCallback->OnCompleteHashFound(
++          nsDependentCString(hash.c_str(), hash.length()), tableNames,
++          cacheDurationSec);
++    }
+   }
+
+   // In V5, the hashes::search API use the single cache duration for all. There
+diff --git a/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp b/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp
+new file mode 100644
+--- /dev/null
++++ b/toolkit/components/url-classifier/tests/gtest/TestGoodBearGoogleFreshness.cpp
+@@ -0,0 +1,230 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#include "Common.h"
++#include "GoodBearGoogleVerdictFreshness.h"
++#include "LookupCacheV4.h"
++
++using ::RefPtr;
++using mozilla::TimeDuration;
++using mozilla::TimeStamp;
++
++namespace {
++
++constexpr int64_t kGoodBearTestWall = INT64_C(2000000000000000);
++
++static RefPtr<LookupCacheV4> GoodBearFreshnessCache(
++    const nsACString& aTable, const nsACString& aProvider,
++    uint8_t aPrefixSize = PREFIX_SIZE) {
++  nsCOMPtr<nsIFile> directory = GetFile(nsTArray<nsString>{u"safebrowsing"_ns});
++  RefPtr<LookupCacheV4> cache = new LookupCacheV4(aTable, aProvider, directory);
++  EXPECT_NS_SUCCEEDED(cache->Init());
++  _PrefixArray prefixes = {
++      CreatePrefixFromURL("goodbear-freshness.example/", aPrefixSize)};
++  EXPECT_NS_SUCCEEDED(BuildCache(cache, prefixes));
++  return cache;
++}
++
++static Completion GoodBearFreshnessHash() {
++  Completion completion;
++  EXPECT_NS_SUCCEEDED(
++      completion.FromPlaintext("goodbear-freshness.example/"_ns));
++  return completion;
++}
++
++static void GoodBearCacheResponse(
++    LookupCacheV4* aCache, const GoodBearGoogleVerdictFreshness& aFreshness,
++    int64_t aNegativeDurationSec = 7200, int64_t aPositiveDurationSec = 3600) {
++  FullHashResponseMap responses;
++  auto hash = GoodBearFreshnessHash();
++  auto* response = responses.GetOrInsertNew(hash.ToUint32());
++  response->negativeCacheExpirySec =
++      PR_Now() / PR_USEC_PER_SEC + aNegativeDurationSec;
++  response->mGoodBearFreshness = aFreshness;
++  response->fullHashes.InsertOrUpdate(
++      CreatePrefixFromURL("goodbear-freshness.example/", COMPLETE_SIZE),
++      PR_Now() / PR_USEC_PER_SEC + aPositiveDurationSec);
++  EXPECT_NS_SUCCEEDED(aCache->AddFullHashResponseToCache(responses));
++}
++
++static void GoodBearExpectCached(LookupCacheV4* aCache, bool aConfirmed) {
++  bool has = false;
++  bool confirmed = false;
++  uint32_t length = 0;
++  auto hash = GoodBearFreshnessHash();
++  EXPECT_NS_SUCCEEDED(aCache->Has(hash, &has, &length, &confirmed));
++  EXPECT_TRUE(has);
++  EXPECT_EQ(confirmed, aConfirmed);
++  EXPECT_TRUE(aCache->IsInCache(hash.ToUint32()));
++}
++
++}  // namespace
++
++TEST(GoodBearGoogleFreshness, ExactThirtyMinuteBoundary)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_TRUE(freshness.IsFreshAt(start, kGoodBearTestWall));
++  EXPECT_TRUE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1799.999),
++                                  kGoodBearTestWall + INT64_C(1799999000)));
++  EXPECT_TRUE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1800),
++                                  kGoodBearTestWall + INT64_C(1800000000)));
++  EXPECT_FALSE(
++      freshness.IsFreshAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++}
++
++TEST(GoodBearGoogleFreshness, UnknownOrBackwardTimeNeverConfirms)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(
++      GoodBearGoogleVerdictFreshness{}.IsFreshAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(freshness.IsFreshAt(TimeStamp{}, kGoodBearTestWall));
++  EXPECT_FALSE(freshness.IsFreshAt(start, kGoodBearTestWall - 1));
++  EXPECT_FALSE(freshness.IsFreshAt(start - TimeDuration::FromMilliseconds(1),
++                                   kGoodBearTestWall));
++}
++
++TEST(GoodBearGoogleFreshness, RollbackCannotExtendMonotonicAge)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1801),
++                                   kGoodBearTestWall + PR_USEC_PER_SEC));
++}
++
++TEST(GoodBearGoogleFreshness, SleepCannotExtendWallAge)
++{
++  auto start = TimeStamp::Now();
++  GoodBearGoogleVerdictFreshness freshness{start, kGoodBearTestWall};
++  EXPECT_FALSE(freshness.IsFreshAt(start + TimeDuration::FromSeconds(1),
++                                   kGoodBearTestWall + INT64_C(1801000000)));
++}
++
++TEST(GoodBearGoogleFreshness, DelayedFinalCallbackRechecksBothConfirmedPaths)
++{
++  auto start = TimeStamp::Now();
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mGoodBearRequiresFreshGoogleVerdict = true;
++  result->mGoodBearFreshness = {start, kGoodBearTestWall};
++  result->mConfirmed = true;
++  EXPECT_TRUE(result->ConfirmedAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(
++      result->ConfirmedAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++  result->mConfirmed = false;
++  result->mProtocolConfirmed = true;
++  EXPECT_TRUE(result->ConfirmedAt(start, kGoodBearTestWall));
++  EXPECT_FALSE(
++      result->ConfirmedAt(start + TimeDuration::FromMilliseconds(1800001),
++                          kGoodBearTestWall + INT64_C(1800001000)));
++}
++
++TEST(GoodBearGoogleFreshness,
++     DirectThirtyTwoByteGoogleMatchNeedsFreshCompletion)
++{
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mPartialHashLength = COMPLETE_SIZE;
++  result->mGoodBearRequiresFreshGoogleVerdict =
++      GoodBearRequiresFreshGoogleVerdict("goog-malware-proto"_ns, ""_ns);
++  EXPECT_FALSE(result->ConfirmWithoutCompleter());
++  EXPECT_FALSE(result->Confirmed());
++  EXPECT_FALSE(result->mConfirmed);
++}
++
++TEST(GoodBearGoogleFreshness, NonGoogleCompleterFallbackAndShortHashUnchanged)
++{
++  RefPtr<LookupResult> result = new LookupResult();
++  result->mPartialHashLength = PREFIX_SIZE;
++  EXPECT_FALSE(result->ConfirmWithoutCompleter());
++  result->mPartialHashLength = COMPLETE_SIZE;
++  EXPECT_TRUE(result->ConfirmWithoutCompleter());
++  EXPECT_TRUE(result->Confirmed());
++}
++
++TEST(GoodBearGoogleFreshness, ProviderAndStartupTableScope)
++{
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-proto"_ns, "google5"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-proto"_ns, "google4"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("custom-shavar"_ns, "google"_ns));
++  EXPECT_TRUE(
++      GoodBearRequiresFreshGoogleVerdict("googpub-phish-proto"_ns, ""_ns));
++  EXPECT_FALSE(GoodBearRequiresFreshGoogleVerdict("moztest-malware-proto"_ns,
++                                                  "test"_ns));
++  EXPECT_FALSE(GoodBearRequiresFreshGoogleVerdict("mozstd-track-digest256"_ns,
++                                                  "mozilla"_ns));
++}
++
++TEST(GoodBearGoogleFreshness, FreshPositiveAndStalePositivePreserveServerCache)
++{
++  auto cache = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearCacheResponse(cache, GoodBearGoogleVerdictFreshness::BeforeRequest());
++  GoodBearExpectCached(cache, true);
++  GoodBearCacheResponse(cache,
++                        {TimeStamp::Now(), PR_Now() - INT64_C(1801000000)});
++  GoodBearExpectCached(cache, false);
++  // An independent full hash sharing this prefix still uses the original
++  // negative cache lifetime. A stale positive must not disable that cache.
++  auto otherHash = GoodBearFreshnessHash();
++  otherHash.buf[COMPLETE_SIZE - 1] ^= 1;
++  bool has = true;
++  bool confirmed = true;
++  uint32_t length = 0;
++  EXPECT_NS_SUCCEEDED(cache->Has(otherHash, &has, &length, &confirmed));
++  EXPECT_FALSE(has);
++  EXPECT_FALSE(confirmed);
++}
++
++TEST(GoodBearGoogleFreshness, UnknownOldMetadataAndFullLengthPrefixNeedResponse)
++{
++  auto cache =
++      GoodBearFreshnessCache("goog-malware-proto"_ns, ""_ns, COMPLETE_SIZE);
++  GoodBearCacheResponse(cache, {});
++  GoodBearExpectCached(cache, false);
++  EXPECT_TRUE(cache->RequiresFreshGoogleVerdict());
++}
++
++TEST(GoodBearGoogleFreshness, FreshnessLimitDoesNotShortenServerCacheLifetime)
++{
++  auto cache = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearGoogleVerdictFreshness stale{TimeStamp::Now(),
++                                       PR_Now() - INT64_C(1801000000)};
++  GoodBearCacheResponse(cache, stale, 60, 3600);
++  GoodBearExpectCached(cache, false);
++  EXPECT_TRUE(cache->GoogleVerdictFreshness(GoodBearFreshnessHash()) == stale);
++}
++
++TEST(GoodBearGoogleFreshness, CloningDoesNotRenewAgeOrChangeServerExpiry)
++{
++  auto source = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  auto target = GoodBearFreshnessCache("goog-malware-proto"_ns, "google5"_ns);
++  GoodBearGoogleVerdictFreshness stale{TimeStamp::Now(),
++                                       PR_Now() - INT64_C(1801000000)};
++  GoodBearCacheResponse(source, stale);
++  target->CopyFullHashCache(source);
++  EXPECT_TRUE(target->GoogleVerdictFreshness(GoodBearFreshnessHash()) == stale);
++  GoodBearExpectCached(target, false);
++  CachedFullHashResponse original;
++  original.negativeCacheExpirySec = 999999;
++  original.mGoodBearFreshness = stale;
++  original.fullHashes.InsertOrUpdate("preserved-hash"_ns, 123456);
++  CachedFullHashResponse copy;
++  copy = original;
++  EXPECT_TRUE(copy == original);
++  EXPECT_EQ(copy.negativeCacheExpirySec, 999999);
++  EXPECT_EQ(copy.fullHashes.Get("preserved-hash"_ns), 123456);
++}
++
++TEST(GoodBearGoogleFreshness, NonGooglePositiveCacheRetainsItsServerLifetime)
++{
++  auto cache =
++      GoodBearFreshnessCache("mozstd-track-digest256"_ns, "mozilla"_ns);
++  GoodBearCacheResponse(cache, {});
++  GoodBearExpectCached(cache, true);
++  EXPECT_FALSE(cache->RequiresFreshGoogleVerdict());
++}
+diff --git a/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp b/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp
+new file mode 100644
+--- /dev/null
++++ b/toolkit/components/url-classifier/tests/gtest/TestGoodBearV5Response.cpp
+@@ -0,0 +1,191 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
++
++#include "Common.h"
++#include "chromium/safebrowsing_v5.pb.h"
++#include "mozilla/RefPtr.h"
++#include "nsUrlClassifierUtils.h"
++
++namespace {
++namespace gbv5 = mozilla::safebrowsing::v5;
++
++class GoodBearV5Callback final
++    : public nsIUrlClassifierParseFindFullHashCallback {
++ public:
++  NS_DECL_ISUPPORTS
++
++  NS_IMETHOD OnCompleteHashFound(const nsACString& aHash,
++                                 const nsACString& aTables,
++                                 uint32_t aDuration) override {
++    mHashes.AppendElement(nsCString(aHash));
++    mTables.AppendElement(nsCString(aTables));
++    mDurations.AppendElement(aDuration);
++    return NS_OK;
++  }
++
++  NS_IMETHOD OnResponseParsed(uint32_t aWait, uint32_t aDuration) override {
++    ++mResponses;
++    mWait = aWait;
++    mNegativeDuration = aDuration;
++    return NS_OK;
++  }
++
++  nsTArray<nsCString> mHashes;
++  nsTArray<nsCString> mTables;
++  nsTArray<uint32_t> mDurations;
++  uint32_t mResponses = 0;
++  uint32_t mWait = UINT32_MAX;
++  uint32_t mNegativeDuration = UINT32_MAX;
++
++ private:
++  ~GoodBearV5Callback() = default;
++};
++
++NS_IMPL_ISUPPORTS(GoodBearV5Callback, nsIUrlClassifierParseFindFullHashCallback)
++
++static gbv5::FullHash* AddGoodBearV5Hash(
++    gbv5::SearchHashesResponse& aResponse) {
++  auto* hash = aResponse.add_full_hashes();
++  hash->set_full_hash("01234567890123456789012345678901");
++  aResponse.mutable_cache_duration()->set_seconds(123);
++  return hash;
++}
++
++static RefPtr<GoodBearV5Callback> ParseGoodBearV5(
++    const gbv5::SearchHashesResponse& aResponse) {
++  std::string wire;
++  EXPECT_TRUE(aResponse.SerializeToString(&wire));
++  RefPtr<GoodBearV5Callback> callback = new GoodBearV5Callback();
++  EXPECT_EQ(NS_OK,
++            nsUrlClassifierUtils::GetInstance()->ParseFindFullHashResponseV5(
++                nsDependentCString(wire.data(), wire.size()), callback));
++  EXPECT_EQ(1u, callback->mResponses);
++  EXPECT_EQ(0u, callback->mWait);
++  EXPECT_EQ(123u, callback->mNegativeDuration);
++  return callback;
++}
++
++static nsCString GoodBearV5Tables(gbv5::ThreatType aType) {
++  nsCString tables;
++  EXPECT_EQ(NS_OK,
++            nsUrlClassifierUtils::GetInstance()->ConvertThreatTypeToListNamesV5(
++                aType, tables));
++  return tables;
++}
++}  // namespace
++
++TEST(GoodBearSafeBrowsingV5, AttributeFreeThreatIsPreserved)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response)->add_full_hash_details()->set_threat_type(
++      gbv5::MALWARE);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(
++      callback->mHashes[0].EqualsLiteral("01234567890123456789012345678901"));
++  EXPECT_TRUE(callback->mTables[0].Equals(GoodBearV5Tables(gbv5::MALWARE)));
++  EXPECT_EQ(123u, callback->mDurations[0]);
++}
++
++TEST(GoodBearSafeBrowsingV5, CanaryNeverBecomesAnEnforcingMatch)
++{
++  gbv5::SearchHashesResponse response;
++  auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++  detail->set_threat_type(gbv5::MALWARE);
++  detail->add_attributes(gbv5::CANARY);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, FrameOnlyNeverBecomesAnUnrestrictedMatch)
++{
++  gbv5::SearchHashesResponse response;
++  auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++  detail->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  detail->add_attributes(gbv5::FRAME_ONLY);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownAttributeDiscardsEntireDetail)
++{
++  for (int attribute : {0, 999, -1}) {
++    gbv5::SearchHashesResponse response;
++    auto* detail = AddGoodBearV5Hash(response)->add_full_hash_details();
++    detail->set_threat_type(gbv5::MALWARE);
++    detail->add_attributes(static_cast<gbv5::ThreatAttribute>(attribute));
++    EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++  }
++}
++
++TEST(GoodBearSafeBrowsingV5, NonEnforcingDetailsDoNotHideIndependentThreat)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  auto* canary = hash->add_full_hash_details();
++  canary->set_threat_type(gbv5::MALWARE);
++  canary->add_attributes(gbv5::CANARY);
++  canary->add_attributes(static_cast<gbv5::ThreatAttribute>(999));
++  hash->add_full_hash_details()->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(
++      callback->mTables[0].Equals(GoodBearV5Tables(gbv5::SOCIAL_ENGINEERING)));
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownThreatDoesNotHideIndependentThreat)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  hash->add_full_hash_details()->set_threat_type(
++      static_cast<gbv5::ThreatType>(999));
++  hash->add_full_hash_details()->set_threat_type(gbv5::MALWARE);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  EXPECT_TRUE(callback->mTables[0].Equals(GoodBearV5Tables(gbv5::MALWARE)));
++}
++
++TEST(GoodBearSafeBrowsingV5, UnknownThreatAloneDoesNotProduceMatch)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response)->add_full_hash_details()->set_threat_type(
++      static_cast<gbv5::ThreatType>(999));
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, AllAttributeFreeThreatsArePreserved)
++{
++  gbv5::SearchHashesResponse response;
++  auto* hash = AddGoodBearV5Hash(response);
++  hash->add_full_hash_details()->set_threat_type(gbv5::MALWARE);
++  hash->add_full_hash_details()->set_threat_type(gbv5::SOCIAL_ENGINEERING);
++  auto callback = ParseGoodBearV5(response);
++  ASSERT_EQ(1u, callback->mHashes.Length());
++  nsCString expected = GoodBearV5Tables(gbv5::MALWARE);
++  expected.AppendLiteral(",");
++  expected.Append(GoodBearV5Tables(gbv5::SOCIAL_ENGINEERING));
++  EXPECT_TRUE(callback->mTables[0].Equals(expected));
++}
++
++TEST(GoodBearSafeBrowsingV5, EmptyDetailsPreserveNegativeCacheOnly)
++{
++  gbv5::SearchHashesResponse response;
++  AddGoodBearV5Hash(response);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, EmptyResponsePreservesNegativeCache)
++{
++  gbv5::SearchHashesResponse response;
++  response.mutable_cache_duration()->set_seconds(123);
++  EXPECT_TRUE(ParseGoodBearV5(response)->mHashes.IsEmpty());
++}
++
++TEST(GoodBearSafeBrowsingV5, MalformedWireProducesNoCallbacks)
++{
++  RefPtr<GoodBearV5Callback> callback = new GoodBearV5Callback();
++  EXPECT_EQ(NS_ERROR_FAILURE,
++            nsUrlClassifierUtils::GetInstance()->ParseFindFullHashResponseV5(
++                nsCString("\x0a\xff", 2), callback));
++  EXPECT_TRUE(callback->mHashes.IsEmpty());
++  EXPECT_EQ(0u, callback->mResponses);
++}
+diff --git a/toolkit/components/url-classifier/tests/gtest/moz.build b/toolkit/components/url-classifier/tests/gtest/moz.build
+--- a/toolkit/components/url-classifier/tests/gtest/moz.build
++++ b/toolkit/components/url-classifier/tests/gtest/moz.build
+@@ -17,6 +17,8 @@
+     "TestClassifier.cpp",
+     "TestFailUpdate.cpp",
+     "TestFindFullHash.cpp",
++    "TestGoodBearGoogleFreshness.cpp",
++    "TestGoodBearV5Response.cpp",
+     "TestLookupCacheV4.cpp",
+     "TestPerProviderDirectory.cpp",
+     "TestPrefixSet.cpp",
+diff --git a/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html b/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
+--- a/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
++++ b/toolkit/components/url-classifier/tests/mochitest/test_advisory_link.html
+@@ -39,6 +39,10 @@
+   { url: "phishing.example.com/test.html",
+     list: "mochi2-phish-simple",
+     provider: "google4",
++  },
++  { url: "phishing.example.org/test.html",
++    list: "mochi3-phish-simple",
++    provider: "google5",
+   },
+ ];
+
+@@ -88,7 +92,11 @@
+       // so let's wait for `document.l10n.ready` promise to resolve.
+       await doc.l10n.ready;
+       let advisoryEl = doc.getElementById("advisory_provider");
+-      if (aTestData.provider != "google" && aTestData.provider != "google4") {
++      let isGoogle = ["google", "google4", "google5"].includes(aTestData.provider);
++      let supplierNotice = doc.getElementById("goodbearGoogleNotice");
++      is(supplierNotice.hidden, !isGoogle,
++         "Only Google results carry the Google reliability notice");
++      if (!isGoogle) {
+         ok(!advisoryEl, "Advisory should not be shown");
+       } else {
+         ok(advisoryEl, "Advisory element should exist");
+@@ -102,6 +110,9 @@
+                                     aTestData.provider +
+                                     ".advisoryName");
+         is(advisoryEl.text, expectedText, "correct advisory text");
++        is(doc.getElementById("errorTitleText").getAttribute("data-l10n-id"),
++           "goodbear-safebrowsing-phishing-title", "Qualified phishing title");
++        ok(supplierNotice.textContent.trim(), "Notice has localized text");
+       }
+
+       win.close();

@@ -1,0 +1,197 @@
+# Good Bear theme: dictionary
+# Final owner deltas; separate overlays are listed in config/patch-themes.json.
+
+diff --git a/browser/app/distribution/moz.build b/browser/app/distribution/moz.build
+--- a/browser/app/distribution/moz.build
++++ b/browser/app/distribution/moz.build
+@@ -4,6 +4,12 @@
+
+ DIST_SUBDIR = ""
+
++# Good Bear's original dictionary XPI is a distribution add-on on every
++# supported platform, independently of Mozilla's distribution.ini branding.
++FINAL_TARGET_FILES.distribution.extensions += [
++    "/distribution/extensions/russian-spell-dictionary@valery-ledovskoy.xpi",
++]
++
+ if CONFIG["BUILT_BY_MOZILLA"]:
+     FINAL_TARGET_FILES.distribution += [
+         "distribution.ini",
+diff --git a/browser/components/tests/browser/browser.toml b/browser/components/tests/browser/browser.toml
+--- a/browser/components/tests/browser/browser.toml
++++ b/browser/components/tests/browser/browser.toml
+@@ -7,6 +7,8 @@
+ ["browser_browserGlue_client_association_ping.js"]
+
+ ["browser_browserGlue_fxa_client_info_ping.js"]
++
++["browser_goodbear_safebrowsing_notice.js"]
+
+ ["browser_browserGlue_os_auth.js"]
+ skip-if = [
+@@ -93,3 +95,6 @@
+ run-if = [
+   "os == 'win'",
+ ]
++
++["browser_goodbear_spellcheck.js"]
++support-files = ["goodbear_dictionary_109.csv"]
+diff --git a/browser/components/tests/browser/browser_goodbear_spellcheck.js b/browser/components/tests/browser/browser_goodbear_spellcheck.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/tests/browser/browser_goodbear_spellcheck.js
+@@ -0,0 +1,115 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++// Run on the current Russian repack with its bundled distribution extension.
++// Installing a temporary dictionary here would hide packaging/startup defects.
++add_task(async function test_shipped_russian_dictionary_and_release_regressions() {
++  const { AddonManager } = ChromeUtils.importESModule(
++    "resource://gre/modules/AddonManager.sys.mjs"
++  );
++  const addon = await AddonManager.getAddonByID(
++    "russian-spell-dictionary@valery-ledovskoy"
++  );
++  Assert.ok(addon?.isActive, "The shipped primary dictionary is active");
++  Assert.equal(addon.version, "1.0.9");
++  const engine = Cc["@mozilla.org/spellchecker/engine;1"].getService(
++    Ci.mozISpellCheckingEngine
++  );
++  await TestUtils.waitForCondition(
++    () => engine.getDictionaryList().includes("ru"),
++    "The bundled Russian dictionary registers without a network download"
++  );
++  const available = engine.getDictionaryList();
++  Assert.equal(available.filter(name => name === "ru").length, 1);
++  Assert.ok(available.includes("en-US"), "Built-in English is retained");
++  const previous = engine.dictionaries;
++  try {
++    engine.dictionaries = ["ru"];
++    Assert.ok(engine.check("карета"));
++    Assert.ok(!engine.check("корета"));
++    const csv = await (
++      await fetch(getRootDirectory(gTestPath) + "goodbear_dictionary_109.csv")
++    ).text();
++    for (const row of csv.trim().split("\n").slice(1)) {
++      const [word, target, , status, rank] = row.split(",");
++      if (status === "input-accepted-equivalence") {
++        Assert.ok(engine.check(word), `${word}: release equivalence retained`);
++      } else {
++        Assert.ok(!engine.check(word), `${word}: release typo rejected`);
++        if (Number(rank)) {
++          const position = engine.suggest(word).indexOf(target);
++          Assert.ok(position >= 0 && position < Number(rank),
++            `${word} -> ${target}: reviewed release suggestion bound`);
++        } else {
++          info(`${word}: release records a remaining suggestion gap`);
++        }
++      }
++    }
++    engine.dictionaries = ["en-US"];
++    Assert.ok(engine.check("hello"));
++    Assert.ok(!engine.check("helllo"));
++    engine.dictionaries = ["ru", "en-US"];
++    for (const word of ["карета", "hello"]) {
++      Assert.ok(engine.check(word), `${word}: correct mixed-language word`);
++    }
++    for (const word of ["корета", "helllo"]) {
++      Assert.ok(!engine.check(word), `${word}: mixed-language error`);
++    }
++  } finally {
++    engine.dictionaries = previous;
++  }
++});
++
++add_task(async function test_actual_editor_marks_mixed_language_errors() {
++  const html = '<meta charset="utf-8"><textarea lang="ru" spellcheck="true">' +
++    "карета корета hello helllo</textarea>";
++  await BrowserTestUtils.withNewTab(
++    "data:text/html;charset=utf-8," + encodeURIComponent(html), async browser => {
++      await SpecialPowers.spawn(browser, [], async () => {
++        const { maybeOnSpellCheck } = ChromeUtils.importESModule(
++          "resource://testing-common/AsyncSpellCheckTestHelper.sys.mjs"
++        );
++        const textarea = content.document.querySelector("textarea");
++        textarea.focus();
++        await new Promise(resolve => maybeOnSpellCheck(textarea, resolve));
++        const editor = SpecialPowers.wrap(textarea).editor;
++        const inline = editor.getInlineSpellChecker(true);
++        await inline.spellChecker.setCurrentDictionaries(["ru", "en-US"]);
++        inline.enableRealTimeSpell = true;
++        inline.spellCheckRange(null);
++        await new Promise(resolve => maybeOnSpellCheck(textarea, resolve));
++        const selection = editor.selectionController.getSelection(
++          Ci.nsISelectionController.SELECTION_SPELLCHECK
++        );
++        const marked = Array.from({ length: selection.rangeCount },
++          (_, index) => selection.getRangeAt(index).toString());
++        Assert.deepEqual(marked, ["корета", "helllo"],
++          "Real spelling ranges mark errors and leave correct words unmarked");
++      });
++    }
++  );
++});
++
++add_task(async function test_defaults_and_existing_profile_language_choices() {
++  Assert.equal(Services.prefs.getDefaultBranch("").getIntPref(
++    "layout.spellcheckDefault"), 1, "Actual fresh-profile default branch");
++  for (const languages of ["en-US", "ru,en-US"]) {
++    await SpecialPowers.pushPrefEnv({ set: [
++      ["spellchecker.dictionary", languages], ["layout.spellcheckDefault", 0],
++    ] });
++    try {
++      for (let reopen = 0; reopen < 2; reopen++) {
++        await BrowserTestUtils.withNewTab("about:preferences", async () => {
++          Assert.equal(Services.prefs.getStringPref("spellchecker.dictionary"), languages);
++          Assert.equal(Services.prefs.getIntPref("layout.spellcheckDefault"), 0);
++        });
++      }
++    } finally {
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++  // Separate native restart/migrated-profile invocation must use the same
++  // persisted profile; opening another tab is not a process restart claim.
++});
+diff --git a/browser/components/tests/browser/goodbear_dictionary_109.csv b/browser/components/tests/browser/goodbear_dictionary_109.csv
+new file mode 100644
+--- /dev/null
++++ b/browser/components/tests/browser/goodbear_dictionary_109.csv
+@@ -0,0 +1,9 @@
++input_word,target_word,category,expected_current_status,expected_target_rank,provenance,notes
++корета,карета,adjacent_key_substitution,rejected-target-top8,1,github-issue-5,Issue #5 regression fixed by REP о а.
++картеа,карета,transpose,rejected-target-top8,1,project-owned-d109,Adjacent transpose regression.
++каррета,карета,insertion,rejected-target-top8,2,project-owned-d109,One extra letter.
++крета,карета,deletion,rejected-target-top8,7,project-owned-d109,One omitted letter.
++елочка,ёлочка,e-yo,input-accepted-equivalence,0,existing-basic-suggestion-suite,Current Hunspell e/yo equivalence accepts the input.
++сабака,собака,vowel,rejected-target-top8,1,existing-owner-regression,Existing project-owned common typo.
++скаска,сказка,voiced-unvoiced,rejected-target-top8,8,project-owned-d109,Remains in top-8 after the Issue #6 morphology changes.
++учитца,учиться,tsya-tsya,rejected-target-missing,0,project-owned-d109,Explicitly records a policy-needed gap; it is not a directive-selection target.
+diff --git a/browser/installer/package-manifest.in b/browser/installer/package-manifest.in
+--- a/browser/installer/package-manifest.in
++++ b/browser/installer/package-manifest.in
+@@ -460,4 +460,6 @@
+
+ #if defined(BUILT_BY_MOZILLA)
+ @RESPATH@/distribution/*
+-#endif
++#else
++@RESPATH@/distribution/extensions/russian-spell-dictionary@valery-ledovskoy.xpi
++#endif
+diff --git a/extensions/spellcheck/locales/moz.build b/extensions/spellcheck/locales/moz.build
+--- a/extensions/spellcheck/locales/moz.build
++++ b/extensions/spellcheck/locales/moz.build
+@@ -2,7 +2,9 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+-LOCALIZED_FILES.dictionaries += [
++# Keep built-in English across Russian repacks. Russian spelling comes from
++# the original bundled RusSpell XPI, not the locale's competing ru dictionary.
++FINAL_TARGET_FILES.dictionaries += [
+     "en-US/hunspell/*.aff",
+     "en-US/hunspell/*.dic",
+ ]

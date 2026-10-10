@@ -1,0 +1,2137 @@
+diff --git a/browser/base/content/browser-siteIdentity.js b/browser/base/content/browser-siteIdentity.js
+--- a/browser/base/content/browser-siteIdentity.js
++++ b/browser/base/content/browser-siteIdentity.js
+@@ -237,6 +237,9 @@
+       "identity-popup-more-info": event => {
+         this.handleMoreInfoClick(event);
+       },
++      "goodbear-russian-pki-view-certificate": () => {
++        this._showGoodBearRussianPKICertificate();
++      },
+     };
+
+     for (let [id, handler] of Object.entries(COMMANDS)) {
+@@ -349,6 +352,12 @@
+     delete this._identityIconLabel;
+     return (this._identityIconLabel = document.getElementById(
+       "identity-icon-label"
++    ));
++  },
++  get _goodBearRussianPKITrustLabel() {
++    delete this._goodBearRussianPKITrustLabel;
++    return (this._goodBearRussianPKITrustLabel = document.getElementById(
++      "trust-goodbear-russian-pki-label"
+     ));
+   },
+   get _overrideService() {
+@@ -723,6 +732,7 @@
+     // the documentation of the individual properties for details.
+     this.setURI(uri);
+     this._secInfo = gBrowser.securityUI.secInfo;
++    this._updateGoodBearRussianPKIDetails();
+     this._isSecureContext = this._getIsSecureContext();
+     if (locationChanged) {
+       this._qwac = null;
+@@ -832,6 +842,28 @@
+       !this._isCertUserOverridden &&
+       this._secInfo &&
+       !this._secInfo.isBuiltCertChainRootBuiltInRoot
++    );
++  },
++
++  /**
++   * The verifier-owned trust domain for the current connection. Do not infer
++   * this from a certificate subject, issuer, container colour, or URL. An
++   * absent or unrecognized value is deliberately fail-closed for UI purposes.
++   */
++  get _goodBearTrustDomain() {
++    switch (this._secInfo?.goodBearTrustDomain) {
++      case Ci.nsITransportSecurityInfo.Standard:
++      case Ci.nsITransportSecurityInfo.RussianPKI:
++        return this._secInfo.goodBearTrustDomain;
++      default:
++        return Ci.nsITransportSecurityInfo.Invalid;
++    }
++  },
++
++  get _usesGoodBearRussianPKI() {
++    return (
++      this._isSecureConnection &&
++      this._goodBearTrustDomain == Ci.nsITransportSecurityInfo.RussianPKI
+     );
+   },
+
+@@ -962,9 +994,34 @@
+       );
+     }
+
+-    this._identityIconLabel.setAttribute("tooltiptext", tooltip);
+-    this._identityIconLabel.setAttribute("value", icon_label);
+-    this._identityIconLabel.collapsed = !icon_label;
++    if (this._usesGoodBearRussianPKI) {
++      document.l10n.setAttributes(
++        this._identityIconLabel,
++        "identity-goodbear-russian-pki-label"
++      );
++      this._identityIconLabel.collapsed = false;
++      document.l10n.setAttributes(
++        this._goodBearRussianPKITrustLabel,
++        "identity-goodbear-russian-pki-label"
++      );
++      this._goodBearRussianPKITrustLabel.hidden = false;
++      // Keep Firefox's own button name and tracker count. A separate Russian
++      // description exposes the native trust domain to assistive technology.
++      this._goodBearRussianPKITrustLabel.parentElement.setAttribute(
++        "aria-describedby",
++        "trust-goodbear-russian-pki-description"
++      );
++    } else {
++      this._identityIconLabel.removeAttribute("data-l10n-id");
++      this._identityIconLabel.setAttribute("tooltiptext", tooltip);
++      this._identityIconLabel.setAttribute("value", icon_label);
++      this._identityIconLabel.collapsed = !icon_label;
++      this._goodBearRussianPKITrustLabel.hidden = true;
++      this._goodBearRussianPKITrustLabel.removeAttribute("data-l10n-id");
++      this._goodBearRussianPKITrustLabel.parentElement.removeAttribute(
++        "aria-describedby"
++      );
++    }
+   },
+
+   /**
+@@ -1034,7 +1091,123 @@
+    * based on the specified mode, and the details of the SSL cert, where
+    * applicable
+    */
++  _getGoodBearRussianPKIDetails(browser = gBrowser.selectedBrowser) {
++    try {
++      const { state, secInfo } = browser.securityUI;
++      const { userContextId, privateBrowsingId } =
++        browser.browsingContext.originAttributes;
++      if (
++        !(state & Ci.nsIWebProgressListener.STATE_IS_SECURE) ||
++        state & Ci.nsIWebProgressListener.STATE_CERT_USER_OVERRIDDEN ||
++        secInfo?.goodBearTrustDomain !==
++          Ci.nsITransportSecurityInfo.RussianPKI ||
++        secInfo.errorCode !== 0 ||
++        !Number.isInteger(userContextId) ||
++        userContextId <= 0 ||
++        privateBrowsingId !== 0 ||
++        !browser.currentURI.schemeIs("https")
++      ) {
++        return null;
++      }
++      const innerWindowId =
++        browser.browsingContext.currentWindowGlobal.innerWindowId;
++      if (!Number.isSafeInteger(innerWindowId) || innerWindowId <= 0) {
++        return null;
++      }
++      // Only the verifier's successful path names the actual trust anchor.
++      // Never substitute the server-supplied handshakeCertificates array.
++      const chain = secInfo.succeededCertChain;
++      if (chain.length < 2 || !chain[0].equals(secInfo.serverCert)) {
++        return null;
++      }
++      const leaf = chain[0].subjectName;
++      const issuer = chain[0].issuerName;
++      const root = chain[chain.length - 1].subjectName;
++      const fingerprint = chain[chain.length - 1].sha256Fingerprint;
++      if (
++        [leaf, issuer, root].some(value => typeof value !== "string") ||
++        !/^(?:[0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(fingerprint)
++      ) {
++        return null;
++      }
++      const certificates = chain.map(cert => cert.getBase64DERString());
++      if (certificates.some(value => typeof value !== "string" || !value)) {
++        return null;
++      }
++      return Object.freeze({
++        browser,
++        secInfo,
++        innerWindowId,
++        documentURI: browser.currentURI.spec,
++        hostname: browser.currentURI.displayHost,
++        leaf,
++        issuer,
++        root,
++        fingerprint,
++        certificateURL:
++          "about:certificate?" +
++          certificates
++            .map(cert => `cert=${encodeURIComponent(cert)}`)
++            .join("&"),
++      });
++    } catch {
++      // Incomplete or stale native security information must clear the panel.
++      return null;
++    }
++  },
++
++  _updateGoodBearRussianPKIDetails(browser = gBrowser.selectedBrowser) {
++    this._goodBearRussianPKIDetails = null;
++    const panel = document.getElementById("goodbear-russian-pki-details");
++    if (!panel) {
++      return;
++    }
++    const details = this._getGoodBearRussianPKIDetails(browser);
++    panel.hidden = !details;
++    document.getElementById("goodbear-russian-pki-view-certificate").disabled =
++      !details;
++    for (const name of ["hostname", "leaf", "issuer", "root", "fingerprint"]) {
++      const field = document.getElementById(`goodbear-russian-pki-${name}`);
++      field.removeAttribute("data-l10n-id");
++      field.textContent = details?.[name] || "";
++      if (details && !details[name]) {
++        document.l10n.setAttributes(
++          field,
++          "identity-goodbear-russian-pki-empty-name"
++        );
++      }
++    }
++    this._goodBearRussianPKIDetails = details;
++  },
++
++  _showGoodBearRussianPKICertificate() {
++    const shown = this._goodBearRussianPKIDetails;
++    const current = this._getGoodBearRussianPKIDetails();
++    if (
++      !shown ||
++      !current ||
++      current.browser !== shown.browser ||
++      current.secInfo !== shown.secInfo ||
++      current.innerWindowId !== shown.innerWindowId ||
++      current.documentURI !== shown.documentURI
++    ) {
++      this._updateGoodBearRussianPKIDetails();
++      return false;
++    }
++    const popup =
++      document.getElementById("trustpanel-popup") || this._identityPopup;
++    if (popup) {
++      PanelMultiView.hidePopup(popup);
++    }
++    openTrustedLinkIn(shown.certificateURL, "tab", {
++      userContextId:
++        shown.browser.browsingContext.originAttributes.userContextId,
++    });
++    return true;
++  },
++
+   refreshIdentityPopup() {
++    this._updateGoodBearRussianPKIDetails();
+     // Update cookies and site data information and show the
+     // "Clear Site Data" button if the site is storing local data, and
+     // if the page is not controlled by a WebExtension.
+@@ -1165,6 +1338,11 @@
+       this._updateAttribute(element, "isbroken", this._isBrokenConnection);
+       element.toggleAttribute("customroot", this._hasCustomRoot());
+       this._updateAttribute(element, "httpsonlystatus", httpsOnlyStatus);
++      this._updateAttribute(
++        element,
++        "goodbear-trust-domain",
++        this._usesGoodBearRussianPKI ? "russian-pki" : ""
++      );
+     }
+
+     // Initialize the optional strings to empty values
+diff --git a/browser/base/content/browser-trustPanel.js b/browser/base/content/browser-trustPanel.js
+--- a/browser/base/content/browser-trustPanel.js
++++ b/browser/base/content/browser-trustPanel.js
+@@ -10,7 +10,6 @@
+   ContentBlockingAllowList:
+     "resource://gre/modules/ContentBlockingAllowList.sys.mjs",
+   E10SUtils: "resource://gre/modules/E10SUtils.sys.mjs",
+-  FX_MONITOR_OAUTH_CLIENT_ID: "resource://gre/modules/FxAccountsCommon.sys.mjs",
+   identifyType: "resource://gre/modules/TrackingDBService.sys.mjs",
+   PanelMultiView:
+     "moz-src:///browser/components/customizableui/PanelMultiView.sys.mjs",
+@@ -20,14 +19,7 @@
+   QWACs: "resource://gre/modules/psm/QWACs.sys.mjs",
+   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+   SiteDataManager: "resource:///modules/SiteDataManager.sys.mjs",
+-  UIState: "resource://services-sync/UIState.sys.mjs",
+   UrlbarPrefs: "moz-src:///browser/components/urlbar/UrlbarPrefs.sys.mjs",
+-});
+-
+-ChromeUtils.defineLazyGetter(this, "fxAccounts", () => {
+-  return ChromeUtils.importESModule(
+-    "resource://gre/modules/FxAccounts.sys.mjs"
+-  ).getFxAccountsSingleton();
+ });
+
+ XPCOMUtils.defineLazyPreferenceGetter(
+@@ -334,6 +326,11 @@
+         .getElementById("trustpanel-siteinformation-morelink")
+         .addEventListener("click", () => this.#showSecurityPopup());
+       document
++        .getElementById("goodbear-russian-pki-view-certificate")
++        .addEventListener("command", () =>
++          gIdentityHandler._showGoodBearRussianPKICertificate()
++        );
++      document
+         .getElementById("trustpanel-clear-cookie-cancel")
+         .addEventListener("click", () => this.#hidePopup());
+       document
+@@ -693,6 +690,11 @@
+   async #updatePopup() {
+     this.#popup.setAttribute("connection", this.#connectionState());
+     this.#popup.toggleAttribute("customroot", this.#hasCustomRoot());
++    this.#updateAttribute(
++      this.#popup,
++      "goodbear-trust-domain",
++      this.#usesGoodBearRussianPKI ? "russian-pki" : ""
++    );
+     this.#popup.toggleAttribute("tlskeylogging", this.#tlsKeyLoggingEnabled());
+     this.#popup.setAttribute(
+       "tracking-protection",
+@@ -969,6 +971,7 @@
+   }
+
+   #updateSecurityInformationSubview() {
++    gIdentityHandler._updateGoodBearRussianPKIDetails();
+     document.l10n.setAttributes(
+       document.getElementById("trustpanel-securityInformationView"),
+       "trustpanel-site-information-header",
+@@ -995,6 +998,11 @@
+       element.toggleAttribute("customroot", this.#hasCustomRoot());
+       element.toggleAttribute("tlskeylogging", this.#tlsKeyLoggingEnabled());
+       this.#updateAttribute(element, "httpsonlystatus", httpsOnlyStatus);
++      this.#updateAttribute(
++        element,
++        "goodbear-trust-domain",
++        this.#usesGoodBearRussianPKI ? "russian-pki" : ""
++      );
+     }
+
+     let { supplemental, owner, verifier } = this.#supplementalText();
+@@ -1116,26 +1124,10 @@
+   }
+
+   async #hasMonitorAccount() {
+-    const state = UIState.get();
+-    if (state.status !== UIState.STATUS_SIGNED_IN) {
+-      return false;
+-    }
+-    try {
+-      const attachedClients =
+-        (await fxAccounts.listAttachedOAuthClients(
+-          this.#clearFxaOauthClientCache
+-        )) ?? [];
+-      this.#clearFxaOauthClientCache = false;
+-
+-      const hasMonitorClient = attachedClients.some(
+-        client => client.id === FX_MONITOR_OAUTH_CLIENT_ID
+-      );
+-
+-      return hasMonitorClient;
+-    } catch (error) {
+-      console.warn("Failed to fetch attached OAuth clients:", error);
+-      return false;
+-    }
++    // Good Bear has no Firefox Account or Mozilla Monitor integration.
++    // The local Trust Panel must never load those disabled modules before it
++    // opens the connection and site-information UI.
++    return false;
+   }
+
+   async #hasStoredPasswords() {
+@@ -1303,6 +1295,16 @@
+       Services.env.exists("SSLKEYLOGFILE") &&
+       this.#isSecureConnection &&
+       !this.#isCertUserOverridden
++    );
++  }
++
++  // The native verifier is the only source of this classification. Do not
++  // infer it from certificate strings, container names, or the URL.
++  get #usesGoodBearRussianPKI() {
++    return (
++      this.#isSecureConnection &&
++      this.#secInfo?.goodBearTrustDomain ===
++        Ci.nsITransportSecurityInfo.RussianPKI
+     );
+   }
+
+@@ -2087,6 +2089,20 @@
+   async #getBreachedWebsites() {
+     const REMOTE_SETTINGS_COLLECTION = "fxmonitor-breaches";
+
++    // The Trust Panel is local browser UI and must remain available even
++    // when Good Bear disables the optional Monitor product service.
++    // Keep the shared Remote Settings endpoint for certificate security
++    // collections; its presence must not authorize a Monitor lookup.
++    if (
++      !Services.prefs.getBoolPref(
++        "browser.contentblocking.report.monitor.enabled",
++        false
++      ) ||
++      !Services.prefs.getStringPref("services.settings.server", "")
++    ) {
++      return [];
++    }
++
+     try {
+       const breaches = await RemoteSettings(REMOTE_SETTINGS_COLLECTION).get();
+       return breaches;
+diff --git a/browser/base/content/navigator-toolbox.inc.xhtml b/browser/base/content/navigator-toolbox.inc.xhtml
+--- a/browser/base/content/navigator-toolbox.inc.xhtml
++++ b/browser/base/content/navigator-toolbox.inc.xhtml
+@@ -187,6 +187,10 @@
+           >
+             <image id="trust-icon"/>
+             <label id="trust-label" crop="center" flex="1" data-l10n-id="urlbar-trust-icon-notsecure-label" />
++            <label id="trust-goodbear-russian-pki-label" crop="center" hidden="true"/>
++            <description id="trust-goodbear-russian-pki-description"
++                         data-l10n-id="identity-goodbear-russian-pki-connection"
++                         hidden="true"/>
+             <span id="trust-icon-tracker-count-longform-wrapper">
+               <label
+                 id="trust-icon-tracker-count-longform"
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_nova_surfaces.js b/browser/components/contextualidentity/test/browser/browser_goodbear_nova_surfaces.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_nova_surfaces.js
+@@ -0,0 +1,71 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const { GoodBearRussianPKIContainer } = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++
++// Execute once for each declared OS/theme/scale/sidebar/window matrix row.
++// This checks actual DOM geometry; screenshots and Russian review are separate.
++add_task(async function test_nova_standard_marker_geometry_and_focus() {
++  await SpecialPowers.pushPrefEnv({
++    set: [["privacy.userContext.enabled", true]],
++  });
++  await GoodBearRussianPKIContainer.initialize();
++  const identity = GoodBearRussianPKIContainer.ensureContainer();
++  const { tab, browser } = await openTabInUserContext(
++    "https://example.com/browser/browser/components/contextualidentity/test/browser/empty_file.html",
++    identity.userContextId
++  );
++  try {
++    is(browser.securityUI.secInfo.goodBearTrustDomain,
++       Ci.nsITransportSecurityInfo.Standard, "Actual public TLS stays STANDARD");
++    const marker = document.getElementById("userContext-icons");
++    const label = document.getElementById("userContext-label");
++    await document.l10n.translateElements([marker, label]);
++    const rect = marker.getBoundingClientRect();
++    ok(BrowserTestUtils.isVisible(marker), "Isolation marker is rendered");
++    ok(rect.width > 0 && rect.height > 0, "Marker has actionable visible geometry");
++    ok(rect.left >= 0 && rect.right <= window.innerWidth, "Marker is not clipped by window");
++    ok(label.getBoundingClientRect().right <= rect.right + 1, "Russian label fits its marker");
++    ok(marker.getAttribute("aria-label"), "Isolation has an accessible name");
++    ok(document.getElementById("trust-goodbear-russian-pki-label").hidden,
++       "Container color does not assert Russian TLS trust");
++    gURLBar.focus();
++    is(document.activeElement, gURLBar.inputField, "Keyboard can reach the location bar");
++    const ordinary = await BrowserTestUtils.openNewForegroundTab({
++      gBrowser, url: "https://example.com/",
++    });
++    try {
++      ok(marker.hidden, "Switching documents clears managed marker");
++      ok(!marker.hasAttribute("aria-label"), "No stale accessible isolation state");
++    } finally {
++      BrowserTestUtils.removeTab(ordinary);
++    }
++  } finally {
++    BrowserTestUtils.removeTab(tab);
++    await SpecialPowers.popPrefEnv();
++  }
++});
++
++add_task(async function test_referrals_cannot_be_reenabled_by_preference() {
++  const { Referrals } = ChromeUtils.importESModule(
++    "moz-src:///browser/components/referrals/Referrals.sys.mjs"
++  );
++  await SpecialPowers.pushPrefEnv({ set: [["browser.referrals.enabled", true]] });
++  try {
++    ok(!Referrals.isEnabled, "Fork does not offer Mozilla product invitations");
++    is(Referrals.getReferralCode(), "", "No referral identifier is generated");
++    const handler = Cc["@mozilla.org/network/protocol/about;1?what=referrals"]
++      .getService(Ci.nsIAboutModule);
++    Assert.throws(() => handler.newChannel(Services.io.newURI("about:referrals"), null),
++      /NS_ERROR_NOT_AVAILABLE/, "Direct navigation is denied before an outbound channel");
++    const count = gBrowser.tabs.length;
++    Referrals.openReferralsTab(window, "about_dialog");
++    is(gBrowser.tabs.length, count, "Disabled entry point cannot open a supplier tab");
++  } finally {
++    await SpecialPowers.popPrefEnv();
++  }
++});
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js
+@@ -0,0 +1,182 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const { GoodBearRussianPKIContainer } = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++const TEST_URL =
++  "https://example.com/browser/browser/components/contextualidentity/test/browser/empty_file.html";
++
++add_task(
++  async function test_goodbear_marker_is_independent_of_standard_trust() {
++    await SpecialPowers.pushPrefEnv({
++      set: [["privacy.userContext.enabled", true]],
++    });
++    await GoodBearRussianPKIContainer.initialize();
++    const identity = GoodBearRussianPKIContainer.ensureContainer();
++    const { tab, browser } = await openTabInUserContext(
++      TEST_URL,
++      identity.userContextId
++    );
++    let ordinary;
++    try {
++      is(
++        browser.securityUI.secInfo.goodBearTrustDomain,
++        Ci.nsITransportSecurityInfo.Standard,
++        "Real STANDARD TLS remains STANDARD inside the managed container"
++      );
++      const marker = document.getElementById("userContext-icons");
++      const label = document.getElementById("userContext-label");
++      await document.l10n.translateElements([marker, label]);
++      ok(!marker.hidden, "The neutral container marker remains visible");
++      ok(
++        marker.classList.contains("identity-color-gray"),
++        "Neutral color is retained"
++      );
++      is(
++        label.getAttribute("data-l10n-id"),
++        "urlbar-goodbear-russian-pki-container-label",
++        "Visible container name is localized independently of TLS"
++      );
++      const [translation] = await document.l10n.formatMessages([
++        { id: "urlbar-goodbear-russian-pki-container-marker" },
++      ]);
++      for (const attribute of translation.attributes) {
++        is(
++          marker.getAttribute(attribute.name),
++          attribute.value,
++          "Isolation tooltip and accessible name use Fluent"
++        );
++      }
++      ok(
++        document.getElementById("trust-goodbear-russian-pki-label").hidden,
++        "A STANDARD chain does not acquire the Russian certificate badge"
++      );
++      ordinary = await BrowserTestUtils.openNewForegroundTab({
++        gBrowser,
++        url: TEST_URL,
++      });
++      ok(marker.hidden, "Ordinary context has no container marker");
++      ok(
++        !marker.hasAttribute("data-l10n-id"),
++        "Ordinary tab clears managed localization"
++      );
++      ok(
++        !marker.hasAttribute("aria-label"),
++        "Ordinary tab clears stale accessible name"
++      );
++    } finally {
++      if (ordinary) {
++        BrowserTestUtils.removeTab(ordinary);
++      }
++      BrowserTestUtils.removeTab(tab);
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++);
++
++add_task(async function test_goodbear_verified_details_and_stale_viewer() {
++  for (const trustPanel of [false, true]) {
++    await SpecialPowers.pushPrefEnv({
++      set: [["browser.urlbar.trustPanel.featureGate", trustPanel]],
++    });
++    const win = await BrowserTestUtils.openNewBrowserWindow();
++    try {
++      const tab = await BrowserTestUtils.openNewForegroundTab({
++        gBrowser: win.gBrowser,
++        url: TEST_URL,
++      });
++      if (trustPanel) {
++        await win.gTrustPanel.showPopup();
++      } else {
++        win.gIdentityHandler._initializePopup();
++        win.gIdentityHandler.refreshIdentityPopup();
++      }
++      const handler = win.gIdentityHandler;
++      const doc = win.document;
++      const browser = tab.linkedBrowser;
++      is(
++        handler._getGoodBearRussianPKIDetails(browser),
++        null,
++        "Real STANDARD security info cannot show Russian PKI details"
++      );
++      const nativeInfo = browser.securityUI.secInfo;
++      // This is a UI rendering fixture using a real verified certificate path.
++      // It is not evidence that native TLS classified this server as Russian PKI.
++      const info = {
++        goodBearTrustDomain: Ci.nsITransportSecurityInfo.RussianPKI,
++        errorCode: 0,
++        serverCert: nativeInfo.serverCert,
++        succeededCertChain: nativeInfo.succeededCertChain,
++      };
++      Object.defineProperty(info, "handshakeCertificates", {
++        get() {
++          throw new Error("Unverified chain must never be read");
++        },
++      });
++      const fixture = {
++        securityUI: {
++          state: Ci.nsIWebProgressListener.STATE_IS_SECURE,
++          secInfo: info,
++        },
++        currentURI: browser.currentURI,
++        browsingContext: {
++          originAttributes: { userContextId: 1, privateBrowsingId: 0 },
++          currentWindowGlobal: browser.browsingContext.currentWindowGlobal,
++        },
++      };
++      handler._updateGoodBearRussianPKIDetails(fixture);
++      ok(
++        !doc.getElementById("goodbear-russian-pki-details").hidden,
++        "Both native popup variants render complete verified-path details"
++      );
++      is(
++        doc.getElementById("goodbear-russian-pki-leaf").textContent,
++        info.serverCert.subjectName,
++        "Leaf subject is displayed as text"
++      );
++      const anchor = info.succeededCertChain.at(-1);
++      is(
++        doc.getElementById("goodbear-russian-pki-root").textContent,
++        anchor.subjectName,
++        "Root is the verifier-selected path endpoint"
++      );
++      is(
++        doc.getElementById("goodbear-russian-pki-fingerprint").textContent,
++        anchor.sha256Fingerprint,
++        "Fingerprint belongs to that exact root"
++      );
++      const button = doc.getElementById(
++        "goodbear-russian-pki-view-certificate"
++      );
++      ok(
++        !button.disabled,
++        "Certificate action is a keyboard-accessible native button"
++      );
++      const tabCount = win.gBrowser.tabs.length;
++      button.doCommand();
++      is(
++        win.gBrowser.tabs.length,
++        tabCount,
++        "A fixture from a different document cannot open a certificate tab"
++      );
++      ok(
++        doc.getElementById("goodbear-russian-pki-details").hidden,
++        "Stale certificate details are cleared"
++      );
++      info.succeededCertChain = [];
++      handler._updateGoodBearRussianPKIDetails(fixture);
++      ok(button.disabled, "Missing verified path disables the viewer");
++      is(
++        doc.getElementById("goodbear-russian-pki-root").textContent,
++        "",
++        "Missing verified path never leaves an old anchor visible"
++      );
++    } finally {
++      await BrowserTestUtils.closeWindow(win);
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++});
+diff --git a/browser/components/controlcenter/content/identityPanel.inc.xhtml b/browser/components/controlcenter/content/identityPanel.inc.xhtml
+--- a/browser/components/controlcenter/content/identityPanel.inc.xhtml
++++ b/browser/components/controlcenter/content/identityPanel.inc.xhtml
+@@ -35,6 +35,9 @@
+                         when-connection="not-secure secure-cert-user-overridden secure-custom-root cert-error-page https-only-error-page" data-l10n-id="identity-connection-not-secure"></label>
+             <label class="identity-popup-connection-secure"
+                         when-connection="secure secure-ev secure-etsi" data-l10n-id="identity-connection-secure"></label>
++            <label id="identity-popup-goodbear-russian-pki"
++                        when-goodbear-trust-domain="russian-pki"
++                        data-l10n-id="identity-goodbear-russian-pki-connection"></label>
+             <label class="identity-popup-connection-failure"
+                         when-connection="net-error-page" data-l10n-id="identity-connection-failure"></label>
+             <label when-connection="chrome" data-l10n-id="identity-connection-internal"></label>
+@@ -58,6 +61,10 @@
+               <description id="identity-popup-security-decription-custom-root"
+                            class="identity-popup-warning-box identity-popup-warning-gray"
+                            when-customroot="true" data-l10n-id="identity-custom-root"></description>
++              <description id="identity-popup-security-goodbear-russian-pki"
++                           class="identity-popup-warning-box identity-popup-warning-gray"
++                           when-goodbear-trust-domain="russian-pki"
++                           data-l10n-id="identity-goodbear-russian-pki-description"></description>
+               <description class="identity-popup-warning-box identity-popup-warning-yellow"
+                            when-mixedcontent="passive-loaded" data-l10n-id="identity-passive-loaded"></description>
+               <description class="identity-popup-warning-box identity-popup-warning-yellow"
+diff --git a/browser/components/controlcenter/content/securityInformation.inc.xhtml b/browser/components/controlcenter/content/securityInformation.inc.xhtml
+--- a/browser/components/controlcenter/content/securityInformation.inc.xhtml
++++ b/browser/components/controlcenter/content/securityInformation.inc.xhtml
+@@ -57,6 +57,36 @@
+             <label data-l10n-id="identity-description-custom-root2"/>
+             <html:a is="moz-support-link" id="identity-popup-custom-root-learn-more" support-page="enterprise-roots"/>
+           </description>
++          <description id="identity-popup-securityView-goodbear-russian-pki"
++                       class="identity-popup-warning-box identity-popup-warning-gray"
++                       when-goodbear-trust-domain="russian-pki"
++                       data-l10n-id="identity-goodbear-russian-pki-description"></description>
++
++          <vbox id="goodbear-russian-pki-details" hidden="true"
++                aria-labelledby="goodbear-russian-pki-details-heading">
++            <label id="goodbear-russian-pki-details-heading" class="header"
++                   data-l10n-id="identity-goodbear-russian-pki-details-heading"/>
++            <html:dl>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-status-label"/>
++              <html:dd data-l10n-id="identity-goodbear-russian-pki-status"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-hostname-label"/>
++              <html:dd id="goodbear-russian-pki-hostname"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-leaf-label"/>
++              <html:dd id="goodbear-russian-pki-leaf"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-issuer-label"/>
++              <html:dd id="goodbear-russian-pki-issuer"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-root-label"/>
++              <html:dd id="goodbear-russian-pki-root"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-root-fingerprint-label"/>
++              <html:dd id="goodbear-russian-pki-fingerprint"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-trust-source-label"/>
++              <html:dd data-l10n-id="identity-goodbear-russian-pki-trust-source"/>
++            </html:dl>
++            <description data-l10n-id="identity-goodbear-russian-pki-scoped-anchor-explanation"/>
++            <toolbarbutton id="goodbear-russian-pki-view-certificate"
++                           data-l10n-id="identity-goodbear-russian-pki-view-certificate"
++                           class="subviewbutton" disabled="true"/>
++          </vbox>
+
+           <!-- Remove Certificate Exception -->
+           <button id="identity-popup-remove-cert-exception"
+diff --git a/browser/components/preferences/goodBearRussianPKI.inc.xhtml b/browser/components/preferences/goodBearRussianPKI.inc.xhtml
+new file mode 100644
+--- /dev/null
++++ b/browser/components/preferences/goodBearRussianPKI.inc.xhtml
+@@ -0,0 +1,34 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++<!-- This pane is shared by both native preferences layouts. -->
++<html:section id="goodBearRussianPKIPane"
++              data-category="paneGoodBearRussianPKI" hidden="true"
++              aria-labelledby="goodBearRussianPKIHeading">
++  <html:h1 id="goodBearRussianPKIHeading"
++           data-l10n-id="goodbear-russian-pki-settings-header"/>
++  <html:label>
++    <html:input id="goodBearRussianPKIEnabled" type="checkbox" disabled="true"
++                aria-describedby="goodBearRussianPKIState"/>
++    <html:span data-l10n-id="goodbear-russian-pki-settings-enable"/>
++  </html:label>
++  <html:p id="goodBearRussianPKIState" role="status"/>
++  <html:fieldset id="goodBearRussianPKIAssignments" disabled="true"
++                 aria-describedby="goodBearRussianPKISitesDescription">
++    <html:legend data-l10n-id="goodbear-russian-pki-settings-sites-header"/>
++    <html:p id="goodBearRussianPKISitesDescription"
++            data-l10n-id="goodbear-russian-pki-settings-sites-description"/>
++    <html:ul id="goodBearRussianPKISites"
++             data-l10n-id="goodbear-russian-pki-settings-sites-list"/>
++    <html:p id="goodBearRussianPKIEmpty"
++            data-l10n-id="goodbear-russian-pki-settings-sites-empty"/>
++    <html:button id="goodBearRussianPKIResetAll" type="button"
++                 data-l10n-id="goodbear-russian-pki-settings-reset-all"/>
++  </html:fieldset>
++  <html:p id="goodBearRussianPKIError" role="alert" hidden="true"
++           data-l10n-id="goodbear-russian-pki-settings-reset-failed"/>
++  <html:h2 data-l10n-id="goodbear-russian-pki-settings-credentials-header"/>
++  <html:p id="goodBearRussianPKICredentials"
++           data-l10n-id="goodbear-russian-pki-settings-credentials-description"/>
++</html:section>
+diff --git a/browser/components/preferences/goodBearRussianPKI.js b/browser/components/preferences/goodBearRussianPKI.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/preferences/goodBearRussianPKI.js
+@@ -0,0 +1,334 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++var gGoodBearRussianPKIPane = {
++  _enabledPref: "security.goodbear.russian_pki.enabled",
++  // Observe publication, but read canonical assignments only from the manager.
++  _assignmentsPref: "network.goodbear.russian_pki.assigned_origins",
++  _manager: null,
++  _busy: false,
++  _loaded: false,
++  _alive: false,
++
++  init() {
++    this._alive = true;
++    Services.prefs.addObserver(this._enabledPref, this);
++    Services.prefs.addObserver(this._assignmentsPref, this);
++    window.addEventListener(
++      "unload",
++      () => {
++        this._alive = false;
++        Services.prefs.removeObserver(this._enabledPref, this);
++        Services.prefs.removeObserver(this._assignmentsPref, this);
++      },
++      { once: true }
++    );
++    document
++      .getElementById("goodBearRussianPKIEnabled")
++      .addEventListener("change", () => this._setEnabled());
++    document
++      .getElementById("goodBearRussianPKIResetAll")
++      .addEventListener("click", () => this.reset());
++    const credentials = document.getElementById("goodBearRussianPKICredentials");
++    MozXULElement.insertFTLIfNeeded("browser/browser.ftl");
++    document.l10n.setAttributes(credentials, "goodbear-password-vault-settings-description");
++    const passwordButton = document.createElementNS("http://www.w3.org/1999/xhtml", "button");
++    passwordButton.type = "button";
++    document.l10n.setAttributes(passwordButton, "goodbear-password-vault-open");
++    passwordButton.addEventListener("click", () => {
++      try {
++        ChromeUtils.importESModule("resource://gre/modules/GoodBearPasswordStores.sys.mjs")
++          .GoodBearPasswordStores.openVaultManagement(window.browsingContext.topChromeWindow);
++      } catch { this._showError(true, "goodbear-password-vault-unavailable"); }
++    });
++    credentials.after(passwordButton);
++    this._renderEnabled();
++    this.ready = this._initialize();
++  },
++
++  async _initialize() {
++    try {
++      this._manager ||= ChromeUtils.importESModule(
++        "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++      ).GoodBearRussianPKIContainer;
++      await this._manager.initialize();
++      this._loaded = this._manager.routingStateLoaded;
++      if (!this._loaded ||
++          (Services.prefs.getBoolPref(this._enabledPref) && !this._scopeActive())) {
++        throw new Error("Managed scope initialization is incomplete");
++      }
++    } catch {
++      this._loaded = false;
++      // Failed initialization must not leave newly published authority alive.
++      // Full socket/ticket effects are owned by the native policy gates.
++      try {
++        this._manager?.stop();
++      } catch {
++        // A failed manager stop must not prevent direct native revocation.
++      }
++      try {
++        Cc["@mozilla.org/psm;1"]
++          .getService(Ci.nsINSSComponent)
++          .clearGoodBearRussianPKIContainerId();
++      } catch {
++        // Never report success when the native service is unavailable.
++      }
++    }
++    if (this._alive) {
++      this._renderEnabled();
++      this._renderAssignments();
++      this._showError(!this._loaded, "goodbear-russian-pki-settings-unavailable");
++    }
++  },
++
++  observe(subject, topic, pref) {
++    if (!this._alive) {
++      return;
++    }
++    if (pref === this._enabledPref) {
++      this._renderEnabled();
++    } else if (pref === this._assignmentsPref && this._loaded) {
++      this._renderAssignments();
++    }
++  },
++
++  _renderEnabled() {
++    const enabled = Services.prefs.getBoolPref(this._enabledPref);
++    const checkbox = document.getElementById("goodBearRussianPKIEnabled");
++    checkbox.checked = enabled;
++    checkbox.disabled =
++      !this._loaded || Services.prefs.prefIsLocked(this._enabledPref);
++    document.l10n.setAttributes(
++      document.getElementById("goodBearRussianPKIState"),
++      enabled
++        ? "goodbear-russian-pki-settings-enabled-state"
++        : "goodbear-russian-pki-settings-disabled-state"
++    );
++  },
++
++  _scopeActive() {
++    const id = this._manager?.dedicatedUserContextId;
++    return Number.isInteger(id) && id > 0 &&
++      Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent)
++        .isGoodBearRussianPKIContainer(id, false);
++  },
++
++  _setEnabled() {
++    let changed = false;
++    let enabling = false;
++    let previous;
++    try {
++      if (this._alive && this._loaded &&
++          !Services.prefs.prefIsLocked(this._enabledPref)) {
++        previous = Services.prefs.getBoolPref(this._enabledPref);
++        const enabled = document.getElementById(
++          "goodBearRussianPKIEnabled"
++        ).checked;
++        enabling = enabled;
++        if (!enabled) {
++          Cc["@mozilla.org/psm;1"]
++            .getService(Ci.nsINSSComponent)
++            .clearGoodBearRussianPKIContainerId();
++        }
++        Services.prefs.setBoolPref(this._enabledPref, enabled);
++        // A stored true alone is not successful scope publication. The real
++        // manager observer and native authority must both acknowledge it.
++        if (enabled && !this._scopeActive()) {
++          throw new Error("Managed scope publication failed");
++        }
++        this._showError(false);
++        changed = true;
++      }
++    } catch {
++      if (enabling) {
++        try {
++          Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent)
++            .clearGoodBearRussianPKIContainerId();
++          Services.prefs.setBoolPref(this._enabledPref, previous);
++        } catch {
++          // A failed rollback remains an error, never a success indication.
++        }
++      }
++      this._showError(true, "goodbear-russian-pki-settings-enable-failed");
++    }
++    // Always display the effective stored value, including locked/failed writes.
++    this._renderEnabled();
++    return changed;
++  },
++
++  _origin(assignment) {
++    if (
++      assignment?.scheme !== "https" ||
++      typeof assignment.host !== "string" ||
++      !Number.isInteger(assignment.port) ||
++      assignment.port < 1 ||
++      assignment.port > 65535
++    ) {
++      return null;
++    }
++    try {
++      const host = assignment.host.includes(":")
++        ? `[${assignment.host}]`
++        : assignment.host;
++      const uri = Services.io.newURI(`https://${host}:${assignment.port}/`);
++      if (
++        uri.asciiHost !== assignment.host ||
++        uri.userPass ||
++        (uri.port === -1 ? 443 : uri.port) !== assignment.port ||
++        uri.pathQueryRef !== "/"
++      ) {
++        return null;
++      }
++      return uri.prePath;
++    } catch {
++      return null;
++    }
++  },
++
++  _renderAssignments() {
++    const list = document.getElementById("goodBearRussianPKISites");
++    list.replaceChildren();
++    const origins = this._loaded
++      ? this._manager.assignmentStore
++          .assignments()
++          .map(assignment => this._origin(assignment))
++          .filter(Boolean)
++          .sort()
++      : [];
++    for (const origin of origins) {
++      const item = document.createElementNS(
++        "http://www.w3.org/1999/xhtml",
++        "li"
++      );
++      const button = document.createElementNS(
++        "http://www.w3.org/1999/xhtml",
++        "button"
++      );
++      button.type = "button";
++      document.l10n.setAttributes(
++        button,
++        "goodbear-russian-pki-settings-reset-origin",
++        { origin }
++      );
++      button.addEventListener("click", () => this.reset(origin));
++      item.append(button);
++      list.append(item);
++    }
++    document.getElementById("goodBearRussianPKIEmpty").hidden =
++      !!origins.length;
++    document.getElementById("goodBearRussianPKIResetAll").disabled =
++      !origins.length && !this._manager?.trustHistoryStore?.entries().length;
++    this._renderBusy();
++  },
++
++  _renderBusy() {
++    document.getElementById("goodBearRussianPKIAssignments").disabled =
++      !this._loaded || this._busy;
++    document
++      .getElementById("goodBearRussianPKISites")
++      .setAttribute("aria-busy", String(this._busy));
++  },
++
++  _showError(visible, id = "goodbear-russian-pki-settings-reset-failed") {
++    const error = document.getElementById("goodBearRussianPKIError");
++    if (visible) {
++      document.l10n.setAttributes(error, id);
++    }
++    error.hidden = !visible;
++  },
++
++  async reset(origin = null) {
++    if (!this._loaded || this._busy || !this._alive) {
++      return false;
++    }
++    if (
++      origin !== null &&
++      !this._manager.assignmentStore
++        .assignments()
++        .some(assignment => this._origin(assignment) === origin)
++    ) {
++      return false;
++    }
++    this._busy = true;
++    this._renderBusy();
++    this._showError(false);
++    try {
++      const args = origin === null ? {} : { origin };
++      const [title, message, confirm] = await document.l10n.formatValues([
++        { id: "goodbear-russian-pki-settings-sites-header" },
++        {
++          id:
++            origin === null
++              ? "goodbear-russian-pki-settings-reset-all-confirmation"
++              : "goodbear-russian-pki-settings-reset-origin-confirmation",
++          args,
++        },
++        {
++          id:
++            origin === null
++              ? "goodbear-russian-pki-settings-reset-all-confirm"
++              : "goodbear-russian-pki-settings-reset-origin",
++          args,
++        },
++      ]);
++      if (!this._alive) {
++        return false;
++      }
++      if (
++        ![title, message, confirm].every(
++          value => typeof value === "string" && value.trim()
++        )
++      ) {
++        throw new Error(
++          "Missing Good Bear assignment confirmation localization"
++        );
++      }
++      const flags =
++        (Services.prompt.BUTTON_POS_0 *
++          Services.prompt.BUTTON_TITLE_IS_STRING) |
++        (Services.prompt.BUTTON_POS_1 * Services.prompt.BUTTON_TITLE_CANCEL) |
++        Services.prompt.BUTTON_POS_1_DEFAULT;
++      const result = await Services.prompt.asyncConfirmEx(
++        window.browsingContext,
++        Services.prompt.MODAL_TYPE_CONTENT,
++        title,
++        message,
++        flags,
++        confirm,
++        null,
++        null,
++        null,
++        false
++      );
++      if (!this._alive || result.getProperty("buttonNumClicked") !== 0) {
++        return false;
++      }
++      const changed =
++        origin === null
++          ? await this._manager.resetAllAssignments()
++          : await this._manager.resetAssignment(origin);
++      if (this._alive) {
++        this._showError(!changed);
++      }
++      return changed;
++    } catch {
++      if (this._alive) {
++        this._showError(true);
++      }
++      return false;
++    } finally {
++      this._busy = false;
++      if (this._alive) {
++        this._renderAssignments();
++        const target = document.getElementById("goodBearRussianPKIResetAll");
++        const focusTarget = target.disabled
++          ? document.getElementById("goodBearRussianPKIEnabled")
++          : target;
++        focusTarget.focus();
++      }
++    }
++  },
++};
+diff --git a/browser/components/preferences/jar.mn b/browser/components/preferences/jar.mn
+--- a/browser/components/preferences/jar.mn
++++ b/browser/components/preferences/jar.mn
+@@ -12,6 +12,7 @@
+    content/browser/preferences/home.js
+    content/browser/preferences/search.js
+    content/browser/preferences/privacy.js
++   content/browser/preferences/goodBearRussianPKI.js
+    content/browser/preferences/sync.js
+    content/browser/preferences/moreFromMozilla.js
+    content/browser/preferences/fxaPairDevice.xhtml
+diff --git a/browser/components/preferences/preferences.js b/browser/components/preferences/preferences.js
+--- a/browser/components/preferences/preferences.js
++++ b/browser/components/preferences/preferences.js
+@@ -55,9 +55,15 @@
+   "resource://gre/modules/PrivateBrowsingUtils.sys.mjs"
+ );
+ 
+-var { Weave } = ChromeUtils.importESModule(
+-  "resource://services-sync/main.sys.mjs"
+-);
++// Good Bear is built without Firefox Sync. Keep the shared preferences
++// bootstrap runnable when the optional implementation is not packaged: the
++// legacy sync pane only dereferences this global when it is registered.
++var Weave;
++if (AppConstants.MOZ_SERVICES_SYNC) {
++  ({ Weave } = ChromeUtils.importESModule(
++    "resource://services-sync/main.sys.mjs"
++  ));
++}
+ 
+ var { FxAccounts, getFxAccountsSingleton } = ChromeUtils.importESModule(
+   "resource://gre/modules/FxAccounts.sys.mjs"
+@@ -545,6 +551,60 @@
+   });
+ }
+ 
++// Keep a missing or failed optional pane out of the ordinary startup path.
++// Load its packaged controller explicitly, independent of template/namespace
++// script execution, when the native category initializer requests the pane.
++function showGoodBearRussianPKIPaneError() {
++  try {
++    window.gGoodBearRussianPKIPane?._manager?.stop();
++  } catch {
++    // Still revoke native authority if the manager's cleanup fails.
++  }
++  try {
++    Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent)
++      .clearGoodBearRussianPKIContainerId();
++  } catch {
++    // Unavailable native service is never a successful initialization.
++  }
++  const checkbox = document.getElementById("goodBearRussianPKIEnabled");
++  checkbox.disabled = true;
++  try {
++    checkbox.checked = Services.prefs.getBoolPref(
++      "security.goodbear.russian_pki.enabled"
++    );
++  } catch {
++    checkbox.checked = false;
++  }
++  document.getElementById("goodBearRussianPKIAssignments").disabled = true;
++  const error = document.getElementById("goodBearRussianPKIError");
++  document.l10n.setAttributes(error, "goodbear-russian-pki-settings-unavailable");
++  error.hidden = false;
++}
++
++function loadGoodBearRussianPKIController() {
++  Services.scriptloader.loadSubScript(
++    "chrome://browser/content/preferences/goodBearRussianPKI.js", window
++  );
++  return window.gGoodBearRussianPKIPane;
++}
++
++function registerGoodBearRussianPKIPane() {
++  register_module("paneGoodBearRussianPKI", {
++    init() {
++      try {
++        const controller = loadGoodBearRussianPKIController();
++        if (!controller || typeof controller.init !== "function") {
++          throw new Error("Good Bear settings controller is unavailable");
++        }
++        controller.init();
++        Promise.resolve(controller.ready).catch(showGoodBearRussianPKIPaneError);
++      } catch {
++        showGoodBearRussianPKIPaneError();
++      }
++    },
++  });
++}
++
+ document.addEventListener("DOMContentLoaded", init_all, { once: true });
+ 
+ function init_all() {
+@@ -568,6 +628,7 @@
+   register_module("paneHome", gHomePane);
+   register_module("paneSearch", gSearchPane);
+   register_module("panePrivacy", gPrivacyPane);
++  registerGoodBearRussianPKIPane();
+ 
+   // Restore the cached Firefox Labs nav button visibility so it shows
+   // immediately when recipes are expected to be available, before
+@@ -588,17 +649,20 @@
+     "identity.fxaccounts.enabled"
+   );
+   let categorySync = document.getElementById("category-sync");
+-  if (redesignEnabled) {
++  if (redesignEnabled && AppConstants.MOZ_SERVICES_SYNC) {
+     categorySync.setAttribute("data-l10n-id", "pane-account-sync-title2");
+     categorySync.iconSrc = "chrome://browser/skin/fxa/avatar-empty.svg";
+     categorySync.hidden = false;
+-  } else if (accountsEnabled) {
++  } else if (accountsEnabled && AppConstants.MOZ_SERVICES_SYNC) {
+     categorySync.hidden = false;
+     register_module("paneSync", gSyncPane);
+   }
+   register_module("paneSearchResults", gSearchResultsPane);
+   for (let [id, config] of Object.entries(CONFIG_PANES)) {
+-    if (!redesignEnabled && config.replaces) {
++    if (
++      (!redesignEnabled && config.replaces) ||
++      (!AppConstants.MOZ_SERVICES_SYNC && id == "sync")
++    ) {
+       continue;
+     }
+ 
+@@ -737,9 +801,15 @@
+   let redesignEnabled = srdSectionPrefs.all;
+   let categories = document.getElementById("categories");
+   const kDefaultCategoryInternalName = redesignEnabled
+-    ? "paneSync"
++    ? AppConstants.MOZ_SERVICES_SYNC
++      ? "paneSync"
++      : "paneHome"
+     : "paneGeneral";
+-  const kDefaultCategory = redesignEnabled ? "sync" : "general";
++  const kDefaultCategory = redesignEnabled
++    ? AppConstants.MOZ_SERVICES_SYNC
++      ? "sync"
++      : "home"
++    : "general";
+   let hash = document.location.hash;
+   let category = aCategory || hash.substring(1) || kDefaultCategoryInternalName;
+ 
+diff --git a/browser/components/preferences/preferences.xhtml b/browser/components/preferences/preferences.xhtml
+--- a/browser/components/preferences/preferences.xhtml
++++ b/browser/components/preferences/preferences.xhtml
+@@ -45,6 +45,7 @@
+   <link rel="localization" href="browser/preferences/fonts.ftl"/>
+   <link rel="localization" href="browser/preferences/moreFromMozilla.ftl"/>
+   <link rel="localization" href="browser/preferences/preferences.ftl"/>
++  <link rel="localization" href="browser/preferences/goodBearRussianPKI.ftl"/>
+   <link rel="localization" href="toolkit/branding/brandings.ftl"/>
+   <link rel="localization" href="toolkit/firefoxlabs/features.ftl"/>
+   <link rel="localization" href="toolkit/global/mozPageHeader.ftl"/>
+@@ -146,6 +147,11 @@
+         view="panePasswordsAutofill"
+         iconsrc="chrome://browser/skin/login.svg"
+         data-l10n-id="pane-passwords-autofill-title2">
++      </html:moz-page-nav-button>
++      <html:moz-page-nav-button id="category-goodbear-russian-pki"
++        view="paneGoodBearRussianPKI"
++        iconsrc="chrome://browser/skin/preferences/category-privacy-security.svg"
++        data-l10n-id="goodbear-russian-pki-settings-header">
+       </html:moz-page-nav-button>
+       <html:moz-page-nav-button id="category-appearance"
+         view="paneAppearance"
+@@ -256,6 +262,7 @@
+ #include home.inc.xhtml
+ #include search.inc.xhtml
+ #include privacy.inc.xhtml
++#include goodBearRussianPKI.inc.xhtml
+ #include sync.inc.xhtml
+ #include moreFromMozilla.inc.xhtml
+         </vbox>
+diff --git a/browser/components/preferences/tests/browser-srd.toml b/browser/components/preferences/tests/browser-srd.toml
+--- a/browser/components/preferences/tests/browser-srd.toml
++++ b/browser/components/preferences/tests/browser-srd.toml
+@@ -51,6 +51,8 @@
+
+ ["browser_fluent.js"]
+
++["browser_goodbear_russian_pki.js"]
++
+ ["browser_legacy_pane_mappings.js"]
+
+ ["browser_no_id_collision_between_categories_and_mainPane.js"]
+diff --git a/browser/components/preferences/tests/browser.toml b/browser/components/preferences/tests/browser.toml
+--- a/browser/components/preferences/tests/browser.toml
++++ b/browser/components/preferences/tests/browser.toml
+@@ -57,6 +57,8 @@
+
+ ["browser_fluent.js"]
+
++["browser_goodbear_russian_pki.js"]
++
+ ["browser_keyboardfocus.js"]
+ run-if = ["os == 'mac'"]
+
+@@ -80,3 +82,5 @@
+
+ ["browser_windows_launch_on_login_msix.js"]
+ run-if = ["os == 'win' && msix"]
++
++["browser_goodbear_preferences_content.js"]
+diff --git a/browser/components/preferences/tests/browser_goodbear_preferences_content.js b/browser/components/preferences/tests/browser_goodbear_preferences_content.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/preferences/tests/browser_goodbear_preferences_content.js
+@@ -0,0 +1,227 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const GB101_ENABLED = "security.goodbear.russian_pki.enabled";
++const { AppConstants } = ChromeUtils.importESModule(
++  "resource://gre/modules/AppConstants.sys.mjs"
++);
++const GB101_HAS_SYNC = AppConstants.MOZ_SERVICES_SYNC;
++
++function gb101DeepElements(root) {
++  const result = [root, ...root.querySelectorAll("*")];
++  for (const element of [...result]) {
++    if (element.shadowRoot) {
++      result.push(...gb101DeepElements(element.shadowRoot));
++    }
++  }
++  return result.filter(element => element.nodeType === Node.ELEMENT_NODE);
++}
++
++function gb101Rendered(element) {
++  if (!element) {
++    return false;
++  }
++  const bounds = element.getBoundingClientRect();
++  return BrowserTestUtils.isVisible(element) && bounds.width > 0 && bounds.height > 0;
++}
++
++function gb101Controls(roots) {
++  return roots.flatMap(gb101DeepElements).filter(element =>
++    element.matches("input,button,select,textarea,checkbox,radio,menulist,a[href],moz-button,moz-checkbox,moz-toggle") &&
++    !element.disabled && gb101Rendered(element)
++  );
++}
++
++async function gb101WithPreferences(entry, hash, callback) {
++  const tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, entry + hash);
++  const win = tab.linkedBrowser.contentWindow;
++  try {
++    await win.document.l10n.ready;
++    await TestUtils.waitForCondition(() => win.gCategoryInits?.size,
++      "Native preferences registered categories");
++    await callback(win, tab.linkedBrowser);
++  } finally {
++    BrowserTestUtils.removeTab(tab);
++  }
++}
++
++function gb101ContentRoots(win, category) {
++  const roots = [...win.document.querySelectorAll(
++    `[data-category="${category}"],setting-pane`
++  )].filter(element => element.localName !== "setting-pane" || element.name === category);
++  return roots;
++}
++
++async function gb101AssertCurrentContent(win, category) {
++  const roots = gb101ContentRoots(win, category);
++  Assert.ok(roots.length, `${category}: actual content owner exists`);
++  await TestUtils.waitForCondition(() => gb101Controls(roots).length > 0,
++    `${category}: a rendered actionable control, not only a navigation label`);
++  Assert.ok(roots.some(root => gb101DeepElements(root).some(element =>
++    gb101Rendered(element) && (element.textContent.trim() || element.ariaLabel)
++  )), `${category}: rendered content has text or an accessible name`);
++  const control = gb101Controls(roots)[0];
++  control.focus();
++  Assert.ok(control.matches(":focus, :focus-within") ||
++    control.getRootNode().activeElement === control,
++    `${category}: the real control accepts keyboard focus`);
++}
++
++async function gb101AssertContent(win, category) {
++  await win.gotoPref(category);
++  await gb101AssertCurrentContent(win, category);
++}
++
++add_task(async function test_all_shipped_sections_aliases_and_layouts_have_content() {
++  for (const redesign of [false, true]) {
++    await SpecialPowers.pushPrefEnv({ set: [["browser.settings-redesign.enabled", redesign]] });
++    try {
++      for (const entry of ["about:preferences", "about:settings"]) {
++        await gb101WithPreferences(entry, "", async (win, browser) => {
++          const doc = win.document;
++          const buttons = [...doc.querySelectorAll("#categories moz-page-nav-button")]
++            .filter(button => gb101Rendered(button) && !button.hidden);
++          const categories = buttons.map(button => button.view);
++          const requiredCategories = ["paneHome", "paneSearch", "panePrivacy", "paneGoodBearRussianPKI"];
++          requiredCategories.push(...(redesign ? ["paneAppearance", "paneAccessibility",
++            "paneDownloads", "paneLanguages", "paneTabsBrowsing", "panePasswordsAutofill",
++            "panePermissionsData", "paneAbout"] : ["paneGeneral"]));
++          if (redesign && GB101_HAS_SYNC) {
++            requiredCategories.push("paneSync");
++          }
++          for (const required of requiredCategories) {
++            Assert.ok(categories.includes(required), `${entry}: ${required} is shipped`);
++          }
++          const initialCategory = redesign
++            ? GB101_HAS_SYNC
++              ? "paneSync"
++              : "paneHome"
++            : "paneGeneral";
++          await TestUtils.waitForCondition(
++            () => win.gLastCategory.category === initialCategory,
++            `${entry}: initial category is fully initialized`
++          );
++          await gb101AssertCurrentContent(win, initialCategory);
++          if (!GB101_HAS_SYNC) {
++            Assert.ok(!categories.includes("paneSync"),
++              `${entry}: unavailable Sync has no navigation category`);
++            Assert.ok(!win.gCategoryInits.has("paneSync"),
++              `${entry}: unavailable Sync has no category initializer`);
++          }
++          for (const category of categories) {
++            await gb101AssertContent(win, category);
++          }
++          // Account/sync groups are policy-disabled; the redesigned section
++          // can retain local default-browser/import/profile/backup controls.
++          if (!Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
++            if (redesign && GB101_HAS_SYNC) {
++              await gb101AssertContent(win, "paneSync");
++              Assert.ok(gb101Rendered(doc.querySelector('setting-group[groupid="accountDisabled"]')),
++                "Redesign explicitly explains disabled account support");
++            } else {
++              Assert.ok(doc.getElementById("category-sync").hidden,
++                "Classic disabled supplier account section is hidden");
++            }
++            for (const group of doc.querySelectorAll('setting-group[groupid="account"],setting-group[groupid="sync"]')) {
++              Assert.ok(!gb101Rendered(group), "Disabled supplier account controls stay hidden");
++            }
++          }
++          await win.gotoPref("paneHome");
++          await win.gotoPref("panePrivacy");
++          let shown = BrowserTestUtils.waitForEvent(doc, "paneshown");
++          browser.goBack(); await shown;
++          await gb101AssertContent(win, "paneHome");
++          shown = BrowserTestUtils.waitForEvent(doc, "paneshown");
++          browser.goForward(); await shown;
++          await gb101AssertContent(win, "panePrivacy");
++          await win.gSearchResultsPane.initializeCategories();
++          win.gSearchResultsPane.searchInput.value = "PKI";
++          await win.gSearchResultsPane.searchFunction({ target: win.gSearchResultsPane.searchInput });
++          Assert.ok(gb101Rendered(doc.getElementById("goodBearRussianPKIEnabled")),
++            "Search exposes real Good Bear content and its checkbox");
++        });
++        for (let reopen = 0; reopen < 2; reopen++) {
++          await gb101WithPreferences(entry, "#goodBearRussianPKI", async win => {
++            await gb101AssertContent(win, "paneGoodBearRussianPKI");
++            await win.gGoodBearRussianPKIPane.ready;
++            Assert.ok(gb101Rendered(win.document.getElementById("goodBearRussianPKIEnabled")),
++              "Direct hash and reopen preserve a visible checkbox");
++          });
++        }
++      }
++    } finally {
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++});
++
++add_task(async function test_checkbox_uses_actual_fresh_default_and_preserves_user_false() {
++  const hadUserValue = Services.prefs.prefHasUserValue(GB101_ENABLED);
++  const previous = Services.prefs.getBoolPref(GB101_ENABLED);
++  Services.prefs.clearUserPref(GB101_ENABLED);
++  try {
++    Assert.equal(Services.prefs.getDefaultBranch("").getBoolPref(GB101_ENABLED), true,
++      "Default-on is the actual native default branch, not a UI fallback");
++    Assert.ok(!Services.prefs.prefHasUserValue(GB101_ENABLED));
++    for (const redesign of [false, true]) {
++      await SpecialPowers.pushPrefEnv({ set: [["browser.settings-redesign.enabled", redesign]] });
++      try {
++        Services.prefs.clearUserPref(GB101_ENABLED);
++        await gb101WithPreferences("about:preferences", "#goodBearRussianPKI", async win => {
++          await gb101AssertContent(win, "paneGoodBearRussianPKI");
++          await win.gGoodBearRussianPKIPane.ready;
++          const checkbox = win.document.getElementById("goodBearRussianPKIEnabled");
++          Assert.ok(checkbox.checked && !checkbox.disabled);
++          checkbox.click();
++          Assert.equal(Services.prefs.getBoolPref(GB101_ENABLED), false);
++          Assert.ok(Services.prefs.prefHasUserValue(GB101_ENABLED));
++          Services.prefs.savePrefFile(null);
++          const prefs = await IOUtils.readUTF8(PathUtils.join(PathUtils.profileDir, "prefs.js"));
++          Assert.ok(prefs.includes('user_pref("security.goodbear.russian_pki.enabled", false);'),
++            "False is persisted for the subsequent real process-restart gate");
++        });
++        await gb101WithPreferences("about:settings", "#goodBearRussianPKI", async win => {
++          await gb101AssertContent(win, "paneGoodBearRussianPKI");
++          await win.gGoodBearRussianPKIPane.ready;
++          Assert.ok(!win.document.getElementById("goodBearRussianPKIEnabled").checked);
++          Assert.equal(Services.prefs.getBoolPref(GB101_ENABLED), false,
++            "Reinitialization never migrates an explicit false back to default-on");
++        });
++      } finally {
++        await SpecialPowers.popPrefEnv();
++      }
++    }
++  } finally {
++    if (hadUserValue) Services.prefs.setBoolPref(GB101_ENABLED, previous);
++    else Services.prefs.clearUserPref(GB101_ENABLED);
++  }
++});
++
++add_task(async function test_failed_goodbear_initialization_keeps_ordinary_content() {
++  for (const redesign of [false, true]) {
++    await SpecialPowers.pushPrefEnv({ set: [["browser.settings-redesign.enabled", redesign]] });
++    try {
++      await gb101WithPreferences("about:settings", "#home", async win => {
++        const load = win.loadGoodBearRussianPKIController;
++        win.loadGoodBearRussianPKIController = () => { throw Error("controlled missing Good Bear script"); };
++        try {
++          win.gCategoryInits.get("paneGoodBearRussianPKI")._initted = false;
++          await win.gotoPref("paneGoodBearRussianPKI");
++          await win.document.l10n.translateFragment(win.document.getElementById("goodBearRussianPKIPane"));
++          const error = win.document.getElementById("goodBearRussianPKIError");
++          Assert.ok(gb101Rendered(error) && error.textContent.trim(), "Local failure is rendered");
++          Assert.ok(win.document.getElementById("goodBearRussianPKIEnabled").disabled);
++          for (const category of ["paneHome", "paneSearch", "panePrivacy"]) {
++            await gb101AssertContent(win, category);
++          }
++        } finally {
++          win.loadGoodBearRussianPKIController = load;
++        }
++      });
++    } finally {
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++});
+diff --git a/browser/components/preferences/tests/browser_goodbear_russian_pki.js b/browser/components/preferences/tests/browser_goodbear_russian_pki.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/preferences/tests/browser_goodbear_russian_pki.js
+@@ -0,0 +1,363 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const GB_PREF = "security.goodbear.russian_pki.enabled";
++const {
++  GoodBearRussianPKIContainer,
++  GoodBearRussianPKIContainerManager,
++  GoodBearRussianPKIAssignmentStore,
++  GoodBearRussianPKITrustHistoryStore,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++
++async function withGoodBearPane(callback, fixture = false) {
++  const tab = await openPrefsTab("goodBearRussianPKI");
++  const win = tab.linkedBrowser.contentWindow;
++  const pane = win.gGoodBearRussianPKIPane;
++  await pane.ready;
++  await win.document.l10n.ready;
++  let directory;
++  try {
++    if (fixture) {
++      directory = PathUtils.join(
++        PathUtils.profileDir,
++        `goodbear-settings-${Services.uuid.generateUUID()}`
++      );
++      await IOUtils.makeDirectory(directory);
++      const assignments = new GoodBearRussianPKIAssignmentStore(
++        PathUtils.join(directory, "assignments.json")
++      );
++      const history = new GoodBearRussianPKITrustHistoryStore(
++        PathUtils.join(directory, "history.json")
++      );
++      await Promise.all([assignments.load(), history.load()]);
++      // Exercise the production transactional reset APIs with disposable stores.
++      // No fabricated native certificate-verification result is involved.
++      pane._manager = new GoodBearRussianPKIContainerManager(
++        {},
++        null,
++        assignments,
++        history
++      );
++      pane._renderAssignments();
++    }
++    await callback({
++      pane,
++      win,
++      doc: win.document,
++      browser: tab.linkedBrowser,
++    });
++  } finally {
++    BrowserTestUtils.removeTab(tab);
++    GoodBearRussianPKIContainer.assignmentStore._publishRuntimeAssignments();
++    if (directory) {
++      await IOUtils.remove(directory, { recursive: true });
++    }
++  }
++}
++
++async function seedAssignments(pane) {
++  for (const origin of [
++    "https://one.example.test",
++    "https://two.example.test:8443",
++  ]) {
++    await pane._manager.assignmentStore.assign(origin);
++    await pane._manager.trustHistoryStore.recordConfirmed(
++      origin,
++      "RUSSIAN_PKI"
++    );
++  }
++  pane._renderAssignments();
++}
++
++async function answerReset({ pane, browser }, origin, buttonNumClick) {
++  const prompt = PromptTestUtils.waitForPrompt(browser, {
++    modalType: Services.prompt.MODAL_TYPE_CONTENT,
++    promptType: "confirmEx",
++  });
++  const doc = browser.contentDocument;
++  const button =
++    origin === null
++      ? doc.getElementById("goodBearRussianPKIResetAll")
++      : [...doc.querySelectorAll("#goodBearRussianPKISites button")].find(
++          item =>
++            JSON.parse(item.getAttribute("data-l10n-args")).origin === origin
++        );
++  let result;
++  const reset = pane.reset;
++  pane.reset = function (...args) {
++    result = reset.apply(this, args);
++    return result;
++  };
++  try {
++    button.click();
++  } finally {
++    pane.reset = reset;
++  }
++  ok(result, "Native button dispatches the registered reset handler");
++  const dialog = await prompt;
++  is(dialog.args.defaultButtonNum, 1, "Cancel is the safe default");
++  ok(
++    !(await pane.reset(origin)),
++    "A pending confirmation cannot be submitted twice"
++  );
++  if (origin) {
++    ok(
++      dialog.args.text.includes(origin),
++      "Single-origin confirmation names the exact target"
++    );
++  }
++  await PromptTestUtils.handlePrompt(dialog, { buttonNumClick });
++  return result;
++}
++
++add_task(async function test_goodbear_settings_live_enable_and_locked_pref() {
++  await SpecialPowers.pushPrefEnv({ set: [[GB_PREF, false]] });
++  await withGoodBearPane(async ({ pane, doc }) => {
++    const checkbox = doc.getElementById("goodBearRussianPKIEnabled");
++    ok(!checkbox.checked, "Disabled native preference is displayed");
++    checkbox.click();
++    ok(
++      Services.prefs.getBoolPref(GB_PREF),
++      "Enabling writes only the existing scope preference"
++    );
++    Assert.greater(
++      GoodBearRussianPKIContainer.dedicatedUserContextId,
++      0,
++      "Manager observes enabling immediately"
++    );
++    const oldId = GoodBearRussianPKIContainer.dedicatedUserContextId;
++    checkbox.click();
++    ok(
++      !Services.prefs.getBoolPref(GB_PREF),
++      "Disabling takes effect immediately"
++    );
++    is(
++      GoodBearRussianPKIContainer.dedicatedUserContextId,
++      null,
++      "Disabled support publishes no scoped identity"
++    );
++    ok(
++      !Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent)
++        .isGoodBearRussianPKIContainer(oldId, false),
++      "Actual native scope authority rejects the revoked identity"
++    );
++    Services.prefs.setBoolPref(GB_PREF, true);
++    ok(checkbox.checked, "External preference changes update the open pane");
++    Services.prefs.lockPref(GB_PREF);
++    try {
++      pane._renderEnabled();
++      ok(checkbox.disabled, "Policy locked preference cannot be toggled");
++      const stored = Services.prefs.getBoolPref(GB_PREF);
++      checkbox.checked = !stored;
++      pane._setEnabled();
++      is(
++        Services.prefs.getBoolPref(GB_PREF),
++        stored,
++        "Forged change cannot bypass lock"
++      );
++      is(checkbox.checked, stored, "UI restores effective stored state");
++    } finally {
++      Services.prefs.unlockPref(GB_PREF);
++    }
++  });
++  await withGoodBearPane(async ({ doc }) => {
++    ok(
++      doc.getElementById("goodBearRussianPKIEnabled").checked,
++      "Reopened pane reads the persisted preference"
++    );
++  });
++  await SpecialPowers.popPrefEnv();
++});
++
++add_task(
++  async function test_goodbear_settings_single_reset_confirm_and_cancel() {
++    await withGoodBearPane(async context => {
++      const { pane, doc } = context;
++      await seedAssignments(pane);
++      ok(
++        !(await answerReset(context, "https://one.example.test", 1)),
++        "Cancel refuses removal"
++      );
++      ok(
++        pane._manager.assignmentStore.isAssigned("https://one.example.test"),
++        "Cancelled assignment stays"
++      );
++      ok(
++        pane._manager.trustHistoryStore.get("https://one.example.test"),
++        "Cancelled history stays"
++      );
++      ok(
++        await answerReset(context, "https://one.example.test", 0),
++        "Confirmed single removal succeeds"
++      );
++      ok(
++        !pane._manager.assignmentStore.isAssigned("https://one.example.test"),
++        "Exact assignment removed"
++      );
++      is(
++        pane._manager.trustHistoryStore.get("https://one.example.test"),
++        null,
++        "Paired history removed"
++      );
++      ok(
++        pane._manager.assignmentStore.isAssigned(
++          "https://two.example.test:8443"
++        ),
++        "Other origin and port retained"
++      );
++      is(
++        doc.querySelectorAll("#goodBearRussianPKISites li").length,
++        1,
++        "Only remaining assignment is shown"
++      );
++      ok(
++        // The insecure origin is the rejection input, never a navigation target.
++        // eslint-disable-next-line sdl/no-insecure-url
++        !(await pane.reset("http://one.example.test")),
++        "Unknown/insecure origin does not prompt or mutate"
++      );
++      ok(
++        !(await pane.reset("https://two.example.test:8443/private?secret")),
++        "A full URL cannot enter confirmation or reset"
++      );
++    }, true);
++  }
++);
++
++add_task(async function test_goodbear_settings_clear_all_confirm_and_cancel() {
++  await withGoodBearPane(async context => {
++    const { pane, doc } = context;
++    await seedAssignments(pane);
++    ok(
++      !(await answerReset(context, null, 1)),
++      "Clear-all cancellation refuses removal"
++    );
++    is(
++      pane._manager.assignmentStore.assignments().length,
++      2,
++      "All assignments remain after cancel"
++    );
++    is(
++      pane._manager.trustHistoryStore.entries().length,
++      2,
++      "All history remains after cancel"
++    );
++    ok(await answerReset(context, null, 0), "Explicit clear-all succeeds");
++    is(
++      pane._manager.assignmentStore.assignments().length,
++      0,
++      "Assignments cleared"
++    );
++    is(
++      pane._manager.trustHistoryStore.entries().length,
++      0,
++      "History cleared together"
++    );
++    ok(
++      !doc.getElementById("goodBearRussianPKIEmpty").hidden,
++      "Empty state shown"
++    );
++    ok(
++      doc.getElementById("goodBearRussianPKIResetAll").disabled,
++      "Nothing can be cleared twice"
++    );
++  }, true);
++});
++
++add_task(async function test_goodbear_settings_reset_failure_keeps_isolation() {
++  await withGoodBearPane(async context => {
++    const { pane, doc } = context;
++    await seedAssignments(pane);
++    const store = pane._manager.assignmentStore;
++    const write = store._write;
++    store._write = async () => {
++      throw new Error("Deliberate settings persistence failure");
++    };
++    try {
++      ok(
++        !(await answerReset(context, "https://one.example.test", 0)),
++        "Single reset reports failed persistence"
++      );
++      ok(
++        !(await answerReset(context, null, 0)),
++        "Clear-all reports failed persistence"
++      );
++      is(
++        store.assignments().length,
++        2,
++        "Assignments preserved by actual manager rollback"
++      );
++      is(
++        pane._manager.trustHistoryStore.entries().length,
++        2,
++        "Paired history restored"
++      );
++      ok(
++        !doc.getElementById("goodBearRussianPKIError").hidden,
++        "Failure is accessible and visible"
++      );
++      is(
++        doc.querySelectorAll("#goodBearRussianPKISites li").length,
++        2,
++        "UI does not advertise a failed deletion"
++      );
++    } finally {
++      store._write = write;
++    }
++  }, true);
++});
++
++add_task(
++  async function test_goodbear_settings_origin_validation_and_no_credentials() {
++    await withGoodBearPane(async ({ pane, doc }) => {
++      is(
++        pane._origin({ scheme: "https", host: "one.example.test", port: 443 }),
++        "https://one.example.test",
++        "Exact HTTPS origin formatted"
++      );
++      is(
++        pane._origin({ scheme: "https", host: "::1", port: 8443 }),
++        "https://[::1]:8443",
++        "IPv6 and explicit port retained"
++      );
++      for (const assignment of [
++        { scheme: "http", host: "one.example.test", port: 443 },
++        { scheme: "https", host: "user@one.example.test", port: 443 },
++        { scheme: "https", host: "one.example.test/path?secret", port: 443 },
++        { scheme: "https", host: "<script>", port: 443 },
++        { scheme: "https", host: "one.example.test", port: 0 },
++      ]) {
++        is(
++          pane._origin(assignment),
++          null,
++          "Malformed origin cannot become a rendered/reset target"
++        );
++      }
++      const credentials = doc.getElementById("goodBearRussianPKICredentials");
++      is(
++        credentials.getAttribute("data-l10n-id"),
++        "goodbear-russian-pki-settings-credentials-description",
++        "Honest disabled-credentials description is registered"
++      );
++      is(
++        doc.querySelectorAll("#goodBearRussianPKIPane input").length,
++        1,
++        "Pane has only the support toggle, no credential fields"
++      );
++      const messages = await doc.l10n.formatMessages([
++        {
++          id: "goodbear-russian-pki-settings-reset-origin",
++          args: { origin: "https://one.example.test" },
++        },
++      ]);
++      ok(
++        messages[0].value.includes("https://one.example.test"),
++        "Origin variable resolves through registered Fluent resource"
++      );
++    });
++  }
++);
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -848,6 +848,12 @@
+     }
+
+     let hbox = this.document.getElementById("userContext-icons");
++    let containerLabel = this.document.getElementById("userContext-label");
++    // Container identity is independent of the current certificate trust domain.
++    hbox.removeAttribute("data-l10n-id");
++    hbox.removeAttribute("aria-label");
++    hbox.removeAttribute("tooltiptext");
++    containerLabel.removeAttribute("data-l10n-id");
+
+     let userContextId = this.selectedBrowser.getAttribute("usercontextid");
+     if (!userContextId) {
+@@ -874,12 +880,22 @@
+
+     replaceContainerClass("color", hbox, identity.color);
+
+-    let label =
+-      lazy.ContextualIdentityService.getUserContextLabel(userContextId);
+-    this.document.getElementById("userContext-label").textContent = label;
+-    // Also set the container label as the tooltip so we can only show the icon
+-    // in small windows.
+-    hbox.setAttribute("tooltiptext", label);
++    if (identity.managedPurpose === "goodbear-russian-pki") {
++      this.document.l10n.setAttributes(
++        containerLabel,
++        "urlbar-goodbear-russian-pki-container-label"
++      );
++      this.document.l10n.setAttributes(
++        hbox,
++        "urlbar-goodbear-russian-pki-container-marker"
++      );
++    } else {
++      let label =
++        lazy.ContextualIdentityService.getUserContextLabel(userContextId);
++      containerLabel.textContent = label;
++      // Keep the native label as the tooltip for ordinary containers.
++      hbox.setAttribute("tooltiptext", label);
++    }
+
+     let indicator = this.document.getElementById("userContext-indicator");
+     replaceContainerClass("icon", indicator, identity.icon);
+diff --git a/browser/locales/en-US/browser/browser.ftl b/browser/locales/en-US/browser/browser.ftl
+--- a/browser/locales/en-US/browser/browser.ftl
++++ b/browser/locales/en-US/browser/browser.ftl
+@@ -479,6 +479,27 @@
+     .label = Clear cookies and site data…
+ identity-connection-not-secure-security-view = You are not securely connected to this site.
+ identity-connection-verified = You are securely connected to this site.
++identity-goodbear-russian-pki-label = RU
++    .tooltiptext = Certificate validated through Russian PKI
++identity-goodbear-russian-pki-connection = Connection uses Russian PKI
++identity-goodbear-russian-pki-description = The verified site certificate chain ends at the exact approved Russian root. Access is allowed in the dedicated isolated container, separate from ordinary tabs.
++identity-goodbear-russian-pki-details-heading = Russian PKI certificate details
++identity-goodbear-russian-pki-status-label = Connection status:
++identity-goodbear-russian-pki-status = Certificate verified through Russian PKI
++identity-goodbear-russian-pki-hostname-label = Hostname:
++identity-goodbear-russian-pki-leaf-label = Site certificate subject:
++identity-goodbear-russian-pki-issuer-label = Issuer:
++identity-goodbear-russian-pki-root-label = Verified trust anchor:
++identity-goodbear-russian-pki-root-fingerprint-label = SHA-256 fingerprint:
++identity-goodbear-russian-pki-trust-source-label = Trust source:
++identity-goodbear-russian-pki-trust-source = Good Bear Russian PKI
++identity-goodbear-russian-pki-scoped-anchor-explanation = Good Bear does not add this anchor to the OS or shared browser trust store. Existing OS or profile trust still permits access only in the managed container.
++identity-goodbear-russian-pki-view-certificate = View certificate
++identity-goodbear-russian-pki-empty-name = Not specified
++urlbar-goodbear-russian-pki-container-label = Russian PKI container
++urlbar-goodbear-russian-pki-container-marker =
++    .tooltiptext = Russian PKI container. Its data is isolated from ordinary tabs.
++    .aria-label = Russian PKI container
+ identity-ev-owner-label2 = Certificate issued to
+ identity-verifier-label2 = Verified by
+ # "qualified" here refers to the qualified website authentication certificate presented by the site.
+@@ -1689,3 +1710,44 @@
+   .accesskey = R
+ reduced-protection-infobar-never-show-button = Don’t show again
+   .accesskey = D
++
++## Good Bear blocking trust-domain and request-data interstitial
++
++goodbear-russian-pki-interstitial-title = An isolated container is required
++goodbear-russian-pki-interstitial-description = The certificate validates through Russian PKI. Good Bear opens this trust infrastructure only in an isolated container and does not transfer ordinary-tab data.
++goodbear-russian-pki-interstitial-body-title = The request with data was stopped
++goodbear-russian-pki-interstitial-body-description = Good Bear never automatically replays requests with data when moving to Russian PKI. Only the address can be opened in an isolated container; request data will not be sent.
++goodbear-russian-pki-interstitial-trust-changed-title = The site's trust source has changed
++goodbear-russian-pki-interstitial-trust-changed-description = This site previously used the standard trust infrastructure. Its certificate now validates through Russian PKI. Good Bear will not send ordinary-container data to this connection.
++goodbear-russian-pki-interstitial-open-isolated = Open in isolation
++goodbear-russian-pki-interstitial-go-back = Go back
++goodbear-russian-pki-interstitial-view-certificate = View certificate
++
++# A validated chain can still be denied by the container access policy.
++goodbear-russian-pki-policy-denied-title = Connection blocked by access policy
++goodbear-russian-pki-policy-denied-description = The certificate chain passed validation, but its anchor role or isolated context is not permitted by Good Bear access policy. OS or profile trust does not remove this restriction. The request is not transferred or replayed in another context.
++
++## Separate Good Bear password stores
++
++goodbear-password-vault-title = Russian PKI passwords
++goodbear-password-general-title = General passwords
++goodbear-password-vault-description = This separate store is available for Russian PKI sites. Browser-profile import is unavailable here; use explicit CSV import. These passwords are not synced.
++goodbear-password-general-description = Passwords for ordinary tabs and standard containers.
++goodbear-password-vault-settings-description = Russian PKI passwords use a separate encrypted store. Existing profile Primary Password settings apply. General passwords, payment data and other credentials remain isolated.
++goodbear-password-vault-open = Manage Russian PKI passwords
++goodbear-password-vault-unavailable = The Russian PKI password store is unavailable. Its managed container must exist and the window must not be private.
++goodbear-password-import-report-title = Import report for this password store
++goodbear-password-close = Close
++goodbear-password-vault-remove-all-title = Remove all Russian PKI passwords?
++goodbear-password-vault-remove-all-message = Only this separate store will be cleared. General passwords will be kept.
++goodbear-password-vault-export-title = Export Russian PKI passwords?
++goodbear-password-vault-export-message = Only this store will be exported as readable text. Keep the exported file private.
++goodbear-vault-password-manager-save-password-message = Save the password for { $host } in the Russian PKI store?
++goodbear-vault-password-manager-update-password-message = Update the password for { $host } in the Russian PKI store?
++goodbear-password-import-report-row = { $origin } —
++    { $status ->
++        [added] Added
++        [modified] Updated
++        [no_change] Unchanged
++       *[other] Import error
++    }
+diff --git a/browser/locales/en-US/browser/preferences/goodBearRussianPKI.ftl b/browser/locales/en-US/browser/preferences/goodBearRussianPKI.ftl
+new file mode 100644
+--- /dev/null
++++ b/browser/locales/en-US/browser/preferences/goodBearRussianPKI.ftl
+@@ -0,0 +1,23 @@
++# This Source Code Form is subject to the terms of the Mozilla Public
++# License, v. 2.0. If a copy of the MPL was not distributed with this
++# file, You can obtain one at http://mozilla.org/MPL/2.0/.
++
++goodbear-russian-pki-settings-header = Good Bear Russian PKI
++goodbear-russian-pki-settings-enable = Enable Russian PKI support
++goodbear-russian-pki-settings-enable-failed = Could not complete the change to Russian PKI support. The checkbox shows the saved preference; this error does not confirm that access is enabled.
++goodbear-russian-pki-settings-enabled-state = Russian PKI support is enabled. Russian PKI trust is limited to the isolated Good Bear container.
++goodbear-russian-pki-settings-disabled-state = Russian PKI support is disabled. Connections using the approved Russian root are blocked, including roots trusted by the operating system. Other valid sites remain available.
++goodbear-russian-pki-settings-sites-header = Russian PKI sites
++goodbear-russian-pki-settings-sites-description = These exact HTTPS origins are stored locally for isolated routing. They do not add a certificate authority to the browser’s global trust store.
++goodbear-russian-pki-settings-sites-list =
++    .aria-label = Assigned Russian PKI sites
++goodbear-russian-pki-settings-sites-empty = No Russian PKI sites are assigned.
++goodbear-russian-pki-settings-reset-origin = Remove { $origin }
++goodbear-russian-pki-settings-reset-origin-confirmation = Remove the Russian PKI assignment for { $origin } and its local trust-source history? The site will be classified again on its next visit.
++goodbear-russian-pki-settings-reset-all = Clear all site assignments…
++goodbear-russian-pki-settings-reset-all-confirmation = Clear all Russian PKI site assignments and their local trust-source history? Sites will be classified again on their next visit.
++goodbear-russian-pki-settings-reset-all-confirm = Clear all
++goodbear-russian-pki-settings-reset-failed = The assignment list could not be changed. Current isolation is preserved.
++goodbear-russian-pki-settings-credentials-header = Credentials
++goodbear-russian-pki-settings-credentials-description = Saving and autofilling passwords, addresses and payment data are disabled in the Russian PKI container. No credentials are displayed here.
++goodbear-russian-pki-settings-unavailable = Protected container settings are unavailable. Reopen this page to try again.
+diff --git a/browser/themes/shared/controlcenter/panel.css b/browser/themes/shared/controlcenter/panel.css
+--- a/browser/themes/shared/controlcenter/panel.css
++++ b/browser/themes/shared/controlcenter/panel.css
+@@ -28,7 +28,7 @@
+ }
+
+ /* Hide all conditional elements by default. */
+-:is([when-connection], [when-customroot], [when-tlskeylogging], [when-mixedcontent], [when-ciphers], [when-httpsonlystatus]) {
++:is([when-connection], [when-customroot], [when-tlskeylogging], [when-mixedcontent], [when-ciphers], [when-httpsonlystatus], [when-goodbear-trust-domain]) {
+   display: none;
+ }
+
+@@ -89,9 +89,25 @@
+ .site-information-popup[httpsonlystatus=upgraded] [when-httpsonlystatus~=upgraded],
+ .site-information-popup[httpsonlystatus=failed-top] [when-httpsonlystatus~=failed-top],
+ .site-information-popup[httpsonlystatus=failed-sub] [when-httpsonlystatus~=failed-sub],
++.site-information-popup[goodbear-trust-domain="russian-pki"] [when-goodbear-trust-domain~="russian-pki"],
+ /* Show 'disable MCB' button always when there is mixed active content blocked. */
+ #identity-popup-securityView-extended-info[mixedcontent~=active-blocked] > button[when-mixedcontent=active-blocked] {
+   display: revert;
++}
++
++/*
++ * A scoped Russian PKI result is a native PSM trust domain, not an arbitrary
++ * enterprise root imported from the operating system.  The Good Bear
++ * explanation replaces the generic upstream custom-root warning here only.
++ */
++.site-information-popup[goodbear-trust-domain="russian-pki"] [when-customroot] {
++  display: none;
++}
++
++/* Certificate names and fingerprints are untrusted text, not layout hints. */
++#goodbear-russian-pki-details dd {
++  margin-inline-start: 0;
++  overflow-wrap: anywhere;
+ }
+
+ #identity-popup-content-eu-trust-mark {
+@@ -913,20 +929,22 @@
+ /* Assets per state: the graphic image (legacy + Nova) and the card background
+    are selected by the tracking-protection state via custom properties. */
+ #trustpanel-popup[tracking-protection="warning"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-warning.svg);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-warning.svg);
++  /* Keep mascot artwork inside the existing dedicated graphic box. The
++   * surrounding trust, warning, and connection icons remain functional UI. */
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-generic-error.png);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-generic-error.png);
+   --trustpanel-background: var(--trustpanel-warning-bg);
+ }
+
+ #trustpanel-popup[tracking-protection="enabled"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-enabled.svg);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-check.svg);
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-success.png);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-success.png);
+   --trustpanel-background: var(--trustpanel-highlight-bg);
+ }
+
+ #trustpanel-popup[tracking-protection="disabled"] {
+-  --trustpanel-image-legacy: url(chrome://browser/skin/trustpanel-graphic-disabled.svg);
+-  --trustpanel-image-nova: url(chrome://browser/content/controlcenter/assets/breach-alert-shield-cross.svg);
++  --trustpanel-image-legacy: url(chrome://activity-stream/content/data/content/assets/goodbear-empty-state.png);
++  --trustpanel-image-nova: url(chrome://activity-stream/content/data/content/assets/goodbear-empty-state.png);
+   --trustpanel-background: var(--trustpanel-graphic-bg);
+ }
+
+diff --git a/browser/themes/shared/identity-block/identity-block.css b/browser/themes/shared/identity-block/identity-block.css
+--- a/browser/themes/shared/identity-block/identity-block.css
++++ b/browser/themes/shared/identity-block/identity-block.css
+@@ -94,6 +94,17 @@
+ #identity-icon-label {
+   padding-inline-start: 4px;
+   margin: 0;
++}
++
++/* Keep the Good Bear Russian-PKI state visible beside Firefox's newer trust
++ * panel shield.  The legacy identity-icon label is hidden for secure pages
++ * while this feature is enabled. */
++#trust-goodbear-russian-pki-label {
++  margin: 0;
++  margin-inline-start: 4px;
++  white-space: nowrap;
++  font-size: 0.9em;
++  font-weight: 600;
+ }
+
+ #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button,

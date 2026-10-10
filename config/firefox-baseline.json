@@ -1,48 +1,48 @@
 {
   "schema_version": 1,
-  "selected_at": "2026-09-16",
+  "selected_at": "2026-10-05",
   "product": "Firefox Desktop / Gecko",
   "channel": "release",
-  "version": "156.0",
+  "version": "157.0",
   "vcs": {
     "repository": "https://github.com/mozilla-firefox/firefox.git",
-    "release_tag": "FIREFOX_156_0_RELEASE",
-    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
-    "version_file_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/browser/config/version.txt"
+    "release_tag": "FIREFOX_157_0_RELEASE",
+    "revision": "fdd757a2e09c9471cddf383e64e631e4ce178499",
+    "version_file_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/fdd757a2e09c9471cddf383e64e631e4ce178499/browser/config/version.txt"
   },
   "source": {
-    "archive_path": "source/firefox-156.0.source.tar.xz",
-    "archive_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz",
-    "detached_signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz.asc",
-    "sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9",
-    "sha512": "0463304a0898670d248114f66f7c235166ae2397c3989a7c878c96f0c589fbbba1f1c87432daa22633b9fadd94394adf1dc37f0e67d22b066c75efe5eead75ce"
+    "archive_path": "source/firefox-157.0.source.tar.xz",
+    "archive_url": "https://archive.mozilla.org/pub/firefox/releases/157.0/source/firefox-157.0.source.tar.xz",
+    "detached_signature_url": "https://archive.mozilla.org/pub/firefox/releases/157.0/source/firefox-157.0.source.tar.xz.asc",
+    "sha256": "259c564dd4bbd56bbe8a9a6cf001fc8812853567fd3a78e77c9ddf10d7d4e982",
+    "sha512": "d0c1788102904fe83bfbeecdbdfbd4033743e9bb791ff7063ca4a2a72146c722e0c87fb7531b32be9491f5b1529960364197150c27742e0aea3cefcd13ed0dde"
   },
   "signing": {
-    "key_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/KEY",
+    "key_url": "https://archive.mozilla.org/pub/firefox/releases/157.0/KEY",
     "key_sha256": "b0c538f0f145fa902ac55455d92d4e9a627c2c6865d79c81b280bcb55d75b798",
     "primary_key_fingerprint": "14F26682D0916CDD81E37B6D61B7B526D98F0353",
     "signing_subkey_fingerprint": "827E658608679618CD349F93678E455D76767AA3",
     "signed_summaries": {
       "sha256": {
-        "url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA256SUMS",
-        "content_sha256": "3dd4a7de5e85a8182f874f428e32d3365233885faf0f8fa4d2a9c7607a74e931",
-        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA256SUMS.asc",
-        "signature_sha256": "c75245a3718ff8f3668bd122975488ad2943ae2c2c05d698d29db636b17ab710"
+        "url": "https://archive.mozilla.org/pub/firefox/releases/157.0/SHA256SUMS",
+        "content_sha256": "272af8d01fed14e41b7b1add137e3829e109e8611cb85f8514737cd9d876c537",
+        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/157.0/SHA256SUMS.asc",
+        "signature_sha256": "c165b26c8aa359741815db38f3f905334a2dcafd5713d9da2539a5843fad841b"
       },
       "sha512": {
-        "url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA512SUMS",
-        "content_sha256": "58b34fa7d7c7135db40439ee2b04ffe9db9bba3a56d258f90dd92bfef2e3f54e",
-        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA512SUMS.asc",
-        "signature_sha256": "a985005d5a12b981d7f33f982135a2c813b86e7b416070615202a3b95a899b06"
+        "url": "https://archive.mozilla.org/pub/firefox/releases/157.0/SHA512SUMS",
+        "content_sha256": "0b4d9ee046156d577534b1e82436964e1368aa874a1702cf4bf86d95b2c202f4",
+        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/157.0/SHA512SUMS.asc",
+        "signature_sha256": "f115555300e3b46106f10db6f3aabc52c987899c94321ab17f011a54b4556a8e"
       }
     }
   },
   "release_observation": {
     "product_details_url": "https://product-details.mozilla.org/1.0/firefox_versions.json",
     "latest_version_field": "LATEST_FIREFOX_VERSION",
-    "latest_version_at_selection": "156.0",
+    "latest_version_at_selection": "157.0",
     "last_release_date_field": "LAST_RELEASE_DATE",
-    "last_release_date_at_selection": "2026-09-15"
+    "last_release_date_at_selection": "2026-09-29"
   },
   "security_support": {
     "basis": "mozilla_current_rapid_release",
