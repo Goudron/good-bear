@@ -1,0 +1,248 @@
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -149,7 +149,7 @@
+   const window =
+     browser?.browsingContext?.topChromeWindow ??
+     browser?.ownerGlobal ??
+-    browser?.ownerDocument?.defaultView;
++    browser?.documentGlobal;
+   return window && !window.closed ? window : null;
+ }
+ 
+@@ -343,16 +343,11 @@
+     const method = channel.requestMethod;
+     if (getBrowserWindow(browser) && typeof method === "string") {
+       const isSafeAddressOnlyMethod = method === "GET" || method === "HEAD";
+-      this._scheduleAddressOnlyOpen(
+-        browser,
+-        uri.spec,
+-        decision.userContextId,
+-        {
+-          closeSourceTab: true,
+-          hasRequestBody: !isSafeAddressOnlyMethod,
+-          autoOpen: isSafeAddressOnlyMethod,
+-        }
+-      );
++      this._scheduleAddressOnlyOpen(browser, uri.spec, decision.userContextId, {
++        closeSourceTab: true,
++        hasRequestBody: !isSafeAddressOnlyMethod,
++        autoOpen: isSafeAddressOnlyMethod,
++      });
+     }
+     channel.cancel(Cr.NS_ERROR_BLOCKED_BY_POLICY);
+   },
+@@ -504,33 +499,51 @@
+   },
+ 
+   _promptAddressOnlyOpen(window, hasRequestBody, trustSourceChanged = false) {
++    const titleId = trustSourceChanged
++      ? "goodbear-russian-pki-prompt-trust-changed-title"
++      : "goodbear-russian-pki-prompt-title";
++    let messageId;
++    if (trustSourceChanged) {
++      messageId = hasRequestBody
++        ? "goodbear-russian-pki-prompt-trust-changed-body"
++        : "goodbear-russian-pki-prompt-trust-changed-address";
++    } else {
++      messageId = hasRequestBody
++        ? "goodbear-russian-pki-prompt-body"
++        : "goodbear-russian-pki-prompt-address";
++    }
++    const openId = trustSourceChanged
++      ? "goodbear-russian-pki-prompt-open-isolated"
++      : "goodbear-russian-pki-prompt-open-address";
++    let values;
++    try {
++      const l10n = new window.Localization(["browser/browser.ftl"], true);
++      values = l10n.formatValuesSync([
++        titleId,
++        messageId,
++        openId,
++        "goodbear-russian-pki-prompt-go-back",
++      ]);
++      if (
++        values.length !== 4 ||
++        values.some(value => typeof value !== "string" || !value.trim())
++      ) {
++        return 2;
++      }
++    } catch {
++      // Missing localized consent must never authorize an isolated navigation.
++      return 2;
++    }
+     const flags =
+       Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
+       Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_1;
+-    if (trustSourceChanged) {
+-      return Services.prompt.confirmEx(
+-        window,
+-        "Good Bear — источник доверия изменился",
+-        hasRequestBody
+-          ? "Ранее этот сайт использовал стандартную инфраструктуру доверия. Сейчас сертификат проверяется через Российскую PKI. Good Bear не передаст данные обычного контейнера и не повторит запрос с данными."
+-          : "Ранее этот сайт использовал стандартную инфраструктуру доверия. Сейчас сертификат проверяется через Российскую PKI. Good Bear не передаст этому соединению данные обычного контейнера.",
+-        flags,
+-        "Открыть изолированно",
+-        "Назад",
+-        null,
+-        null,
+-        {}
+-      );
+-    }
+     return Services.prompt.confirmEx(
+       window,
+-      "Good Bear — Российская PKI",
+-      hasRequestBody
+-        ? "Автоматический повтор запроса с данными запрещён. Открыть в изолированном контейнере только адрес без данных запроса?"
+-        : "Переход в изолированный контейнер не переносит данные запроса. Открыть только адрес?",
++      values[0],
++      values[1],
+       flags,
+-      "Открыть адрес в контейнере «Российская PKI»",
+-      "Назад",
++      values[2],
++      values[3],
+       null,
+       null,
+       {}
+diff --git a/browser/locales/en-US/browser/browser.ftl b/browser/locales/en-US/browser/browser.ftl
+--- a/browser/locales/en-US/browser/browser.ftl
++++ b/browser/locales/en-US/browser/browser.ftl
+@@ -1697,3 +1697,15 @@
+   .accesskey = R
+ reduced-protection-infobar-never-show-button = Don’t show again
+   .accesskey = D
++
++## Good Bear isolated Russian PKI navigation consent
++
++goodbear-russian-pki-prompt-title = Good Bear — Russian PKI
++goodbear-russian-pki-prompt-address = Moving to the isolated container does not transfer request data. Open only the address?
++goodbear-russian-pki-prompt-body = Requests with data are never replayed automatically. Open only the address in the isolated container without the request data?
++goodbear-russian-pki-prompt-open-address = Open the address in the Russian PKI container
++goodbear-russian-pki-prompt-go-back = Go back
++goodbear-russian-pki-prompt-trust-changed-title = Good Bear — trust source changed
++goodbear-russian-pki-prompt-trust-changed-address = This site previously used the standard trust infrastructure. Its certificate is now validated through Russian PKI. Good Bear will not send ordinary-container data to this connection.
++goodbear-russian-pki-prompt-trust-changed-body = This site previously used the standard trust infrastructure. Its certificate is now validated through Russian PKI. Good Bear will not send ordinary-container data or replay the request with data.
++goodbear-russian-pki-prompt-open-isolated = Open in isolation
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
+@@ -369,3 +369,118 @@
+     "the committed transition is STANDARD to Russian PKI"
+   );
+ });
++
++add_task(async function test_localized_address_only_prompt_choices() {
++  const { sinon } = ChromeUtils.importESModule(
++    "resource://testing-common/Sinon.sys.mjs"
++  );
++  const l10n = new Localization(["browser/browser.ftl"], true);
++  const prompt = sinon.stub(Services.prompt, "confirmEx");
++  try {
++    for (const hasRequestBody of [false, true]) {
++      for (const trustSourceChanged of [false, true]) {
++        const expected = l10n.formatValuesSync([
++          trustSourceChanged
++            ? "goodbear-russian-pki-prompt-trust-changed-title"
++            : "goodbear-russian-pki-prompt-title",
++          {
++            "false,false": "goodbear-russian-pki-prompt-address",
++            "false,true": "goodbear-russian-pki-prompt-body",
++            "true,false": "goodbear-russian-pki-prompt-trust-changed-address",
++            "true,true": "goodbear-russian-pki-prompt-trust-changed-body",
++          }[`${trustSourceChanged},${hasRequestBody}`],
++          trustSourceChanged
++            ? "goodbear-russian-pki-prompt-open-isolated"
++            : "goodbear-russian-pki-prompt-open-address",
++          "goodbear-russian-pki-prompt-go-back",
++        ]);
++        ok(
++          expected.every(value => value?.trim()),
++          "all consent strings resolve"
++        );
++        for (const selected of [0, 1, 2]) {
++          prompt.resetHistory();
++          prompt.returns(selected);
++          is(
++            GoodBearRussianPKINavigationPolicy._promptAddressOnlyOpen(
++              window,
++              hasRequestBody,
++              trustSourceChanged
++            ),
++            selected,
++            "localized prompt preserves open, back and dismissal results"
++          );
++          const args = prompt.firstCall.args;
++          Assert.deepEqual(
++            [args[1], args[2], args[4], args[5]],
++            expected,
++            "native prompt receives Fluent values for this security decision"
++          );
++          is(
++            args.length,
++            9,
++            "no URL or request state is added to prompt arguments"
++          );
++        }
++      }
++    }
++  } finally {
++    prompt.restore();
++  }
++});
++
++add_task(
++  async function test_prompt_localization_failure_never_opens_destination() {
++    const policy = GoodBearRussianPKINavigationPolicy;
++    const originalOpen = policy._openAddressOnlyInContainer;
++    let opened = 0;
++    let wentBack = 0;
++    policy._openAddressOnlyInContainer = () => opened++;
++    const browser = { goBack: () => wentBack++ };
++    try {
++      for (const failedValues of [
++        null,
++        [],
++        ["title", null, "open", "back"],
++        ["title", " ", "open", "back"],
++      ]) {
++        const promptWindow = {
++          Localization: class {
++            formatValuesSync() {
++              if (failedValues === null) {
++                throw new Error("test-only localization failure");
++              }
++              return failedValues;
++            }
++          },
++        };
++        for (const hasRequestBody of [false, true]) {
++          for (const trustSourceChanged of [false, true]) {
++            policy._handleAddressOnlyChoice(
++              promptWindow,
++              browser,
++              "https://must-not-open.example.test/",
++              17,
++              true,
++              hasRequestBody,
++              false,
++              trustSourceChanged
++            );
++          }
++        }
++      }
++      is(
++        opened,
++        0,
++        "a missing localized choice never authorizes any navigation"
++      );
++      is(
++        wentBack,
++        0,
++        "localization failure does not manufacture a Back decision"
++      );
++    } finally {
++      policy._openAddressOnlyInContainer = originalOpen;
++    }
++  }
++);

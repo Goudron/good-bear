@@ -1,0 +1,326 @@
+diff --git a/browser/components/aboutwelcome/jar.mn b/browser/components/aboutwelcome/jar.mn
+index 2aa6e3e..cb9169f 100644
+--- a/browser/components/aboutwelcome/jar.mn
++++ b/browser/components/aboutwelcome/jar.mn
+@@ -14,9 +14,10 @@ browser.jar:
+   content/activity-stream/data/content/assets/confetti.svg                                  (./assets/confetti.svg)
+   content/activity-stream/data/content/assets/euo-chatbot.svg                               (./assets/euo-chatbot.svg)
+   content/activity-stream/data/content/assets/euo-tab-orientation.svg                       (./assets/euo-tab-orientation.svg)
+-  content/activity-stream/data/content/assets/fox-doodle-tail.png                           (./assets/fox-doodle-tail.png)
+-  content/activity-stream/data/content/assets/fox-doodle-waving.gif                         (./assets/fox-doodle-waving.gif)
+-  content/activity-stream/data/content/assets/fox-doodle-waving-static.png                  (./assets/fox-doodle-waving-static.png)
++  content/activity-stream/data/content/assets/goodbear-doodle-waving.gif                    (./assets/goodbear-doodle-waving.gif)
++  content/activity-stream/data/content/assets/goodbear-doodle-waving-static.png             (./assets/goodbear-doodle-waving-static.png)
++  content/activity-stream/data/content/assets/goodbear-welcome.png                          (./assets/goodbear-welcome.png)
++  content/activity-stream/data/content/assets/goodbear-thinking-setup.png                   (./assets/goodbear-thinking-setup.png)
+   content/activity-stream/data/content/assets/heart.webp                                    (./assets/heart.webp)
+   content/activity-stream/data/content/assets/long-zap.svg                                  (./assets/long-zap.svg)
+   content/activity-stream/data/content/assets/mobile-download-qr-existing-user.svg          (./assets/mobile-download-qr-existing-user.svg)
+@@ -37,16 +38,12 @@ browser.jar:
+   content/activity-stream/data/content/assets/tabs-side-zap-transparent.svg                 (./assets/tabs-side-zap-transparent.svg)
+   content/activity-stream/data/content/assets/tabs-top-zap-transparent.svg                  (./assets/tabs-top-zap-transparent.svg)
+   content/activity-stream/data/content/assets/nuo-taborientation.svg                        (./assets/nuo-taborientation.svg)
+-  content/activity-stream/data/content/assets/fox-doodle-backup-restore.svg                 (./assets/fox-doodle-backup-restore.svg)
+-  content/activity-stream/data/content/assets/br-set-default-fox-heart.svg                  (./assets/br-set-default-fox-heart.svg)
+-  content/activity-stream/data/content/assets/br-import-fox-house.svg                       (./assets/br-import-fox-house.svg)
+-  content/activity-stream/data/content/assets/br-fxa-fox-mirror.svg                         (./assets/br-fxa-fox-mirror.svg)
+-  content/activity-stream/data/content/assets/br-amo-fox-paint.svg                          (./assets/br-amo-fox-paint.svg)
+-  content/activity-stream/data/content/assets/br-gratitude-fox-rock.svg                     (./assets/br-gratitude-fox-rock.svg)
+-  content/activity-stream/data/content/assets/splash-logo.svg                               (./assets/splash-logo.svg)
+-  content/activity-stream/data/content/assets/splash-screen.webm                             (./assets/splash-screen.webm)
+-  content/activity-stream/data/content/assets/br-migration-fox-juggle.svg                   (./assets/br-migration-fox-juggle.svg)
+-  content/activity-stream/data/content/assets/br-backup-fox-in-box.svg                      (./assets/br-backup-fox-in-box.svg)
+-  content/activity-stream/data/content/assets/br-backup-fox-outside-box.svg                 (./assets/br-backup-fox-outside-box.svg)
++  content/activity-stream/data/content/assets/goodbear-generic-error.png                    (./assets/goodbear-generic-error.png)
++  content/activity-stream/data/content/assets/goodbear-success.png                          (./assets/goodbear-success.png)
++  content/activity-stream/data/content/assets/goodbear-import-setup.png                     (./assets/goodbear-import-setup.png)
++  content/activity-stream/data/content/assets/goodbear-devices-sync.png                     (./assets/goodbear-devices-sync.png)
++  content/activity-stream/data/content/assets/goodbear-gratitude.png                        (./assets/goodbear-gratitude.png)
++  content/activity-stream/data/content/assets/goodbear-backup-restore.png                   (./assets/goodbear-backup-restore.png)
++  content/activity-stream/data/content/assets/goodbear-empty-state.png                      (./assets/goodbear-empty-state.png)
+   content/activity-stream/data/content/assets/backdrop-adaptive.svg                         (./assets/backdrop-adaptive.svg)
+   content/activity-stream/data/content/assets/kit-sit-look-up.svg                           (./assets/kit-sit-look-up.svg)
+diff --git a/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs b/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
+index 63d3258..e21221e 100644
+--- a/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
++++ b/browser/components/aboutwelcome/modules/AboutWelcomeDefaults.sys.mjs
+@@ -61,7 +61,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -120,7 +120,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -147,7 +147,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+           string_id: "onboarding-device-migration-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-migration-fox-juggle.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -373,7 +373,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+           string_id: "mr2022-onboarding-default-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-set-default-fox-heart.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-success.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         logo: {},
+@@ -489,7 +489,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+         position: "split",
+         split_narrow_bkg_position: "-42px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-backup-fox-in-box.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-backup-restore.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         backup_show_filepicker: {
+@@ -569,7 +569,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+           string_id: "onboarding-refresh-import-subtitle",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-import-fox-house.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-import-setup.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         hide_secondary_section: "responsive",
+         migrate_start: {
+@@ -627,7 +627,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+         fullscreen: true,
+         split_narrow_bkg_position: "-58px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-amo-fox-paint.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-thinking-setup.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -684,7 +684,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+           string_id: "mr2022-onboarding-gratitude-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-gratitude-fox-rock.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-gratitude.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -714,7 +714,7 @@ const MR_ABOUT_WELCOME_DEFAULT = {
+           string_id: "mr2022-onboarding-gratitude-image-alt",
+         },
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-fxa-fox-mirror.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+diff --git a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
+index 5fa2a65..089d506 100644
+--- a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
++++ b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_configurable_ui.js
+@@ -901,7 +901,7 @@ add_task(async function test_aboutwelcome_single_select_icon_styles() {
+         data: [
+           {
+             icon: {
+-              background: `center / contain no-repeat url("chrome://activity-stream/content/data/content/assets/fox-doodle-waving.gif")`,
++              background: `center / contain no-repeat url("chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif")`,
+               width: "150px",
+               height: "100px",
+               marginInline: "10px",
+@@ -962,7 +962,7 @@ add_task(async function test_aboutwelcome_single_select_icon_styles() {
+     // Expected styles:
+     {
+       "background-image":
+-        'url("chrome://activity-stream/content/data/content/assets/fox-doodle-waving.gif")',
++        'url("chrome://activity-stream/content/data/content/assets/goodbear-doodle-waving.gif")',
+       "background-repeat": "no-repeat",
+       "background-size": "contain",
+       width: "150px",
+diff --git a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
+index 3d55d9b..21a826d 100644
+--- a/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
++++ b/browser/components/aboutwelcome/tests/browser/browser_aboutwelcome_multistage_mr.js
+@@ -167,7 +167,7 @@ add_task(async function test_aboutwelcome_gratitude() {
+         position: "split",
+         split_narrow_bkg_position: "-228px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-gratitude-fox-rock.svg') var(--mr-secondary-position) no-repeat, var(--mr-screen-background-color)",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-gratitude.png') var(--mr-secondary-position) no-repeat, var(--mr-screen-background-color)",
+         progress_bar: true,
+         logo: {},
+         title: {
+@@ -846,7 +846,7 @@ add_task(async function test_aboutwelcome_gratitude() {
+         position: "split",
+         split_narrow_bkg_position: "-228px",
+         background:
+-          "url('chrome://activity-stream/content/data/content/assets/br-fxa-fox-mirror.svg') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
++          "url('chrome://activity-stream/content/data/content/assets/goodbear-devices-sync.png') var(--mr-secondary-position) no-repeat light-dark(rgba(252, 245, 240, 1), rgba(33, 3, 64, 1))",
+         progress_bar: true,
+         logo: {},
+         title: {
+diff --git a/toolkit/content/errors/net-error-illustrations.mjs b/toolkit/content/errors/net-error-illustrations.mjs
+index d785e43..f91054a 100644
+--- a/toolkit/content/errors/net-error-illustrations.mjs
++++ b/toolkit/content/errors/net-error-illustrations.mjs
+@@ -4,10 +4,11 @@
+ 
+ export const NET_ERROR_ILLUSTRATIONS = {
+   noConnection: {
+-    src: "chrome://global/skin/illustrations/no-connection.svg",
++    src: "chrome://global/skin/illustrations/goodbear-no-connection.png",
+-    className: "no-connection",
++    className: "goodbear-error-illustration no-connection",
+   },
+   securityError: {
+-    src: "chrome://global/skin/illustrations/security-error.svg",
++    src: "chrome://global/skin/illustrations/goodbear-security-error.png",
++    className: "goodbear-error-illustration",
+   },
+ };
+diff --git a/toolkit/themes/shared/aboutNetError.css b/toolkit/themes/shared/aboutNetError.css
+index 6a8514d..f796a8e 100644
+--- a/toolkit/themes/shared/aboutNetError.css
++++ b/toolkit/themes/shared/aboutNetError.css
+@@ -239,29 +239,49 @@
+     display: flex;
+     flex-direction: row;
+ 
++    > .img-container {
++      /*
++       * Good Bear artwork is strictly decorative. Keep it in this reserved
++       * flex item so it cannot cover the title, warning icon, controls, or
++       * certificate details in the adjacent content column.
++       */
++      flex: 0 0 auto;
++      pointer-events: none;
++    }
++
+     > .container {
+       width: 100%;
+     }
+ 
+     /* Stack the illustration above the text, both left aligned. */
+     @media (max-width: 640px) {
+       flex-direction: column;
+       align-items: start;
+     }
+   }
+ 
+-  .img-container > img {
+-    width: 8.75em;
++  .img-container > img.goodbear-error-illustration {
++    box-sizing: border-box;
++    display: block;
++    inline-size: min(8.75em, 20vw);
++    block-size: min(8.75em, 20vw);
++    max-inline-size: 8.75em;
++    max-block-size: 8.75em;
+     margin-block-start: 2em;
+     margin-inline-end: 2.5em;
++    object-fit: contain;
++    object-position: center;
+ 
+     &.no-connection {
+-      width: 13em;
++      inline-size: min(13em, 24vw);
++      block-size: min(13em, 24vw);
++      max-inline-size: 13em;
++      max-block-size: 13em;
+     }
+ 
+     @media (max-width: 640px) {
+       margin-block: 0 var(--space-large);
+       margin-inline-end: 0;
+     }
+   }
+ 
+diff --git a/toolkit/themes/shared/desktop-jar.inc.mn b/toolkit/themes/shared/desktop-jar.inc.mn
+index 00b27bd..a42bff7 100644
+--- a/toolkit/themes/shared/desktop-jar.inc.mn
++++ b/toolkit/themes/shared/desktop-jar.inc.mn
+@@ -145,10 +145,10 @@
+   skin/classic/global/icons/shaft-arrow-right.svg          (../../shared/icons/shaft-arrow-right.svg)
+   skin/classic/global/icons/warning-fill-12.svg            (../../shared/icons/warning-fill-12.svg)
+   skin/classic/global/illustrations/about-license.svg      (../../shared/illustrations/about-license.svg)
+-  skin/classic/global/illustrations/security-error.svg     (../../shared/illustrations/security-error.svg)
++  skin/classic/global/illustrations/goodbear-security-error.png (../../shared/illustrations/goodbear-security-error.png)
+   skin/classic/global/illustrations/shield-check.svg       (../../shared/illustrations/shield-check.svg)
+   skin/classic/global/illustrations/shield-alert.svg       (../../shared/illustrations/shield-alert.svg)
+-  skin/classic/global/illustrations/no-connection.svg      (../../shared/illustrations/no-connection.svg)
++  skin/classic/global/illustrations/goodbear-no-connection.png (../../shared/illustrations/goodbear-no-connection.png)
+   skin/classic/global/illustrations/kit-concerned.svg      (../../shared/illustrations/kit-concerned.svg)
+   skin/classic/global/illustrations/kit-confetti.svg       (../../shared/illustrations/kit-confetti.svg)
+   skin/classic/global/illustrations/kit-happy.svg	   (../../shared/illustrations/kit-happy.svg)
+diff --git a/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css b/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
+index eb3cf33..b34ca71 100644
+--- a/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
++++ b/browser/themes/shared/privatebrowsing/aboutPrivateBrowsing.css
+@@ -483,7 +483,7 @@ content-search-handoff-ui {
+       content: "";
+       position: fixed;
+       inset: 0;
+-      background: url("chrome://browser/skin/privatebrowsing/fox-tail.svg") no-repeat bottom right / cover;
++      background: url("chrome://browser/skin/privatebrowsing/goodbear-private-browsing.png") no-repeat bottom right / cover;
+       pointer-events: none;
+       z-index: -1;
+     }
+diff --git a/browser/themes/shared/customizableui/panelUI-shared.css b/browser/themes/shared/customizableui/panelUI-shared.css
+index b2cabe6..1706368 100644
+--- a/browser/themes/shared/customizableui/panelUI-shared.css
++++ b/browser/themes/shared/customizableui/panelUI-shared.css
+@@ -1054,16 +1054,17 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
+   }
+ 
+   /**
+-   * Similar to the above for the fox variant of the icon, we only want to show
++   * For the legacy experimental avatar variant, show the selected Good Bear
++   * artwork instead of shipping the Firefox fox asset. We only want to show
+    * the cutout variant if we're showing the glowing badge.
+    */
+   &[fxastatus="not_configured"][fxa-avatar-icon-variant="fox-circle"] {
+     #fxa-toolbar-menu-button {
+-      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox-circle.svg);
++      --avatar-image-url: url(chrome://browser/skin/fxa/goodbear-avatar-circle.png);
+     }
+ 
+     #fxa-toolbar-menu-button[showing-callout] {
+-      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox.svg);
++      --avatar-image-url: url(chrome://browser/skin/fxa/goodbear-avatar.png);
+     }
+   }
+ 
+diff --git a/browser/themes/shared/jar.inc.mn b/browser/themes/shared/jar.inc.mn
+index da21558..2c8620d 100644
+--- a/browser/themes/shared/jar.inc.mn
++++ b/browser/themes/shared/jar.inc.mn
+@@ -191,8 +191,8 @@
+   skin/classic/browser/fxa/avatar-color.svg                    (../shared/fxa/avatar-color.svg)
+   skin/classic/browser/fxa/avatar-empty.svg                    (../shared/fxa/avatar-empty.svg)
+   skin/classic/browser/fxa/avatar-empty-circle.svg             (../shared/fxa/avatar-empty-circle.svg)
+-  skin/classic/browser/fxa/avatar-fox.svg                      (../shared/fxa/avatar-fox.svg)
+-  skin/classic/browser/fxa/avatar-fox-circle.svg               (../shared/fxa/avatar-fox-circle.svg)
++  skin/classic/browser/fxa/goodbear-avatar.png                 (../shared/fxa/goodbear-avatar.png)
++  skin/classic/browser/fxa/goodbear-avatar-circle.png          (../shared/fxa/goodbear-avatar-circle.png)
+   skin/classic/browser/fxa/circle.svg                          (../shared/fxa/circle.svg)
+   skin/classic/browser/fxa/sync-devices.svg                    (../shared/fxa/sync-devices.svg)
+   skin/classic/browser/fxa/send.svg                            (../shared/fxa/send.svg)
+@@ -328,7 +328,7 @@
+   skin/classic/browser/places/tree-icons.css                   (../shared/places/tree-icons.css)
+   skin/classic/browser/privatebrowsing/aboutPrivateBrowsing.css (../shared/privatebrowsing/aboutPrivateBrowsing.css)
+   skin/classic/browser/privatebrowsing/favicon.svg             (../shared/privatebrowsing/favicon.svg)
+-  skin/classic/browser/privatebrowsing/fox-tail.svg            (../shared/privatebrowsing/fox-tail.svg)
++  skin/classic/browser/privatebrowsing/goodbear-private-browsing.png (../shared/privatebrowsing/goodbear-private-browsing.png)
+   skin/classic/browser/privatebrowsing/pbm-logo.svg            (../shared/privatebrowsing/pbm-logo.svg)
+ 
+   skin/classic/browser/syncedtabs/sidebar.css                  (../shared/syncedtabs/sidebar.css)

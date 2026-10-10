@@ -1,0 +1,70 @@
+# M11: replace the generic custom-root warning only for native Russian PKI
+# results with Good Bear's scoped-container explanation.
+
+diff --git a/browser/base/content/browser-trustPanel.js b/browser/base/content/browser-trustPanel.js
+--- a/browser/base/content/browser-trustPanel.js
++++ b/browser/base/content/browser-trustPanel.js
+@@ -684,7 +684,12 @@ class TrustPanel {
+   async #updatePopup() {
+     this.#popup.setAttribute("connection", this.#connectionState());
+     this.#popup.toggleAttribute("customroot", this.#hasCustomRoot());
++    this.#updateAttribute(
++      this.#popup,
++      "goodbear-trust-domain",
++      this.#usesGoodBearRussianPKI ? "russian-pki" : ""
++    );
+     this.#popup.toggleAttribute("tlskeylogging", this.#tlsKeyLoggingEnabled());
+     this.#popup.setAttribute(
+       "tracking-protection",
+       this.#trackingProtectionStatus()
+@@ -1017,7 +1017,12 @@ class TrustPanel {
+       this.#updateAttribute(element, "isbroken", this.#isBrokenConnection);
+       element.toggleAttribute("customroot", this.#hasCustomRoot());
+       element.toggleAttribute("tlskeylogging", this.#tlsKeyLoggingEnabled());
+       this.#updateAttribute(element, "httpsonlystatus", httpsOnlyStatus);
++      this.#updateAttribute(
++        element,
++        "goodbear-trust-domain",
++        this.#usesGoodBearRussianPKI ? "russian-pki" : ""
++      );
+     }
+ 
+     let { supplemental, owner, verifier } = this.#supplementalText();
+@@ -999,6 +1009,16 @@ class TrustPanel {
+     );
+   }
+ 
++  // The native verifier is the only source of this classification. Do not
++  // infer it from certificate strings, container names, or the URL.
++  get #usesGoodBearRussianPKI() {
++    return (
++      this.#isSecureConnection &&
++      this.#secInfo?.goodBearTrustDomain ===
++        Ci.nsITransportSecurityInfo.RussianPKI
++    );
++  }
++
+   /**
+    * Whether the established HTTPS connection is considered "broken".
+    * This could have several reasons, such as mixed content or weak
+
+diff --git a/browser/themes/shared/controlcenter/panel.css b/browser/themes/shared/controlcenter/panel.css
+--- a/browser/themes/shared/controlcenter/panel.css
++++ b/browser/themes/shared/controlcenter/panel.css
+@@ -93,7 +93,16 @@
+ #identity-popup-securityView-extended-info[mixedcontent~=active-blocked] > button[when-mixedcontent=active-blocked] {
+   display: revert;
+ }
+
++/*
++ * A scoped Russian PKI result is a native PSM trust domain, not an arbitrary
++ * enterprise root imported from the operating system.  The Good Bear
++ * explanation replaces the generic upstream custom-root warning here only.
++ */
++.site-information-popup[goodbear-trust-domain="russian-pki"] [when-customroot] {
++  display: none;
++}
++
+ #identity-popup-content-eu-trust-mark {
+   list-style-image: light-dark(url("chrome://global/skin/icons/EU-trust-mark.svg"), url("chrome://global/skin/icons/EU-trust-mark-inverted.svg"));
+   align-self: start;

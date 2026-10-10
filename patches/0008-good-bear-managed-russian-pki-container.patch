@@ -1,0 +1,344 @@
+# Good Bear M5-01: managed native Russian PKI container
+#
+# Creates one purpose-addressed native contextual identity. The purpose is not
+# a trust decision: M5-02 still owns enablement and M6 owns routing.
+
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -38,7 +38,9 @@
+     "moz-src:///browser/components/downloads/DownloadsViewableInternally.sys.mjs",
+   ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
+   FormAutofillUtils: "resource://gre/modules/shared/FormAutofillUtils.sys.mjs",
+   Interactions: "moz-src:///browser/components/places/Interactions.sys.mjs",
+   LaunchOnLogin: "resource://gre/modules/LaunchOnLogin.sys.mjs",
++  GoodBearRussianPKIContainer:
++    "resource:///modules/GoodBearRussianPKIContainer.sys.mjs",
+   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
+   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+@@ -1081,6 +1083,7 @@
+         name: "ContextualIdentityService.load",
+         task: async () => {
+           await lazy.ContextualIdentityService.load();
++          lazy.GoodBearRussianPKIContainer.start();
+           lazy.Discovery.update();
+         },
+       },
+--- a/browser/components/moz.build
++++ b/browser/components/moz.build
+@@ -114,6 +114,7 @@
+     "BrowserContentHandler.sys.mjs",
+     "BrowserGlue.sys.mjs",
+     "distribution.sys.mjs",
++    "GoodBearRussianPKIContainer.sys.mjs",
+ ]
+ 
+ MOZ_SRC_FILES += [
+--- a/browser/components/contextualidentity/test/browser/browser.toml
++++ b/browser/components/contextualidentity/test/browser/browser.toml
+@@ -27,6 +27,8 @@
+ 
+ ["browser_favicon.js"]
+ 
++["browser_goodbear_russian_pki_container.js"]
++
+ ["browser_forgetAPI_EME_forgetThisSite.js"]
+ 
+ ["browser_forgetAPI_cookie_getCookiesWithOriginAttributes.js"]
+--- a/toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs
++++ b/toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs
+@@ -374,7 +374,7 @@
+     });
+   },
+ 
+-  create(name, icon, color) {
++  create(name, icon, color, managedPurpose = "") {
+     this.ensureDataReady();
+ 
+     // Retrieve the next userContextId available.
+@@ -402,6 +402,9 @@
+       color,
+       name,
+     };
++    if (managedPurpose) {
++      identity.managedPurpose = managedPurpose;
++    }
+ 
+     this._identities.push(identity);
+     this.saveSoon();
+@@ -417,6 +420,17 @@
+     return Cu.cloneInto(identity, {});
+   },
+ 
++  // A managed identity has a stable, implementation-owned purpose in addition
++  // to its user-editable presentation. Callers must use the returned real
++  // userContextId for OriginAttributes; names, colors, icons, or windows are
++  // never a substitute for it.
++  createManagedIdentity(name, icon, color, purpose) {
++    if (typeof purpose !== "string" || !purpose.trim()) {
++      throw new Error("Managed contextual identity purpose must be non-empty.");
++    }
++    return this.create(name, icon, color, purpose);
++  },
++
+   update(userContextId, name, icon, color) {
+     this.ensureDataReady();
+ 
+--- /dev/null
++++ b/browser/components/GoodBearRussianPKIContainer.sys.mjs
+@@ -0,0 +1,127 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++import { ContextualIdentityService } from "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs";
++
++// This value is an implementation identity, not presentation text. The only
++// authority for Russian PKI container scope is the real userContextId held by
++// the matching native contextual identity. M5-02 will own whether support is
++// enabled; M6 will own routing. Neither a name nor an icon authorizes trust.
++export const GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE =
++  "goodbear-russian-pki";
++
++const CONTAINER_NAME = "Российская PKI";
++const CONTAINER_ICON = "fence";
++const CONTAINER_COLOR = "gray";
++const CONTAINER_DELETED_TOPIC = "contextual-identity-deleted";
++
++function isUsableManagedIdentity(identity) {
++  return (
++    identity?.public === true &&
++    Number.isInteger(identity.userContextId) &&
++    identity.userContextId > 0 &&
++    identity.managedPurpose === GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++  );
++}
++
++export class GoodBearRussianPKIContainerManager {
++  constructor(identityService = ContextualIdentityService) {
++    this._identityService = identityService;
++    this._dedicatedUserContextId = null;
++    this._started = false;
++  }
++
++  start() {
++    if (!this._started) {
++      Services.obs.addObserver(this, CONTAINER_DELETED_TOPIC);
++      this._started = true;
++    }
++    return this.ensureContainer();
++  }
++
++  stop() {
++    if (this._started) {
++      Services.obs.removeObserver(this, CONTAINER_DELETED_TOPIC);
++      this._started = false;
++    }
++    this._dedicatedUserContextId = null;
++  }
++
++  observe(subject, topic) {
++    if (topic !== CONTAINER_DELETED_TOPIC) {
++      return;
++    }
++    const deletedId = subject?.wrappedJSObject?.userContextId;
++    if (deletedId === this._dedicatedUserContextId) {
++      // `remove` has already cleared state for the deleted OriginAttributes.
++      // The replacement necessarily gets a different userContextId, making
++      // stale in-flight IDs fail closed when the scope authority rechecks it.
++      this._dedicatedUserContextId = null;
++      this.ensureContainer();
++    }
++  }
++
++  get dedicatedUserContextId() {
++    return this._dedicatedUserContextId;
++  }
++
++  getScopeSnapshot() {
++    return this._dedicatedUserContextId === null
++      ? null
++      : Object.freeze({
++          purpose: GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
++          userContextId: this._dedicatedUserContextId,
++        });
++  }
++
++  ensureContainer() {
++    const matches = this._identityService
++      .getPublicIdentities()
++      .filter(isUsableManagedIdentity);
++
++    // A corrupt profile that claims the managed purpose twice is ambiguous.
++    // Do not select one, do not erase a possibly user-owned identity, and do
++    // not fall back to the ordinary context.
++    if (matches.length > 1) {
++      this._dedicatedUserContextId = null;
++      return null;
++    }
++
++    if (matches.length === 1) {
++      const identity = matches[0];
++      this._dedicatedUserContextId = identity.userContextId;
++      this._repairPresentation(identity);
++      return this._identityService.getPublicIdentityFromId(
++        identity.userContextId
++      );
++    }
++
++    const identity = this._identityService.createManagedIdentity(
++      CONTAINER_NAME,
++      CONTAINER_ICON,
++      CONTAINER_COLOR,
++      GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++    );
++    this._dedicatedUserContextId = identity.userContextId;
++    return identity;
++  }
++
++  _repairPresentation(identity) {
++    if (
++      identity.name !== CONTAINER_NAME ||
++      identity.icon !== CONTAINER_ICON ||
++      identity.color !== CONTAINER_COLOR
++    ) {
++      this._identityService.update(
++        identity.userContextId,
++        CONTAINER_NAME,
++        CONTAINER_ICON,
++        CONTAINER_COLOR
++      );
++    }
++  }
++}
++
++export const GoodBearRussianPKIContainer =
++  new GoodBearRussianPKIContainerManager();
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
+@@ -0,0 +1,126 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const { ContextualIdentityService } = ChromeUtils.importESModule(
++  "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs"
++);
++const {
++  GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
++  GoodBearRussianPKIContainerManager,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++
++const TEST_STORE_FILE_PATH = PathUtils.join(
++  PathUtils.tempDir,
++  `goodbear-container-${Services.uuid.generateUUID()}.json`
++);
++
++add_task(async function test_managed_russian_pki_container_uses_native_identity() {
++  await SpecialPowers.pushPrefEnv({
++    set: [["privacy.userContext.enabled", true]],
++  });
++
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(TEST_STORE_FILE_PATH);
++  const manager = new GoodBearRussianPKIContainerManager(identityService);
++  registerCleanupFunction(async () => {
++    manager.stop();
++    for (const identity of identityService.getPublicIdentities()) {
++      if (
++        identity.managedPurpose === GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++      ) {
++        identityService.remove(identity.userContextId);
++      }
++    }
++    await IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true });
++  });
++
++  const container = manager.start();
++  ok(container, "managed container is created");
++  is(
++    container.managedPurpose,
++    GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
++    "stable technical purpose is stored with the native identity"
++  );
++  ok(container.userContextId > 0, "a real non-default userContextId is used");
++  is(container.name, "Российская PKI", "Russian-only visible name is set");
++
++  const tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
++    userContextId: container.userContextId,
++  });
++  const browser = gBrowser.getBrowserForTab(tab);
++  is(
++    browser.contentPrincipal.userContextId,
++    container.userContextId,
++    "tab origin attributes carry the managed container userContextId"
++  );
++  BrowserTestUtils.removeTab(tab);
++
++  identityService.update(
++    container.userContextId,
++    "ordinary-looking name",
++    "cart",
++    "red"
++  );
++  const repaired = manager.ensureContainer();
++  is(repaired.userContextId, container.userContextId, "repair keeps the ID");
++  is(repaired.name, "Российская PKI", "managed presentation is repaired");
++  is(repaired.icon, "fence", "managed icon is repaired");
++  is(repaired.color, "gray", "neutral managed color is repaired");
++
++  ok(
++    identityService.remove(container.userContextId),
++    "simulated user-visible removal succeeds"
++  );
++  const replacement = manager.ensureContainer();
++  ok(replacement, "the manager recreates a removed managed container");
++  isnot(
++    replacement.userContextId,
++    container.userContextId,
++    "replacement gets a new real userContextId"
++  );
++  ok(
++    !identityService.getPublicIdentityFromId(container.userContextId),
++    "stale ID no longer names a container"
++  );
++  is(
++    manager.getScopeSnapshot().userContextId,
++    replacement.userContextId,
++    "the authoritative snapshot publishes only the replacement ID"
++  );
++});
++
++add_task(async function test_ambiguous_managed_purpose_fails_closed() {
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(
++      `${TEST_STORE_FILE_PATH}.ambiguous`
++    );
++  const manager = new GoodBearRussianPKIContainerManager(identityService);
++  registerCleanupFunction(async () => {
++    manager.stop();
++    await IOUtils.remove(`${TEST_STORE_FILE_PATH}.ambiguous`, {
++      ignoreAbsent: true,
++    });
++  });
++
++  identityService.createManagedIdentity(
++    "Российская PKI",
++    "fence",
++    "gray",
++    GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++  );
++  identityService.createManagedIdentity(
++    "Российская PKI",
++    "fence",
++    "gray",
++    GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++  );
++
++  is(manager.start(), null, "ambiguous purpose is not selected");
++  is(
++    manager.getScopeSnapshot(),
++    null,
++    "ambiguous state supplies no authorization snapshot"
++  );
++});

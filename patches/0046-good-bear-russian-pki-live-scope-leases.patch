@@ -1,0 +1,1271 @@
+# M13-04: revoke alternate-trust leases across verification delivery and transport reuse.
+
+diff --git a/browser/components/preferences/goodBearRussianPKI.js b/browser/components/preferences/goodBearRussianPKI.js
+--- a/browser/components/preferences/goodBearRussianPKI.js
++++ b/browser/components/preferences/goodBearRussianPKI.js
+@@ -80,10 +80,15 @@
+   _setEnabled() {
+     try {
+       if (this._loaded && !Services.prefs.prefIsLocked(this._enabledPref)) {
+-        Services.prefs.setBoolPref(
+-          this._enabledPref,
+-          document.getElementById("goodBearRussianPKIEnabled").checked
+-        );
++        const enabled = document.getElementById(
++          "goodBearRussianPKIEnabled"
++        ).checked;
++        if (!enabled) {
++          Cc["@mozilla.org/psm;1"]
++            .getService(Ci.nsINSSComponent)
++            .clearGoodBearRussianPKIContainerId();
++        }
++        Services.prefs.setBoolPref(this._enabledPref, enabled);
+         this._showError(false);
+       }
+     } catch {
+diff --git a/netwerk/base/SSLTokensCache.cpp b/netwerk/base/SSLTokensCache.cpp
+--- a/netwerk/base/SSLTokensCache.cpp
++++ b/netwerk/base/SSLTokensCache.cpp
+@@ -520,13 +520,18 @@
+ }
+ 
+ // static
+-OriginAttributes SSLTokensCache::OAFromPeerId(const nsACString& aPeerId) {
++OriginAttributes SSLTokensCache::OAFromPeerId(const nsACString& aPeerId,
++                                              bool* aValid) {
+   OriginAttributes oa;
++  bool valid = true;
+   int32_t caretPos = aPeerId.FindChar('^');
+   if (caretPos != kNotFound) {
+     // PopulateFromSuffix expects the full OA suffix including the leading '^'.
+     nsAutoCString suffix(Substring(aPeerId, caretPos));
+-    (void)oa.PopulateFromSuffix(suffix);
++    valid = oa.PopulateFromSuffix(suffix);
++  }
++  if (aValid) {
++    *aValid = valid;
+   }
+   return oa;
+ }
+@@ -839,7 +844,7 @@
+   LOG(("SSLTokensCache::Put [key=%s, tokenLen=%u]",
+        PromiseFlatCString(aKey).get(), aTokenLen));
+ 
+-  if (!aSocketControl) {
++  if (!aSocketControl || !aSocketControl->MayCacheGoodBearSession()) {
+     return NS_ERROR_FAILURE;
+   }
+ 
+@@ -972,6 +977,14 @@
+                              SessionCacheInfo& aResult, uint64_t* aTokenId) {
+   LOG(("SSLTokensCache::Get [key=%s]", PromiseFlatCString(aKey).get()));
+ 
++  bool validAttributes;
++  const auto attributes = OAFromPeerId(aKey, &validAttributes);
++  if (!validAttributes) {
++    aToken.Clear();
++    aResult = SessionCacheInfo();
++    return NS_ERROR_NOT_AVAILABLE;
++  }
++
+   StaticMutexAutoLock lock(sLock);
+   if (!gInstance) {
+     LOG(("  service not initialized"));
+@@ -985,6 +998,12 @@
+   nsTArray<uint8_t> payload = DecompressRecord(owned->mCompressedPayload);
+   if (payload.IsEmpty() || !DeserializeRecord(payload, aToken, aResult)) {
+     return NS_ERROR_FAILURE;
++  }
++  if (CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++          aResult, attributes.mUserContextId)) {
++    aToken.Clear();
++    aResult = SessionCacheInfo();
++    return NS_ERROR_NOT_AVAILABLE;
+   }
+   return NS_OK;
+ }
+diff --git a/netwerk/base/SSLTokensCache.h b/netwerk/base/SSLTokensCache.h
+--- a/netwerk/base/SSLTokensCache.h
++++ b/netwerk/base/SSLTokensCache.h
+@@ -269,7 +269,8 @@
+   static nsDependentCSubstring BasePartFromKey(const nsACString& aKey);
+   static nsDependentCSubstring HostFromBasePart(
+       const nsDependentCSubstring& aBasePart);
+-  static OriginAttributes OAFromPeerId(const nsACString& aPeerId);
++  static OriginAttributes OAFromPeerId(const nsACString& aPeerId,
++                                       bool* aValid = nullptr);
+   static void RemoveByMatchAndOAPattern(
+       const nsACString& aValue, const nsACString& aSeparatedValue,
+       const mozilla::OriginAttributesPattern& aPattern) MOZ_EXCLUDES(sLock);
+diff --git a/netwerk/ipc/PSocketProcess.ipdl b/netwerk/ipc/PSocketProcess.ipdl
+--- a/netwerk/ipc/PSocketProcess.ipdl
++++ b/netwerk/ipc/PSocketProcess.ipdl
+@@ -39,6 +39,7 @@
+ using base::ProcessId from "base/process.h";
+ using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+ using PRTime from "prtime.h";
++[MoveOnly] using mozilla::ipc::ReadOnlySharedMemoryHandle from "mozilla/ipc/SharedMemoryHandle.h";
+ [RefCounted] using class nsIURI from "mozilla/ipc/URIUtils.h";
+ using struct nsID from "nsID.h";
+ using mozilla::net::SocketInfo from "mozilla/net/DashboardTypes.h";
+@@ -81,6 +82,7 @@
+ };
+ 
+ struct SocketProcessInitAttributes {
++  ReadOnlySharedMemoryHandle mGoodBearScopeLease;
+   bool mOffline;
+   bool mConnectivity;
+   bool mInitSandbox;
+diff --git a/netwerk/ipc/SocketProcessChild.cpp b/netwerk/ipc/SocketProcessChild.cpp
+--- a/netwerk/ipc/SocketProcessChild.cpp
++++ b/netwerk/ipc/SocketProcessChild.cpp
+@@ -41,6 +41,7 @@
+ #include "mozilla/net/ProxyAutoConfigChild.h"
+ #include "mozilla/net/SocketProcessBackgroundChild.h"
+ #include "mozilla/net/TRRServiceChild.h"
++#include "mozilla/psm/GoodBearRussianPKIScopeAuthority.h"
+ #include "nsDebugImpl.h"
+ #include "nsHttpConnectionInfo.h"
+ #include "nsHttpHandler.h"
+@@ -280,7 +281,10 @@
+ }
+ 
+ mozilla::ipc::IPCResult SocketProcessChild::RecvInit(
+-    const SocketProcessInitAttributes& aAttributes) {
++    SocketProcessInitAttributes&& aAttributes) {
++  // A missing mapping disables alternate trust without breaking standard TLS.
++  (void)psm::GetGoodBearRussianPKIScopeAuthority().InstallLeaseReader(
++      aAttributes.mGoodBearScopeLease());
+   (void)RecvSetOffline(aAttributes.mOffline());
+   (void)RecvSetConnectivity(aAttributes.mConnectivity());
+   if (aAttributes.mInitSandbox()) {
+diff --git a/netwerk/ipc/SocketProcessChild.h b/netwerk/ipc/SocketProcessChild.h
+--- a/netwerk/ipc/SocketProcessChild.h
++++ b/netwerk/ipc/SocketProcessChild.h
+@@ -43,8 +43,7 @@
+ 
+   void ActorDestroy(ActorDestroyReason aWhy) override;
+ 
+-  mozilla::ipc::IPCResult RecvInit(
+-      const SocketProcessInitAttributes& aAttributes);
++  mozilla::ipc::IPCResult RecvInit(SocketProcessInitAttributes&& aAttributes);
+   mozilla::ipc::IPCResult RecvPreferenceUpdate(const Pref& aPref);
+   mozilla::ipc::IPCResult RecvRequestMemoryReport(
+       const uint32_t& generation, const bool& anonymize,
+diff --git a/netwerk/ipc/SocketProcessHost.cpp b/netwerk/ipc/SocketProcessHost.cpp
+--- a/netwerk/ipc/SocketProcessHost.cpp
++++ b/netwerk/ipc/SocketProcessHost.cpp
+@@ -11,6 +11,7 @@
+ #include "mozilla/ipc/FileDescriptor.h"
+ #include "mozilla/ipc/ProcessChild.h"
+ #include "mozilla/ipc/ProcessUtils.h"
++#include "mozilla/psm/GoodBearRussianPKIScopeAuthority.h"
+ #include "nsAppRunner.h"
+ #include "nsIOService.h"
+ #include "nsIObserverService.h"
+@@ -147,6 +148,8 @@
+   MOZ_ASSERT(rv);
+ 
+   SocketProcessInitAttributes attributes;
++  attributes.mGoodBearScopeLease() =
++      psm::GetGoodBearRussianPKIScopeAuthority().CreateLeaseReader();
+   nsCOMPtr<nsIIOService> ioService(do_GetIOService());
+   MOZ_ASSERT(ioService, "No IO service?");
+   DebugOnly<nsresult> result = ioService->GetOffline(&attributes.mOffline());
+@@ -184,7 +187,7 @@
+   attributes.mAppleFastDatapathProbeAllowed() = sAppleFastDatapathProbeAllowed;
+ #endif
+ 
+-  (void)GetActor()->SendInit(attributes);
++  (void)GetActor()->SendInit(std::move(attributes));
+ 
+   (void)GetActor()->SendInitProfiler(
+       ProfilerParent::CreateForProcess(GetActor()->OtherPid()));
+diff --git a/netwerk/protocol/http/Http3Session.cpp b/netwerk/protocol/http/Http3Session.cpp
+--- a/netwerk/protocol/http/Http3Session.cpp
++++ b/netwerk/protocol/http/Http3Session.cpp
+@@ -465,6 +465,9 @@
+ nsresult Http3Session::ProcessInput(nsIUDPSocket* socket) {
+   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+   MOZ_ASSERT(mUdpConn);
++  if (!mSocketControl || mSocketControl->IsCanceled()) {
++    return NS_ERROR_NET_RESET;
++  }
+ 
+   LOG(("Http3Session::ProcessInput writer=%p [this=%p state=%d]",
+        mUdpConn.get(), this, mState));
+@@ -1179,6 +1182,9 @@
+ nsresult Http3Session::ProcessOutput(nsIUDPSocket* socket) {
+   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+   MOZ_ASSERT(mUdpConn);
++  if (!mSocketControl || mSocketControl->IsCanceled()) {
++    return NS_ERROR_NET_RESET;
++  }
+ 
+   LOG(("Http3Session::ProcessOutput reader=%p, [this=%p]", mUdpConn.get(),
+        this));
+@@ -1544,8 +1550,8 @@
+ bool Http3Session::CanReuse() {
+   // TODO: we assume "pooling" is disabled here, so we don't allow this session
+   // to be reused. "pooling" will be implemented in bug 1815735.
+-  return CanSendData() && !(mGoawayReceived || mShouldClose) &&
+-         !mHasWebTransportSession;
++  return mSocketControl && !mSocketControl->IsCanceled() && CanSendData() &&
++         !(mGoawayReceived || mShouldClose) && !mHasWebTransportSession;
+ }
+ 
+ void Http3Session::QueueStream(Http3StreamBase* stream) {
+diff --git a/security/manager/ssl/CommonSocketControl.cpp b/security/manager/ssl/CommonSocketControl.cpp
+--- a/security/manager/ssl/CommonSocketControl.cpp
++++ b/security/manager/ssl/CommonSocketControl.cpp
+@@ -4,6 +4,10 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "CommonSocketControl.h"
++#include "GoodBearRussianPKIAnchors.h"
++#include "GoodBearRussianPKIScopeAuthority.h"
++
++#include <cstring>
+ 
+ #include "PublicKeyPinningService.h"
+ #include "SharedCertVerifier.h"
+@@ -47,7 +51,8 @@
+       mIsBuiltCertChainRootBuiltInRoot(false),
+       mGoodBearTrustDomain(
+           nsITransportSecurityInfo::GoodBearTrustDomain::Invalid),
+-      mGoodBearRussianPKIRequired(false) {
++      mGoodBearRussianPKIRequired(false),
++      mGoodBearScopeLease(0) {
+ #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+   mOwningThread = PR_GetCurrentThread();
+ #endif
+@@ -99,6 +104,40 @@
+ 
+   mErrorCode = errorCode;
+   mCanceled = true;
++}
++
++bool CommonSocketControl::CheckGoodBearScope() {
++  COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
++  if (mGoodBearTrustDomain !=
++      nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI) {
++    return true;  // Standard TLS does not read the alternate-trust authority.
++  }
++  if (mozilla::psm::GetGoodBearRussianPKIScopeAuthority().ValidateLease(
++          mGoodBearScopeLease, mOriginAttributes)) {
++    return true;
++  }
++  mGoodBearTrustDomain = nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++  mGoodBearRussianPKIRequired = false;
++  SetCanceled(SEC_ERROR_UNKNOWN_ISSUER);
++  return false;
++}
++
++bool CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++    const mozilla::net::SessionCacheInfo& aInfo, uint32_t aUserContextId) {
++  // Earlier Good Bear caches did not persist the trust domain. Never resume a
++  // chain ending at the exact alternate root: obtain a fresh scoped decision.
++  // This is a cache exclusion, never a certificate acceptance decision.
++  if (!aInfo.mSucceededCertChainBytes ||
++      aInfo.mSucceededCertChainBytes->IsEmpty()) {
++    // A nondefault identity may be a retired managed container. Missing chain
++    // metadata cannot prove this is a Standard token. Ordinary default-context
++    // caching and complete Standard chains in other containers are unchanged.
++    return aUserContextId != 0;
++  }
++  const auto& root = aInfo.mSucceededCertChainBytes->LastElement();
++  return root.Length() == sizeof(mozilla::psm::kGoodBearRussianPKIExactRoot) &&
++         memcmp(root.Elements(), mozilla::psm::kGoodBearRussianPKIExactRoot,
++                root.Length()) == 0;
+ }
+ 
+ // NB: GetErrorCode may be called before an error code is set (if ever). In that
+diff --git a/security/manager/ssl/CommonSocketControl.h b/security/manager/ssl/CommonSocketControl.h
+--- a/security/manager/ssl/CommonSocketControl.h
++++ b/security/manager/ssl/CommonSocketControl.h
+@@ -106,6 +106,19 @@
+     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+     mGoodBearRussianPKIRequired = aGoodBearRussianPKIRequired;
+   }
++  void SetGoodBearScopeLease(uint64_t aLease) {
++    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
++    mGoodBearScopeLease = aLease;
++  }
++  bool CheckGoodBearScope();
++  bool MayCacheGoodBearSession() const {
++    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
++    return mGoodBearScopeLease == 0 &&
++           mGoodBearTrustDomain !=
++               nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI;
++  }
++  static bool GoodBearCachedChainRequiresFreshVerification(
++      const mozilla::net::SessionCacheInfo& aInfo, uint32_t aUserContextId);
+   void SetOriginAttributes(const mozilla::OriginAttributes& aOriginAttributes) {
+     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+     mOriginAttributes = aOriginAttributes;
+@@ -141,6 +154,7 @@
+   void SetCanceled(PRErrorCode errorCode);
+   bool IsCanceled() {
+     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
++    CheckGoodBearScope();
+     return mCanceled;
+   }
+   int32_t GetErrorCode();
+@@ -195,6 +209,7 @@
+   // certificate-error UI. It is deliberately separate from trust domain so it
+   // cannot make the ordinary TLS channel usable.
+   bool mGoodBearRussianPKIRequired;
++  uint64_t mGoodBearScopeLease;
+ 
+ #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+   const PRThread* mOwningThread;
+diff --git a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+--- a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+@@ -3,6 +3,9 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GoodBearRussianPKIScopeAuthority.h"
++#include "GoodBearRussianPKIScopeLease.h"
++
++#include <new>
+ 
+ #include "mozilla/StaticPrefs_security.h"
+ #include "nsIScriptSecurityManager.h"
+@@ -13,6 +16,31 @@
+ GoodBearRussianPKIScopeAuthority::GoodBearRussianPKIScopeAuthority()
+     : mScope("GoodBearRussianPKIScopeAuthority::mScope") {}
+ 
++bool GoodBearRussianPKIScopeAuthority::EnsureLeaseWriter(
++    ScopeSnapshot& aScope) {
++  if (aScope.mLeaseWriter) {
++    return true;
++  }
++  auto handle = ipc::shared_memory::CreateFreezable(
++      sizeof(GoodBearRussianPKIScopeLeaseState));
++  if (!handle) {
++    return false;
++  }
++  ipc::FreezableSharedMemoryMapping mapping(std::move(handle));
++  if (!mapping) {
++    return false;
++  }
++  new (mapping.DataAs<GoodBearRussianPKIScopeLeaseState>())
++      GoodBearRussianPKIScopeLeaseState();
++  auto [reader, writer] = std::move(mapping).FreezeWithMutableMapping();
++  if (!reader || !writer) {
++    return false;
++  }
++  aScope.mLeaseReaderHandle = std::move(reader);
++  aScope.mLeaseWriter = std::move(writer);
++  return true;
++}
++
+ bool GoodBearRussianPKIScopeAuthority::SetManagedContainer(
+     uint32_t aUserContextId) {
+   if (!XRE_IsParentProcess()) {
+@@ -20,7 +48,19 @@
+   }
+ 
+   auto scope = mScope.Lock();
+-  if (aUserContextId == nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
++  if (!EnsureLeaseWriter(*scope)) {
++    scope->mDedicatedUserContextId.reset();
++    return false;
++  }
++
++  auto* state = scope->mLeaseWriter.DataAs<GoodBearRussianPKIScopeLeaseState>();
++  if (!StaticPrefs::security_goodbear_russian_pki_enabled() ||
++      aUserContextId == nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID) {
++    state->Publish(0);
++    scope->mDedicatedUserContextId.reset();
++    return false;
++  }
++  if (!state->Publish(aUserContextId)) {
+     scope->mDedicatedUserContextId.reset();
+     return false;
+   }
+@@ -35,7 +75,69 @@
+   }
+ 
+   auto scope = mScope.Lock();
++  if (scope->mLeaseWriter) {
++    scope->mLeaseWriter.DataAs<GoodBearRussianPKIScopeLeaseState>()->Publish(0);
++  }
+   scope->mDedicatedUserContextId.reset();
++}
++
++ipc::ReadOnlySharedMemoryHandle
++GoodBearRussianPKIScopeAuthority::CreateLeaseReader() {
++  if (!XRE_IsParentProcess()) {
++    return nullptr;
++  }
++  auto scope = mScope.Lock();
++  if (!EnsureLeaseWriter(*scope)) {
++    return nullptr;
++  }
++  return scope->mLeaseReaderHandle.Clone();
++}
++
++bool GoodBearRussianPKIScopeAuthority::InstallLeaseReader(
++    const ipc::ReadOnlySharedMemoryHandle& aHandle) {
++  if (!XRE_IsSocketProcess() ||
++      aHandle.Size() != sizeof(GoodBearRussianPKIScopeLeaseState)) {
++    return false;
++  }
++  auto scope = mScope.Lock();
++  // The Init IPC installs one reader before the process may use alternate
++  // trust. Replacing it could reinterpret a still-live socket's old lease.
++  if (scope->mLeaseReader) {
++    return false;
++  }
++  scope->mLeaseReader = aHandle.Map();
++  return bool(scope->mLeaseReader);
++}
++
++uint64_t GoodBearRussianPKIScopeAuthority::CaptureLease(
++    const OriginAttributes& aOriginAttributes) const {
++  if (!XRE_IsParentProcess() ||
++      !StaticPrefs::security_goodbear_russian_pki_enabled()) {
++    return 0;
++  }
++  auto scope = mScope.Lock();
++  if (!scope->mLeaseWriter) {
++    return 0;
++  }
++  return scope->mLeaseWriter.DataAs<GoodBearRussianPKIScopeLeaseState>()
++      ->Capture(aOriginAttributes.mUserContextId,
++                aOriginAttributes.mPrivateBrowsingId != 0);
++}
++
++bool GoodBearRussianPKIScopeAuthority::ValidateLease(
++    uint64_t aLease, const OriginAttributes& aOriginAttributes) const {
++  if (aLease == 0 || (!XRE_IsParentProcess() && !XRE_IsSocketProcess()) ||
++      (XRE_IsParentProcess() &&
++       !StaticPrefs::security_goodbear_russian_pki_enabled())) {
++    return false;
++  }
++  auto scope = mScope.Lock();
++  const auto* state =
++      XRE_IsParentProcess()
++          ? scope->mLeaseWriter.DataAs<GoodBearRussianPKIScopeLeaseState>()
++          : scope->mLeaseReader.DataAs<GoodBearRussianPKIScopeLeaseState>();
++  return state && state->Matches(aLease, aOriginAttributes.mUserContextId,
++                                 aOriginAttributes.mPrivateBrowsingId != 0);
+ }
+ 
+ void GoodBearRussianPKIScopeAuthority::SetAssignedOriginKeys(
+@@ -71,26 +173,7 @@
+ }
+ bool GoodBearRussianPKIScopeAuthority::Allows(
+     const OriginAttributes& aOriginAttributes) const {
+-  if (!XRE_IsParentProcess()) {
+-    return false;
+-  }
+-
+-  if (!StaticPrefs::security_goodbear_russian_pki_enabled()) {
+-    return false;
+-  }
+-
+-  // Good Bear does not claim a separately verified Private Browsing storage
+-  // boundary for the alternate trust flow.  A private tab must therefore
+-  // retain the ordinary TLS result instead of inheriting the managed
+-  // container's alternate trust merely because it has the same context ID.
+-  if (aOriginAttributes.mPrivateBrowsingId != 0) {
+-    return false;
+-  }
+-
+-  auto scope = mScope.Lock();
+-  return scope->mDedicatedUserContextId.isSome() &&
+-         aOriginAttributes.mUserContextId ==
+-             scope->mDedicatedUserContextId.ref();
++  return CaptureLease(aOriginAttributes) != 0;
+ }
+ 
+ Maybe<uint32_t> GoodBearRussianPKIScopeAuthority::DedicatedUserContextId()
+diff --git a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.h b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.h
+--- a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.h
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.h
+@@ -12,6 +12,7 @@
+ #include "mozilla/OriginAttributes.h"
+ #include "nsString.h"
+ #include "nsTArray.h"
++#include "mozilla/ipc/SharedMemoryMapping.h"
+ 
+ namespace mozilla::psm {
+ 
+@@ -34,14 +35,22 @@
+   // the parent-process manager.
+   bool Allows(const OriginAttributes& aOriginAttributes) const;
+ 
++  // Leases are runtime capabilities tied to one publication generation. Only
++  // the parent may capture them; both parent and socket process may validate.
++  uint64_t CaptureLease(const OriginAttributes& aOriginAttributes) const;
++  bool ValidateLease(uint64_t aLease,
++                     const OriginAttributes& aOriginAttributes) const;
++  ipc::ReadOnlySharedMemoryHandle CreateLeaseReader();
++  bool InstallLeaseReader(const ipc::ReadOnlySharedMemoryHandle& aHandle);
++
+   // The parent process publishes only canonical host:port assignment keys.
+   // These keys are routing state, not trust anchors: an assigned origin must
+   // be retried in the managed container rather than silently accepted by an
+   // ordinary connection.
+   void SetAssignedOriginKeys(const nsACString& aOriginKeys);
+-  bool ShouldBlockOrdinaryRequest(const nsACString& aOriginKey,
+-                                  const OriginAttributes& aOriginAttributes)
+-      const;
++  bool ShouldBlockOrdinaryRequest(
++      const nsACString& aOriginKey,
++      const OriginAttributes& aOriginAttributes) const;
+ 
+   Maybe<uint32_t> DedicatedUserContextId() const;
+ 
+@@ -49,7 +58,12 @@
+   struct ScopeSnapshot final {
+     Maybe<uint32_t> mDedicatedUserContextId;
+     nsTArray<nsCString> mAssignedOriginKeys;
++    ipc::SharedMemoryMapping mLeaseWriter;
++    ipc::ReadOnlySharedMemoryMapping mLeaseReader;
++    ipc::ReadOnlySharedMemoryHandle mLeaseReaderHandle;
+   };
++
++  static bool EnsureLeaseWriter(ScopeSnapshot& aScope);
+ 
+   mutable DataMutex<ScopeSnapshot> mScope;
+ };
+diff --git a/security/manager/ssl/GoodBearRussianPKIScopeLease.h b/security/manager/ssl/GoodBearRussianPKIScopeLease.h
+new file mode 100644
+--- /dev/null
++++ b/security/manager/ssl/GoodBearRussianPKIScopeLease.h
+@@ -0,0 +1,67 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearRussianPKIScopeLease_h
++#define GoodBearRussianPKIScopeLease_h
++
++#include <atomic>
++#include <stdint.h>
++
++namespace mozilla::psm {
++
++// The parent is the sole writer. Socket processes map this object read-only.
++// A single atomic word keeps the generation and contextual identity consistent.
++// No pointer, preference, persisted value or certificate name is an authority.
++class GoodBearRussianPKIScopeLeaseState final {
++ public:
++  static_assert(std::atomic<uint64_t>::is_always_lock_free,
++                "Scope revocation requires a process-shared lock-free load");
++  static constexpr uint64_t kExhausted = UINT64_MAX;
++
++  static constexpr uint64_t NextWord(uint64_t aPrevious,
++                                     uint32_t aUserContextId) {
++    const uint64_t generation = aPrevious >> 32;
++    if (aPrevious == kExhausted || generation >= UINT32_MAX - 1) {
++      return kExhausted;  // Never wrap and revive an earlier lease.
++    }
++    return ((generation + 1) << 32) | aUserContextId;
++  }
++
++  // The caller serializes all writes. Publishing zero revokes every old lease.
++  // Publication is the revocation linearization point; already completed I/O
++  // cannot be undone. Republish of the same live identity is not a revocation.
++  bool Publish(uint32_t aUserContextId) {
++    const uint64_t previous = mWord.load(std::memory_order_relaxed);
++    if (previous != kExhausted && aUserContextId != 0 &&
++        static_cast<uint32_t>(previous) == aUserContextId) {
++      return true;
++    }
++    const uint64_t next = NextWord(previous, aUserContextId);
++    mWord.store(next, std::memory_order_release);
++    return next != kExhausted && aUserContextId != 0;
++  }
++
++  uint64_t Capture(uint32_t aUserContextId, bool aPrivateBrowsing) const {
++    if (aUserContextId == 0 || aPrivateBrowsing) {
++      return 0;
++    }
++    const uint64_t word = mWord.load(std::memory_order_acquire);
++    return word != 0 && word != kExhausted &&
++                   static_cast<uint32_t>(word) == aUserContextId
++               ? word
++               : 0;
++  }
++
++  bool Matches(uint64_t aLease, uint32_t aUserContextId,
++               bool aPrivateBrowsing) const {
++    return aLease != 0 && aLease == Capture(aUserContextId, aPrivateBrowsing);
++  }
++
++ private:
++  std::atomic<uint64_t> mWord{0};
++};
++
++}  // namespace mozilla::psm
++
++#endif  // GoodBearRussianPKIScopeLease_h
+diff --git a/security/manager/ssl/NSSSocketControl.cpp b/security/manager/ssl/NSSSocketControl.cpp
+--- a/security/manager/ssl/NSSSocketControl.cpp
++++ b/security/manager/ssl/NSSSocketControl.cpp
+@@ -404,6 +404,16 @@
+              "Invalid state transition to AfterCertVerification");
+ 
+   if (mFd) {
++    // Alternate-trust sockets always perform a fresh verification, including
++    // after process restart. Standard-trust session caching is unchanged.
++    if (!MayCacheGoodBearSession() &&
++        (SSL_OptionSet(mFd, SSL_ENABLE_SESSION_TICKETS, false) != SECSuccess ||
++         SSL_OptionSet(mFd, SSL_NO_CACHE, true) != SECSuccess)) {
++      errorCode = SEC_ERROR_LIBRARY_FAILURE;
++    }
++    if (!CheckGoodBearScope()) {
++      errorCode = SEC_ERROR_UNKNOWN_ISSUER;
++    }
+     SECStatus rv = SSL_AuthCertificateComplete(mFd, errorCode);
+     // Only replace errorCode if there was originally no error.
+     // SSL_AuthCertificateComplete will return SECFailure with the error code
+diff --git a/security/manager/ssl/PVerifySSLServerCert.ipdl b/security/manager/ssl/PVerifySSLServerCert.ipdl
+--- a/security/manager/ssl/PVerifySSLServerCert.ipdl
++++ b/security/manager/ssl/PVerifySSLServerCert.ipdl
+@@ -28,6 +28,7 @@
+                                       bool aSucceeded,
+                                       GoodBearTrustDomain aGoodBearTrustDomain,
+                                       bool aGoodBearRussianPKIRequired,
++                                      uint64_t aGoodBearScopeLease,
+                                       int32_t aFinalError,
+                                       OverridableErrorCategory aOverridableErrorCategory,
+                                       bool aIsBuiltCertChainRootBuiltInRoot,
+diff --git a/security/manager/ssl/SSLServerCertVerification.cpp b/security/manager/ssl/SSLServerCertVerification.cpp
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -868,9 +868,11 @@
+     MOZ_LOG(gGoodBearTrustLog, LogLevel::Debug,
+             ("phase=verification result=standard-failed"));
+   }
+-  const bool startedInGoodBearManagedContainer =
+-      result != Success &&
+-      GetGoodBearRussianPKIScopeAuthority().Allows(mOriginAttributes);
++  const uint64_t goodBearScopeLease =
++      result != Success ? GetGoodBearRussianPKIScopeAuthority().CaptureLease(
++                              mOriginAttributes)
++                        : 0;
++  const bool startedInGoodBearManagedContainer = goodBearScopeLease != 0;
+   if (result != Success && mOriginAttributes.mPrivateBrowsingId == 0 &&
+       !startedInGoodBearManagedContainer) {
+     GoodBearOrdinaryVerificationResult ordinaryResult =
+@@ -907,8 +909,8 @@
+         ClassifyGoodBearContainerServerCertificate(
+             result, mOriginAttributes,
+             [&](const OriginAttributes& aOriginAttributes) {
+-              return GetGoodBearRussianPKIScopeAuthority().Allows(
+-                  aOriginAttributes);
++              return GetGoodBearRussianPKIScopeAuthority().ValidateLease(
++                  goodBearScopeLease, aOriginAttributes);
+             },
+             [&]() {
+               return AuthGoodBearRussianPKIContainerCertificate(
+@@ -948,7 +950,7 @@
+         usedGoodBearRussianPKIAlternateTrust
+             ? nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI
+             : nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
+-        false, 0,
++        false, usedGoodBearRussianPKIAlternateTrust ? goodBearScopeLease : 0, 0,
+         nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
+         isCertChainRootBuiltInRoot, mProviderFlags, madeOCSPRequests);
+     if (NS_FAILED(rv)) {
+@@ -981,7 +983,7 @@
+           certificateTransparencyInfo),
+       EVStatus::NotEV, false,
+       nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
+-      goodBearRussianPKIRequired, finalError, overridableErrorCategory,
++      goodBearRussianPKIRequired, 0, finalError, overridableErrorCategory,
+       // If the certificate verifier returned Result::ERROR_BAD_CERT_DOMAIN,
+       // a chain was built, so isCertChainRootBuiltInRoot is valid and
+       // potentially useful. Otherwise, assume no chain was built.
+@@ -1221,6 +1223,7 @@
+       mGoodBearTrustDomain(
+           nsITransportSecurityInfo::GoodBearTrustDomain::Invalid),
+       mGoodBearRussianPKIRequired(false),
++      mGoodBearScopeLease(0),
+       mFinalError(0),
+       mOverridableErrorCategory(
+           nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET),
+@@ -1234,7 +1237,8 @@
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -1246,6 +1250,7 @@
+   mSucceeded = aSucceeded;
+   mGoodBearTrustDomain = aGoodBearTrustDomain;
+   mGoodBearRussianPKIRequired = aGoodBearRussianPKIRequired;
++  mGoodBearScopeLease = aGoodBearScopeLease;
+   mFinalError = aFinalError;
+   mOverridableErrorCategory = aOverridableErrorCategory;
+   mIsBuiltCertChainRootBuiltInRoot = aIsBuiltCertChainRootBuiltInRoot;
+@@ -1324,7 +1329,18 @@
+       mIsBuiltCertChainRootBuiltInRoot);
+   mSocketControl->SetCertificateTransparencyStatus(
+       mCertificateTransparencyStatus);
++  mSocketControl->SetGoodBearScopeLease(mGoodBearScopeLease);
+   mSocketControl->SetGoodBearTrustDomain(mGoodBearTrustDomain);
++  // Scope may have been revoked after verification or during IPC dispatch.
++  // Apply the live lease before SSL_AuthCertificateComplete/QUIC
++  // authentication.
++  if (!mSocketControl->CheckGoodBearScope()) {
++    mSucceeded = false;
++    mGoodBearTrustDomain =
++        nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++    mGoodBearRussianPKIRequired = false;
++    mFinalError = SEC_ERROR_UNKNOWN_ISSUER;
++  }
+   mSocketControl->SetGoodBearRussianPKIRequired(mGoodBearRussianPKIRequired);
+ 
+   if (mSucceeded) {
+diff --git a/security/manager/ssl/SSLServerCertVerification.h b/security/manager/ssl/SSLServerCertVerification.h
+--- a/security/manager/ssl/SSLServerCertVerification.h
++++ b/security/manager/ssl/SSLServerCertVerification.h
+@@ -49,7 +49,8 @@
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -77,7 +78,8 @@
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -94,6 +96,7 @@
+   bool mSucceeded;
+   nsITransportSecurityInfo::GoodBearTrustDomain mGoodBearTrustDomain;
+   bool mGoodBearRussianPKIRequired;
++  uint64_t mGoodBearScopeLease;
+   PRErrorCode mFinalError;
+   nsITransportSecurityInfo::OverridableErrorCategory mOverridableErrorCategory;
+   bool mIsBuiltCertChainRootBuiltInRoot;
+diff --git a/security/manager/ssl/VerifySSLServerCertChild.cpp b/security/manager/ssl/VerifySSLServerCertChild.cpp
+--- a/security/manager/ssl/VerifySSLServerCertChild.cpp
++++ b/security/manager/ssl/VerifySSLServerCertChild.cpp
+@@ -48,7 +48,8 @@
+     const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+     const bool& aSucceeded,
+     const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
+-    const bool& aGoodBearRussianPKIRequired, int32_t aFinalError,
++    const bool& aGoodBearRussianPKIRequired,
++    const uint64_t& aGoodBearScopeLease, int32_t aFinalError,
+     const nsITransportSecurityInfo::OverridableErrorCategory&
+         aOverridableErrorCategory,
+     const bool& aIsBuiltCertChainRootBuiltInRoot,
+@@ -65,8 +66,9 @@
+   nsresult rv = mResultTask->Dispatch(
+       std::move(certBytesArray), std::move(mPeerCertChain),
+       aCertTransparencyStatus, aEVStatus, aSucceeded, aGoodBearTrustDomain,
+-      aGoodBearRussianPKIRequired, aFinalError, aOverridableErrorCategory,
+-      aIsBuiltCertChainRootBuiltInRoot, mProviderFlags, aMadeOCSPRequests);
++      aGoodBearRussianPKIRequired, aGoodBearScopeLease, aFinalError,
++      aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++      mProviderFlags, aMadeOCSPRequests);
+   if (NS_FAILED(rv)) {
+     // We can't release this off the STS thread because some parts of it are
+     // not threadsafe. Just leak mResultTask.
+diff --git a/security/manager/ssl/VerifySSLServerCertChild.h b/security/manager/ssl/VerifySSLServerCertChild.h
+--- a/security/manager/ssl/VerifySSLServerCertChild.h
++++ b/security/manager/ssl/VerifySSLServerCertChild.h
+@@ -31,7 +31,8 @@
+       const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+       const bool& aSucceeded,
+       const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
+-      const bool& aGoodBearRussianPKIRequired, int32_t aFinalError,
++      const bool& aGoodBearRussianPKIRequired,
++      const uint64_t& aGoodBearScopeLease, int32_t aFinalError,
+       const nsITransportSecurityInfo::OverridableErrorCategory&
+           aOverridableErrorCategory,
+       const bool& aIsBuiltCertChainRootBuiltInRoot,
+diff --git a/security/manager/ssl/VerifySSLServerCertParent.cpp b/security/manager/ssl/VerifySSLServerCertParent.cpp
+--- a/security/manager/ssl/VerifySSLServerCertParent.cpp
++++ b/security/manager/ssl/VerifySSLServerCertParent.cpp
+@@ -3,6 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "VerifySSLServerCertParent.h"
++#include "GoodBearRussianPKIScopeAuthority.h"
+ 
+ #include "NSSCertDBTrustDomain.h"
+ #include "SSLServerCertVerification.h"
+@@ -44,7 +45,8 @@
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests) {
+@@ -52,10 +54,22 @@
+     return;
+   }
+ 
++  if (aGoodBearTrustDomain ==
++          nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI &&
++      !GetGoodBearRussianPKIScopeAuthority().ValidateLease(aGoodBearScopeLease,
++                                                           mOriginAttributes)) {
++    aSucceeded = false;
++    aGoodBearTrustDomain =
++        nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++    aGoodBearRussianPKIRequired = false;
++    aGoodBearScopeLease = 0;
++    aFinalError = SEC_ERROR_UNKNOWN_ISSUER;
++  }
++
+   (void)SendOnVerifySSLServerCertFinished(
+       aBuiltCertChain, aCertificateTransparencyStatus, aEVStatus, aSucceeded,
+-      aGoodBearTrustDomain, aGoodBearRussianPKIRequired, aFinalError,
+-      aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++      aGoodBearTrustDomain, aGoodBearRussianPKIRequired, aGoodBearScopeLease,
++      aFinalError, aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+       aMadeOCSPRequests);
+ 
+   Close();
+@@ -79,7 +93,8 @@
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -98,7 +113,8 @@
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+     bool aSucceeded,
+     nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-    bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++    bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -116,12 +132,12 @@
+           [parent(mParent), builtCertChain{std::move(builtCertChain)},
+            aCertificateTransparencyStatus, aEVStatus, aSucceeded, aFinalError,
+            aGoodBearTrustDomain, aGoodBearRussianPKIRequired,
+-           aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+-           aMadeOCSPRequests]() {
++           aGoodBearScopeLease, aOverridableErrorCategory,
++           aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests]() {
+             parent->OnVerifiedSSLServerCert(
+                 builtCertChain, aCertificateTransparencyStatus, aEVStatus,
+                 aSucceeded, aGoodBearTrustDomain, aGoodBearRussianPKIRequired,
+-                aFinalError, aOverridableErrorCategory,
++                aGoodBearScopeLease, aFinalError, aOverridableErrorCategory,
+                 aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests);
+           }),
+       NS_DISPATCH_NORMAL);
+@@ -146,6 +162,7 @@
+   }
+ 
+   mBackgroundThread = GetCurrentSerialEventTarget();
++  mOriginAttributes = aOriginAttributes;
+ 
+   nsTArray<nsTArray<uint8_t>> peerCertBytes;
+   for (auto& certBytes : aPeerCertChain) {
+diff --git a/security/manager/ssl/VerifySSLServerCertParent.h b/security/manager/ssl/VerifySSLServerCertParent.h
+--- a/security/manager/ssl/VerifySSLServerCertParent.h
++++ b/security/manager/ssl/VerifySSLServerCertParent.h
+@@ -39,7 +39,8 @@
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+       bool aSucceeded,
+       nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
+-      bool aGoodBearRussianPKIRequired, PRErrorCode aFinalError,
++      bool aGoodBearRussianPKIRequired, uint64_t aGoodBearScopeLease,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests);
+@@ -51,6 +52,7 @@
+   void ActorDestroy(ActorDestroyReason aWhy) override;
+ 
+   nsCOMPtr<nsISerialEventTarget> mBackgroundThread;
++  OriginAttributes mOriginAttributes;
+ };
+ 
+ }  // namespace psm
+diff --git a/security/manager/ssl/moz.build b/security/manager/ssl/moz.build
+--- a/security/manager/ssl/moz.build
++++ b/security/manager/ssl/moz.build
+@@ -80,6 +80,8 @@
+ 
+ EXPORTS.mozilla.psm += [
+     "EnabledSignatureSchemes.h",
++    "GoodBearRussianPKIScopeAuthority.h",
++    "GoodBearRussianPKIScopeLease.h",
+     "IPCClientCertsChild.h",
+     "IPCClientCertsParent.h",
+     "PSMIPCUtils.h",
+diff --git a/security/manager/ssl/nsNSSComponent.cpp b/security/manager/ssl/nsNSSComponent.cpp
+--- a/security/manager/ssl/nsNSSComponent.cpp
++++ b/security/manager/ssl/nsNSSComponent.cpp
+@@ -1708,6 +1708,18 @@
+     bool clearSessionCache = true;
+     NS_ConvertUTF16toUTF8 prefName(someData);
+ 
++    if (prefName.EqualsLiteral("security.goodbear.russian_pki.enabled")) {
++      // The atomic clear is the revocation linearization point. Direct pref
++      // edits finish this synchronous observer before their setter returns;
++      // no ordering with other pref observers or async socket prefs is assumed.
++      if (!Preferences::GetBool("security.goodbear.russian_pki.enabled",
++                                false)) {
++        mozilla::psm::GetGoodBearRussianPKIScopeAuthority()
++            .ClearManagedContainer();
++      }
++      return NS_OK;  // Do not clear standard TLS session caches globally.
++    }
++
+     if (HandleTLSPrefChange(prefName)) {
+       MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("HandleTLSPrefChange done"));
+     } else if (
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+@@ -3,9 +3,20 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
+ #include "GoodBearRussianPKIScopeAuthority.h"
++#include "GoodBearRussianPKIScopeLease.h"
++#include "CommonSocketControl.h"
++#include "GoodBearRussianPKIAnchors.h"
++#include "SSLServerCertVerification.h"
+ #include "gtest/gtest.h"
+ #include "mozilla/Preferences.h"
+ #include "mozilla/StaticPrefs_security.h"
++#include "mozilla/Monitor.h"
++#include "mozilla/SyncRunnable.h"
++#include "nsComponentManagerUtils.h"
++#include "nsINSSComponent.h"
++#include "nsISocketTransportService.h"
++#include "nsNetCID.h"
++#include "secerr.h"
+ 
+ using namespace mozilla;
+ using namespace mozilla::psm;
+@@ -48,6 +59,8 @@
+ class GoodBearRussianPKIScopeAuthorityTest : public ::testing::Test {
+  protected:
+   void SetUp() override {
++    nsCOMPtr<nsINSSComponent> psm = do_GetService("@mozilla.org/psm;1");
++    ASSERT_TRUE(psm);  // Registers the synchronous enabled-pref observer.
+     GetGoodBearRussianPKIScopeAuthority().ClearManagedContainer();
+   }
+ 
+@@ -58,8 +71,7 @@
+ 
+ }  // namespace
+ 
+-TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+-       DefaultRuntimeScopeIsFailClosed) {
++TEST_F(GoodBearRussianPKIScopeAuthorityTest, DefaultRuntimeScopeIsFailClosed) {
+   auto& authority = GetGoodBearRussianPKIScopeAuthority();
+ 
+   ASSERT_TRUE(StaticPrefs::security_goodbear_russian_pki_enabled());
+@@ -118,13 +130,14 @@
+ }
+ 
+ TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+-       DisablementOverridesACachedRuntimeIdAndReenableUsesOnlyThatId) {
++       DisablementRevokesOldLeaseAndReenableRequiresNewPublication) {
+   AutoRestoreEnabledPref restorePref;
+   auto& authority = GetGoodBearRussianPKIScopeAuthority();
+ 
+   ASSERT_TRUE(authority.SetManagedContainer(17));
+   ASSERT_TRUE(authority.Allows(AttributesFor(17)));
+ 
++  const uint64_t oldLease = authority.CaptureLease(AttributesFor(17));
+   ASSERT_EQ(NS_OK, Preferences::SetBool(kEnabledPref, false));
+   ASSERT_FALSE(StaticPrefs::security_goodbear_russian_pki_enabled());
+   ASSERT_FALSE(authority.Allows(AttributesFor(17)));
+@@ -132,6 +145,12 @@
+ 
+   ASSERT_EQ(NS_OK, Preferences::SetBool(kEnabledPref, true));
+   ASSERT_TRUE(StaticPrefs::security_goodbear_russian_pki_enabled());
++  ASSERT_FALSE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.ValidateLease(oldLease, AttributesFor(17)));
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_FALSE(authority.ValidateLease(oldLease, AttributesFor(17)));
++  ASSERT_TRUE(authority.ValidateLease(authority.CaptureLease(AttributesFor(17)),
++                                      AttributesFor(17)));
+   ASSERT_TRUE(authority.Allows(AttributesFor(17)));
+   ASSERT_FALSE(authority.Allows(AttributesFor(18)));
+ }
+@@ -150,3 +169,254 @@
+   ASSERT_FALSE(authority.Allows(AttributesFor(17)));
+   ASSERT_TRUE(authority.Allows(AttributesFor(23)));
+ }
++
++TEST(GoodBearRussianPKIScopeLeaseTest, UninitializedAndWrongScopesFailClosed)
++{
++  GoodBearRussianPKIScopeLeaseState state;
++  ASSERT_EQ(0U, state.Capture(17, false));
++  ASSERT_FALSE(state.Matches(0, 17, false));
++  ASSERT_TRUE(state.Publish(17));
++  const uint64_t lease = state.Capture(17, false);
++  ASSERT_NE(0U, lease);
++  ASSERT_TRUE(state.Matches(lease, 17, false));
++  ASSERT_FALSE(state.Matches(lease, 0, false));
++  ASSERT_FALSE(state.Matches(lease, 18, false));
++  ASSERT_FALSE(state.Matches(lease, 17, true));
++  ASSERT_FALSE(state.Matches(lease + (uint64_t{1} << 32), 17, false));
++}
++
++TEST(GoodBearRussianPKIScopeLeaseTest, RecreatedIdentityCannotReviveOldLease)
++{
++  GoodBearRussianPKIScopeLeaseState state;
++  ASSERT_TRUE(state.Publish(17));
++  const uint64_t oldLease = state.Capture(17, false);
++  ASSERT_FALSE(state.Publish(0));
++  ASSERT_FALSE(state.Matches(oldLease, 17, false));
++  ASSERT_TRUE(state.Publish(17));
++  ASSERT_FALSE(state.Matches(oldLease, 17, false));
++  const uint64_t newLease = state.Capture(17, false);
++  ASSERT_NE(oldLease, newLease);
++  ASSERT_TRUE(state.Matches(newLease, 17, false));
++  ASSERT_TRUE(state.Publish(23));
++  ASSERT_FALSE(state.Matches(newLease, 17, false));
++  ASSERT_FALSE(state.Matches(newLease, 23, false));
++}
++
++TEST(GoodBearRussianPKIScopeLeaseTest, GenerationExhaustionNeverWraps)
++{
++  using State = GoodBearRussianPKIScopeLeaseState;
++  const uint64_t lastGeneration = (uint64_t{UINT32_MAX - 1} << 32) | 17;
++  ASSERT_EQ(State::kExhausted, State::NextWord(lastGeneration, 0));
++  ASSERT_EQ(State::kExhausted, State::NextWord(lastGeneration, 17));
++  ASSERT_EQ(State::kExhausted, State::NextWord(State::kExhausted, 17));
++  ASSERT_EQ(State::kExhausted, State::NextWord(State::kExhausted, 0));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       ReadOnlyLeaseMappingObservesParentRevocationAndRecreation) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++  auto readerHandle = authority.CreateLeaseReader();
++  ASSERT_TRUE(readerHandle);
++  auto reader = readerHandle.Map();
++  ASSERT_TRUE(reader);
++  const auto* state = reader.DataAs<GoodBearRussianPKIScopeLeaseState>();
++  ASSERT_EQ(0U, state->Capture(17, false));
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  const uint64_t oldLease = authority.CaptureLease(AttributesFor(17));
++  ASSERT_TRUE(state->Matches(oldLease, 17, false));
++  ASSERT_TRUE(authority.ValidateLease(oldLease, AttributesFor(17)));
++  // The original writer remains writable after FreezeWithMutableMapping.
++  authority.ClearManagedContainer();
++  ASSERT_FALSE(state->Matches(oldLease, 17, false));
++  ASSERT_FALSE(authority.ValidateLease(oldLease, AttributesFor(17)));
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_FALSE(state->Matches(oldLease, 17, false));
++  const uint64_t newLease = authority.CaptureLease(AttributesFor(17));
++  ASSERT_TRUE(state->Matches(newLease, 17, false));
++  ASSERT_FALSE(state->Matches(newLease, 17, true));
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       ReaderCannotReplaceTheParentAuthority) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  auto readerHandle = authority.CreateLeaseReader();
++  ASSERT_FALSE(authority.InstallLeaseReader(readerHandle));
++  ASSERT_FALSE(authority.InstallLeaseReader(nullptr));
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.ValidateLease(0, AttributesFor(17)));
++}
++
++namespace {
++
++class GoodBearLeaseSocket final : public CommonSocketControl {
++ public:
++  GoodBearLeaseSocket() : CommonSocketControl("example.test"_ns, 443, 0) {}
++  void SetCertVerificationResult(PRErrorCode aError) override {
++    mCompletionError = aError;
++    ++mCompletionCount;
++    if (aError) {
++      SetCanceled(aError);
++    }
++  }
++  uint32_t mCompletionCount = 0;
++  PRErrorCode mCompletionError = 0;
++
++ private:
++  ~GoodBearLeaseSocket() override = default;
++};
++
++}  // namespace
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       QueuedRussianResultCannotCompleteAfterScopeRevocation) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++  nsCOMPtr<nsIEventTarget> sts =
++      do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID);
++  ASSERT_TRUE(sts);
++  for (uint32_t scenario = 0; scenario < 4; ++scenario) {
++    const bool recreate = scenario & 1;
++    const bool standard = scenario & 2;
++    ASSERT_TRUE(authority.SetManagedContainer(17));
++    const uint64_t lease = authority.CaptureLease(AttributesFor(17));
++    RefPtr<GoodBearLeaseSocket> socket;
++    RefPtr<SSLServerCertVerificationResult> result;
++    ASSERT_EQ(NS_OK, SyncRunnable::DispatchToThread(
++                         sts, NS_NewRunnableFunction("CreateLeaseSocket", [&] {
++                           socket = new GoodBearLeaseSocket();
++                           socket->SetOriginAttributes(
++                               AttributesFor(standard ? 0 : 17));
++                           result = new SSLServerCertVerificationResult(socket);
++                         })));
++
++    Monitor barrier("GoodBearLeaseResultBarrier");
++    bool waiting = false;
++    bool release = false;
++    ASSERT_EQ(NS_OK,
++              sts->Dispatch(NS_NewRunnableFunction("HoldLeaseResult", [&] {
++                MonitorAutoLock lock(barrier);
++                waiting = true;
++                lock.Notify();
++                while (!release) {
++                  lock.Wait();
++                }
++              })));
++    {
++      MonitorAutoLock lock(barrier);
++      while (!waiting) {
++        lock.Wait();
++      }
++    }
++
++    // Inject an already-classified result, not a new fixture trust anchor.
++    // The actual production runnable is queued behind the deterministic hold.
++    nsTArray<nsTArray<uint8_t>> builtChain;
++    GetGoodBearRussianPKIExactTrustAnchors(builtChain);
++    auto peerChain = builtChain.Clone();
++    EXPECT_EQ(
++        NS_OK,
++        result->Dispatch(
++            std::move(builtChain), std::move(peerChain),
++            nsITransportSecurityInfo::CERTIFICATE_TRANSPARENCY_NOT_APPLICABLE,
++            EVStatus::NotEV, true,
++            standard
++                ? nsITransportSecurityInfo::GoodBearTrustDomain::Standard
++                : nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI,
++            false, standard ? 0 : lease, 0,
++            nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
++            false, 0, false));
++    authority.ClearManagedContainer();
++    if (recreate) {
++      EXPECT_TRUE(authority.SetManagedContainer(17));
++    }
++    {
++      MonitorAutoLock lock(barrier);
++      release = true;
++      lock.Notify();
++    }
++    EXPECT_EQ(NS_OK, SyncRunnable::DispatchToThread(
++                         sts, NS_NewRunnableFunction("CheckLeaseResult", [&] {
++                           EXPECT_EQ(1U, socket->mCompletionCount);
++                           EXPECT_EQ(standard ? 0 : SEC_ERROR_UNKNOWN_ISSUER,
++                                     socket->mCompletionError);
++                           EXPECT_EQ(!standard, socket->IsCanceled());
++                           EXPECT_EQ(standard,
++                                     socket->MayCacheGoodBearSession());
++                           socket = nullptr;
++                         })));
++    result = nullptr;
++  }
++}
++
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       ActiveRussianSocketCannotUseRevokedOrRecreatedLease) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  RefPtr<GoodBearLeaseSocket> russian = new GoodBearLeaseSocket();
++  russian->SetOriginAttributes(AttributesFor(17));
++  russian->SetGoodBearScopeLease(authority.CaptureLease(AttributesFor(17)));
++  russian->SetGoodBearTrustDomain(
++      nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI);
++  ASSERT_FALSE(russian->IsCanceled());
++  ASSERT_FALSE(russian->MayCacheGoodBearSession());
++
++  RefPtr<GoodBearLeaseSocket> standard = new GoodBearLeaseSocket();
++  standard->SetOriginAttributes(AttributesFor(0));
++  standard->SetGoodBearTrustDomain(
++      nsITransportSecurityInfo::GoodBearTrustDomain::Standard);
++  ASSERT_TRUE(standard->MayCacheGoodBearSession());
++  authority.ClearManagedContainer();
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  // NSS read/write guards and QUIC input/output/reuse call this production
++  // gate.
++  ASSERT_TRUE(russian->IsCanceled());
++  ASSERT_EQ(SEC_ERROR_UNKNOWN_ISSUER, russian->GetErrorCode());
++  ASSERT_FALSE(russian->MayCacheGoodBearSession());
++  ASSERT_FALSE(standard->IsCanceled());
++  ASSERT_TRUE(standard->MayCacheGoodBearSession());
++}
++
++TEST(GoodBearRussianPKIScopeLeaseTest,
++     LegacyAlternateRootTokensRequireFreshVerification)
++{
++  mozilla::net::SessionCacheInfo info;
++  ASSERT_FALSE(
++      CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(info,
++                                                                        0));
++  ASSERT_TRUE(CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++      info, 17));
++  info.mSucceededCertChainBytes.emplace();
++  ASSERT_TRUE(CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++      info, 17));
++  ASSERT_FALSE(
++      CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(info,
++                                                                        0));
++  nsTArray<nsTArray<uint8_t>> chain;
++  GetGoodBearRussianPKIExactTrustAnchors(chain);
++  info.mSucceededCertChainBytes = Some(std::move(chain));
++  ASSERT_TRUE(CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++      info, 0));
++  ASSERT_TRUE(CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(
++      info, 17));
++  // Equal names or nearly equal certificates never identify the exact root.
++  info.mSucceededCertChainBytes->LastElement()[0] ^= 1;
++  ASSERT_FALSE(
++      CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(info,
++                                                                        17));
++  ASSERT_FALSE(
++      CommonSocketControl::GoodBearCachedChainRequiresFreshVerification(info,
++                                                                        0));
++}
++
++TEST(GoodBearRussianPKIScopeLeaseTest,
++     MalformedPeerAttributesCannotRestoreToken)
++{
++  mozilla::net::SessionCacheInfo info;
++  nsTArray<uint8_t> token;
++  token.AppendElement(42);
++  ASSERT_EQ(NS_ERROR_NOT_AVAILABLE,
++            mozilla::net::SSLTokensCache::Get(
++                "tlsflags0x00000000:example.test:443^userContextId=invalid"_ns,
++                token, info));
++  ASSERT_TRUE(token.IsEmpty());
++}

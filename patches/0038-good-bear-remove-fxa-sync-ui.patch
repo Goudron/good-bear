@@ -1,0 +1,33 @@
+# Good Bear has no Firefox Account or Sync service.  Keep every account entry
+# point absent even when an upstream UI lifecycle changes before the disabled
+# service observer can set its runtime attribute.
+diff --git a/browser/base/content/appmenu-viewcache.inc.xhtml b/browser/base/content/appmenu-viewcache.inc.xhtml
+--- a/browser/base/content/appmenu-viewcache.inc.xhtml
++++ b/browser/base/content/appmenu-viewcache.inc.xhtml
+@@ -27,6 +27,7 @@
+       <toolbaritem id="appMenu-fxa-status2"
+                    closemenu="none"
++                   hidden="true"
+                    class="subviewbutton toolbaritem-combined-buttons">
+         <html:div id="appMenu-fxa-text" data-l10n-id="appmenu-fxa-sync-and-save-data2"/>
+         <toolbarbutton id="appMenu-fxa-label2"
+                        class="subviewbutton">
+@@ -42,6 +43,7 @@
+       <hbox id="appMenu-fxa-sign-in-promo"
+-            align="center">
++            align="center"
++            hidden="true">
+         <html:img class="fxa-menu-sign-in-promo-image"
+                   alt=""
+                   src="chrome://browser/content/kit-signed-out.svg"/>
+         <vbox class="fxa-menu-sign-in-promo-text" flex="1">
+@@ -62,8 +64,8 @@
+       <toolbarbutton id="appMenu-profiles-button"
+                      class="subviewbutton subviewbutton-iconic subviewbutton-nav profile-item"
+                      closemenu="none"
+                      hidden="true"/>
+-      <toolbarseparator id="appMenu-fxa-separator" class="proton-zap"/>
++      <toolbarseparator id="appMenu-fxa-separator" class="proton-zap" hidden="true"/>
+       <toolbarbutton id="appMenu-new-tab-button2"
+                      class="subviewbutton"
+                      data-l10n-id="appmenuitem-new-tab"

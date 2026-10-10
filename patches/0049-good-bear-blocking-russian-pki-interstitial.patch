@@ -1,0 +1,1670 @@
+# Good Bear M9-03: tab-scoped, revocable Russian-PKI consent.
+# Typed stopped-channel handoff carries only address/method/body presence;
+# no request body, cookie, referrer or certificate-name trust inference.
+# Native runtime acceptance remains a separate gate.
+
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -42,6 +42,8 @@
+   LaunchOnLogin: "resource://gre/modules/LaunchOnLogin.sys.mjs",
+   GoodBearRussianPKIContainer:
+     "resource:///modules/GoodBearRussianPKIContainer.sys.mjs",
++  GoodBearRussianPKIInterstitial:
++    "resource:///modules/GoodBearRussianPKIInterstitial.sys.mjs",
+   LoginBreaches: "resource:///modules/LoginBreaches.sys.mjs",
+   LoginHelper: "resource://gre/modules/LoginHelper.sys.mjs",
+   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+@@ -342,12 +344,29 @@
+     const browser = topLevelDocumentBrowser(channel.loadInfo);
+     const method = channel.requestMethod;
+     if (getBrowserWindow(browser) && typeof method === "string") {
+-      const isSafeAddressOnlyMethod = method === "GET" || method === "HEAD";
+-      this._scheduleAddressOnlyOpen(browser, uri.spec, decision.userContextId, {
+-        closeSourceTab: true,
+-        hasRequestBody: !isSafeAddressOnlyMethod,
+-        autoOpen: isSafeAddressOnlyMethod,
+-      });
++      let hasRequestBody = method !== "GET" && method !== "HEAD";
++      if (!hasRequestBody) {
++        try {
++          hasRequestBody =
++            channel.QueryInterface(Ci.nsIUploadChannel).uploadStream !== null;
++        } catch {
++          hasRequestBody = true;
++        }
++      }
++      if (!hasRequestBody) {
++        this._scheduleAddressOnlyOpen(
++          browser,
++          uri.spec,
++          decision.userContextId,
++          {
++            closeSourceTab: true,
++            hasRequestBody: false,
++            autoOpen: true,
++          }
++        );
++      }
++      // Body consent waits for the privileged blockedByPolicy document and
++      // its exact failed channel. The old document may be replaced by cancel.
+     }
+     channel.cancel(Cr.NS_ERROR_BLOCKED_BY_POLICY);
+   },
+@@ -410,6 +429,8 @@
+     } = {}
+   ) {
+     const browsingContextId = browser.browsingContext.id;
++    const scheduledWindowGlobal = browser.browsingContext.currentWindowGlobal;
++    const scheduledInnerWindowId = scheduledWindowGlobal?.innerWindowId;
+     if (this._scheduledTopLevelNavigations.has(browsingContextId)) {
+       return;
+     }
+@@ -417,10 +438,15 @@
+     Services.tm.dispatchToMainThread(() => {
+       this._scheduledTopLevelNavigations.delete(browsingContextId);
+       const window = getBrowserWindow(browser);
+-      if (!window) {
++      if (
++        !window ||
++        !scheduledInnerWindowId ||
++        browser.browsingContext.currentWindowGlobal !== scheduledWindowGlobal ||
++        scheduledWindowGlobal.innerWindowId !== scheduledInnerWindowId
++      ) {
+         return;
+       }
+-      this._handleAddressOnlyChoice(
++      void this._handleAddressOnlyChoice(
+         window,
+         browser,
+         url,
+@@ -433,7 +459,7 @@
+     });
+   },
+ 
+-  _handleAddressOnlyChoice(
++  async _handleAddressOnlyChoice(
+     window,
+     browser,
+     url,
+@@ -444,110 +470,81 @@
+     trustSourceChanged = false
+   ) {
+     if (autoOpen) {
+-      if (trustSourceChanged) {
+-        this._openAddressOnlyInContainer(
+-          window,
+-          browser,
+-          url,
+-          userContextId,
+-          closeSourceTab,
+-          true
+-        );
+-      } else {
+-        this._openAddressOnlyInContainer(
+-          window,
+-          browser,
+-          url,
+-          userContextId,
+-          closeSourceTab
+-        );
+-      }
+-      return;
+-    }
+-    const selected = this._promptAddressOnlyOpen(
+-      window,
+-      hasRequestBody,
+-      trustSourceChanged
+-    );
+-    if (selected === 1) {
+-      // This remains entirely within the ordinary source tab. No URL,
+-      // request state, or browser context is transferred to the container.
+-      browser.goBack();
+-      return;
+-    }
+-    if (selected !== 0) {
+-      return;
+-    }
+-    if (trustSourceChanged) {
+       this._openAddressOnlyInContainer(
+         window,
+         browser,
+         url,
+         userContextId,
+         closeSourceTab,
+-        true
++        trustSourceChanged
+       );
+-    } else {
+-      this._openAddressOnlyInContainer(
+-        window,
+-        browser,
+-        url,
+-        userContextId,
+-        closeSourceTab
++      return;
++    }
++    await this._promptAddressOnlyOpen(
++      window,
++      browser,
++      hasRequestBody,
++      trustSourceChanged,
++      userContextId,
++      (selected, isCurrent) => {
++        // The controller still owns its live revocation observers here.
++        if (
++          !isCurrent() ||
++          lazy.GoodBearRussianPKIContainer.dedicatedUserContextId !==
++            userContextId
++        ) {
++          return;
++        }
++        if (selected === "back") {
++          if (browser.canGoBack) {
++            browser.goBack();
++          } else {
++            browser.fixupAndLoadURIString("about:blank", {
++              triggeringPrincipal:
++                Services.scriptSecurityManager.getSystemPrincipal(),
++            });
++          }
++        } else if (selected === "open") {
++          this._openAddressOnlyInContainer(
++            window,
++            browser,
++            url,
++            userContextId,
++            closeSourceTab,
++            trustSourceChanged
++          );
++        }
++      },
++      url
++    );
++  },
++
++  _promptAddressOnlyOpen(
++    window,
++    browser,
++    hasRequestBody,
++    trustSourceChanged,
++    userContextId,
++    onChoice,
++    url
++  ) {
++    let viewCertificate = null;
++    try {
++      const actor = browser.browsingContext.currentWindowGlobal.getActor(
++        "GoodBearRussianPKICertificateError"
+       );
+-    }
+-  },
+-
+-  _promptAddressOnlyOpen(window, hasRequestBody, trustSourceChanged = false) {
+-    const titleId = trustSourceChanged
+-      ? "goodbear-russian-pki-prompt-trust-changed-title"
+-      : "goodbear-russian-pki-prompt-title";
+-    let messageId;
+-    if (trustSourceChanged) {
+-      messageId = hasRequestBody
+-        ? "goodbear-russian-pki-prompt-trust-changed-body"
+-        : "goodbear-russian-pki-prompt-trust-changed-address";
+-    } else {
+-      messageId = hasRequestBody
+-        ? "goodbear-russian-pki-prompt-body"
+-        : "goodbear-russian-pki-prompt-address";
+-    }
+-    const openId = trustSourceChanged
+-      ? "goodbear-russian-pki-prompt-open-isolated"
+-      : "goodbear-russian-pki-prompt-open-address";
+-    let values;
+-    try {
+-      const l10n = new window.Localization(["browser/browser.ftl"], true);
+-      values = l10n.formatValuesSync([
+-        titleId,
+-        messageId,
+-        openId,
+-        "goodbear-russian-pki-prompt-go-back",
+-      ]);
+-      if (
+-        values.length !== 4 ||
+-        values.some(value => typeof value !== "string" || !value.trim())
+-      ) {
+-        return 2;
+-      }
++      viewCertificate = actor.getCertificateViewer(url);
+     } catch {
+-      // Missing localized consent must never authorize an isolated navigation.
+-      return 2;
+-    }
+-    const flags =
+-      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
+-      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_1;
+-    return Services.prompt.confirmEx(
+-      window,
+-      values[0],
+-      values[1],
+-      flags,
+-      values[2],
+-      values[3],
+-      null,
+-      null,
+-      {}
+-    );
++      // Early assignment/body blocking may have no failed TLS channel.
++      // Never manufacture a certificate or use a previous page's connection.
++    }
++    return lazy.GoodBearRussianPKIInterstitial.open(browser, {
++      userContextId,
++      hasRequestBody,
++      trustSourceChanged,
++      onChoice,
++      viewCertificate,
++    });
+   },
+ 
+   _openAddressOnlyInContainer(
+@@ -589,12 +586,100 @@
+     ).URILoadingHelper.openLinkIn(window, url, "tab", params);
+   },
+ 
++  openAddressOnlyAfterAssignedPolicyError(
++    browser,
++    url,
++    method,
++    hasRequestBody,
++    expectedWindowGlobal,
++    expectedInnerWindowId
++  ) {
++    if (
++      !getBrowserWindow(browser) ||
++      !expectedInnerWindowId ||
++      browser.browsingContext.currentWindowGlobal !== expectedWindowGlobal ||
++      expectedWindowGlobal.innerWindowId !== expectedInnerWindowId ||
++      typeof method !== "string"
++    ) {
++      return false;
++    }
++    const attributes = browser.browsingContext.originAttributes;
++    if (attributes.privateBrowsingId !== 0 || attributes.userContextId !== 0) {
++      return false;
++    }
++    const manager = lazy.GoodBearRussianPKIContainer;
++    if (!manager.routingStateLoaded) {
++      void manager
++        .initialize()
++        .then(() =>
++          this.openAddressOnlyAfterAssignedPolicyError(
++            browser,
++            url,
++            method,
++            hasRequestBody,
++            expectedWindowGlobal,
++            expectedInnerWindowId
++          )
++        )
++        .catch(error =>
++          console.error(
++            "Good Bear assigned routing state could not be loaded",
++            error
++          )
++        );
++      return true;
++    }
++    let uri;
++    try {
++      uri = Services.io.newURI(url);
++    } catch {
++      return false;
++    }
++    if (
++      uri.scheme !== "https" ||
++      !uri.asciiHost ||
++      !manager.assignmentStore.isAssigned(uri)
++    ) {
++      return false;
++    }
++    const bodyBlocked =
++      hasRequestBody !== false || (method !== "GET" && method !== "HEAD");
++    const decision = manager.getLoadDecision(uri, 0, {
++      hasRequestBody: bodyBlocked,
++    });
++    if (
++      (decision.type !== "body-blocked" && decision.type !== "isolated") ||
++      decision.userContextId !== manager.dedicatedUserContextId ||
++      !decision.userContextId
++    ) {
++      return false;
++    }
++    this._scheduleAddressOnlyOpen(browser, uri.spec, decision.userContextId, {
++      closeSourceTab: true,
++      hasRequestBody: bodyBlocked,
++      autoOpen: !bodyBlocked,
++    });
++    return true;
++  },
++
+   // Called only by the certificate-error actor after native PSM has marked a
+   // failed ordinary TLS request as requiring the exact Russian PKI anchor.
+   // The actor gives us an address and method, never a channel, certificates,
+   // referrer, opener, form data, cookies, or session state.
+-  openAddressOnlyAfterRussianPKICertificateError(browser, url, method) {
+-    if (!getBrowserWindow(browser)) {
++  openAddressOnlyAfterRussianPKICertificateError(
++    browser,
++    url,
++    method,
++    hasRequestBody = true,
++    expectedWindowGlobal = browser?.browsingContext?.currentWindowGlobal,
++    expectedInnerWindowId = expectedWindowGlobal?.innerWindowId
++  ) {
++    if (
++      !getBrowserWindow(browser) ||
++      !expectedInnerWindowId ||
++      browser.browsingContext.currentWindowGlobal !== expectedWindowGlobal ||
++      expectedWindowGlobal.innerWindowId !== expectedInnerWindowId
++    ) {
+       return false;
+     }
+     const originAttributes = browser.browsingContext?.originAttributes;
+@@ -626,7 +711,10 @@
+           this.openAddressOnlyAfterRussianPKICertificateError(
+             browser,
+             url,
+-            method
++            method,
++            hasRequestBody,
++            expectedWindowGlobal,
++            expectedInnerWindowId
+           )
+         )
+         .catch(error =>
+@@ -645,7 +733,8 @@
+       return false;
+     }
+ 
+-    const isSafeFirstVisitMethod = method === "GET" || method === "HEAD";
++    const bodyBlocked =
++      hasRequestBody !== false || (method !== "GET" && method !== "HEAD");
+     const historyEntry = managedContainer.trustHistoryStore.get(uri);
+     const isUnknownOrigin =
+       !managedContainer.assignmentStore.isAssigned(uri) && !historyEntry;
+@@ -655,12 +744,12 @@
+ 
+     this._scheduleAddressOnlyOpen(browser, uri.spec, userContextId, {
+       closeSourceTab: true,
+-      hasRequestBody: method !== "GET" && method !== "HEAD",
++      hasRequestBody: bodyBlocked,
+       // The actor can only reach this point after native PSM completed the
+       // exact-anchor alternate validation on the failed ordinary request.
+       // An auto-open transfers only that address and records nothing until
+       // the new managed-context connection itself succeeds.
+-      autoOpen: isSafeFirstVisitMethod && isUnknownOrigin,
++      autoOpen: !bodyBlocked && isUnknownOrigin,
+       trustSourceChanged,
+     });
+     return true;
+diff --git a/browser/actors/GoodBearRussianPKICertificateErrorChild.sys.mjs b/browser/actors/GoodBearRussianPKICertificateErrorChild.sys.mjs
+--- a/browser/actors/GoodBearRussianPKICertificateErrorChild.sys.mjs
++++ b/browser/actors/GoodBearRussianPKICertificateErrorChild.sys.mjs
+@@ -1,6 +1,48 @@
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++function hasRequestBody(httpChannel, method) {
++  if (method !== "GET" && method !== "HEAD") {
++    return true;
++  }
++  try {
++    // Presence only: never read, clone or serialize the upload stream.
++    return (
++      httpChannel.QueryInterface(Ci.nsIUploadChannel).uploadStream !== null
++    );
++  } catch {
++    return true;
++  }
++}
++
++function getAssignedPolicyRoutingCandidate(docShell) {
++  const channel = docShell.failedChannel;
++  if (
++    !channel ||
++    channel.status !== Cr.NS_ERROR_BLOCKED_BY_POLICY ||
++    channel.loadInfo?.externalContentPolicyType !==
++      Ci.nsIContentPolicy.TYPE_DOCUMENT ||
++    channel.loadInfo.originAttributes?.privateBrowsingId !== 0 ||
++    channel.loadInfo.originAttributes?.userContextId !== 0
++  ) {
++    return null;
++  }
++  try {
++    const http = channel.QueryInterface(Ci.nsIHttpChannel);
++    const method = http.requestMethod?.toUpperCase();
++    if (channel.URI?.scheme !== "https" || !channel.URI.asciiHost || !method) {
++      return null;
++    }
++    return {
++      url: channel.URI.spec,
++      method,
++      hasRequestBody: hasRequestBody(http, method),
++    };
++  } catch {
++    return null;
++  }
++}
+ 
+ function getRussianPKIRoutingCandidate(docShell) {
+   const failedChannel = docShell.failedChannel;
+@@ -30,10 +72,35 @@
+   if (!uri || uri.scheme !== "https" || !uri.asciiHost || !method) {
+     return null;
+   }
+-  return { url: uri.spec, method };
++  return {
++    url: uri.spec,
++    method,
++    hasRequestBody: hasRequestBody(httpChannel, method),
++  };
+ }
+ 
+ export class GoodBearRussianPKICertificateErrorChild extends JSWindowActorChild {
++  receiveMessage(message) {
++    if (message.name !== "GoodBear:GetFailedChannelCertificates") {
++      return null;
++    }
++    const candidate = getRussianPKIRoutingCandidate(this.docShell);
++    if (
++      !candidate ||
++      candidate.url !== message.data?.url ||
++      this.manager.innerWindowId !== message.data?.innerWindowId
++    ) {
++      return null;
++    }
++    // These are the peer's actual handshake certificates for native viewing,
++    // not a claim that the ordinary-context chain was successfully verified.
++    const certificates =
++      this.docShell.failedChannel.securityInfo.handshakeCertificates;
++    return certificates?.length
++      ? certificates.map(cert => cert.getBase64DERString())
++      : null;
++  }
++
+   handleEvent(event) {
+     if (event.type !== "DOMContentLoaded" || event.target !== this.document) {
+       return;
+@@ -41,8 +108,13 @@
+     const candidate = getRussianPKIRoutingCandidate(this.docShell);
+     if (candidate) {
+       this.sendAsyncMessage("GoodBear:RussianPKICertificateError", candidate);
++      return;
++    }
++    const assignedCandidate = getAssignedPolicyRoutingCandidate(this.docShell);
++    if (assignedCandidate) {
++      this.sendAsyncMessage("GoodBear:AssignedPolicyError", assignedCandidate);
+     }
+   }
+ }
+ 
+-export { getRussianPKIRoutingCandidate };
++export { getRussianPKIRoutingCandidate, getAssignedPolicyRoutingCandidate };
+diff --git a/browser/actors/GoodBearRussianPKICertificateErrorParent.sys.mjs b/browser/actors/GoodBearRussianPKICertificateErrorParent.sys.mjs
+--- a/browser/actors/GoodBearRussianPKICertificateErrorParent.sys.mjs
++++ b/browser/actors/GoodBearRussianPKICertificateErrorParent.sys.mjs
+@@ -9,8 +9,53 @@
+ });
+ 
+ export class GoodBearRussianPKICertificateErrorParent extends JSWindowActorParent {
++  getCertificateViewer(url) {
++    const windowGlobal = this.manager;
++    const innerWindowId = windowGlobal.innerWindowId;
++    const browser = this.browsingContext.embedderElement;
++    if (
++      !this._candidateURL ||
++      url !== this._candidateURL ||
++      this.browsingContext !== this.browsingContext.top ||
++      this.browsingContext.currentWindowGlobal !== windowGlobal
++    ) {
++      return null;
++    }
++    return async isCurrent => {
++      if (
++        !isCurrent() ||
++        this.browsingContext.currentWindowGlobal !== windowGlobal
++      ) {
++        return;
++      }
++      const certificates = await this.sendQuery(
++        "GoodBear:GetFailedChannelCertificates",
++        {
++          url,
++          innerWindowId,
++        }
++      );
++      if (
++        !isCurrent() ||
++        this.manager !== windowGlobal ||
++        this.browsingContext.currentWindowGlobal !== windowGlobal ||
++        windowGlobal.innerWindowId !== innerWindowId ||
++        this.browsingContext.embedderElement !== browser ||
++        !Array.isArray(certificates) ||
++        !certificates.length ||
++        certificates.some(cert => typeof cert !== "string" || !cert)
++      ) {
++        return;
++      }
++      windowGlobal.getActor("NetError").viewCertificate(certificates);
++    };
++  }
++
+   receiveMessage(message) {
+-    if (message.name !== "GoodBear:RussianPKICertificateError") {
++    if (
++      message.name !== "GoodBear:RussianPKICertificateError" &&
++      message.name !== "GoodBear:AssignedPolicyError"
++    ) {
+       return;
+     }
+     // Only a top-level privileged certificate error can request the new
+@@ -19,10 +64,30 @@
+       return;
+     }
+     const browser = this.browsingContext.embedderElement;
++    if (this.browsingContext.currentWindowGlobal !== this.manager) {
++      return;
++    }
++    if (message.name === "GoodBear:AssignedPolicyError") {
++      // A policy-stopped request is not a certificate verification result.
++      this._candidateURL = null;
++      lazy.GoodBearRussianPKINavigationPolicy.openAddressOnlyAfterAssignedPolicyError(
++        browser,
++        message.data?.url,
++        message.data?.method,
++        message.data?.hasRequestBody !== false,
++        this.manager,
++        this.manager.innerWindowId
++      );
++      return;
++    }
++    this._candidateURL = message.data?.url;
+     lazy.GoodBearRussianPKINavigationPolicy.openAddressOnlyAfterRussianPKICertificateError(
+       browser,
+       message.data?.url,
+-      message.data?.method
++      message.data?.method,
++      message.data?.hasRequestBody !== false,
++      this.manager,
++      this.manager.innerWindowId
+     );
+   }
+ }
+diff --git a/browser/components/moz.build b/browser/components/moz.build
+--- a/browser/components/moz.build
++++ b/browser/components/moz.build
+@@ -119,6 +119,7 @@
+     "BrowserGlue.sys.mjs",
+     "distribution.sys.mjs",
+     "GoodBearRussianPKIContainer.sys.mjs",
++    "GoodBearRussianPKIInterstitial.sys.mjs",
+ ]
+ 
+ MOZ_SRC_FILES += [
+diff --git a/browser/base/jar.mn b/browser/base/jar.mn
+--- a/browser/base/jar.mn
++++ b/browser/base/jar.mn
+@@ -67,6 +67,8 @@
+         content/browser/browser-graphics-utils.js           (content/browser-graphics-utils.js)
+         content/browser/browser-webrtc.js                   (content/browser-webrtc.js)
+         content/browser/global-scripts.js                   (content/global-scripts.js)
++        content/browser/goodbearRussianPKIInterstitial.xhtml (content/goodbearRussianPKIInterstitial.xhtml)
++        content/browser/goodbearRussianPKIInterstitial.js (content/goodbearRussianPKIInterstitial.js)
+         content/browser/main-popupset.js                    (content/main-popupset.js)
+ *       content/browser/pageinfo/pageInfo.xhtml             (content/pageinfo/pageInfo.xhtml)
+         content/browser/pageinfo/pageInfo.js                (content/pageinfo/pageInfo.js)
+diff --git a/toolkit/actors/NetErrorParent.sys.mjs b/toolkit/actors/NetErrorParent.sys.mjs
+--- a/toolkit/actors/NetErrorParent.sys.mjs
++++ b/toolkit/actors/NetErrorParent.sys.mjs
+@@ -541,6 +541,20 @@
+     }
+   }
+ 
++  viewCertificate(handshakeCertificates) {
++    let certs = handshakeCertificates.map(certBase64 =>
++      encodeURIComponent(certBase64)
++    );
++    let certsStringURL = certs.map(elem => `cert=${elem}`).join("&");
++    let url = `about:certificate?${certsStringURL}`;
++    let window = this.browser.documentGlobal;
++    if (AppConstants.MOZ_BUILD_APP === "browser") {
++      window.switchToTabHavingURI(url, true, {});
++    } else {
++      window.open(url, "_blank");
++    }
++  }
++
+   receiveMessage(message) {
+     switch (message.name) {
+       case "Browser:EnableOnlineMode":
+@@ -584,19 +598,7 @@
+       case "Browser:CertExceptionError":
+         switch (message.data.elementId) {
+           case "viewCertificate": {
+-            let certs = message.data.handshakeCertificates.map(certBase64 =>
+-              encodeURIComponent(certBase64)
+-            );
+-            let certsStringURL = certs.map(elem => `cert=${elem}`);
+-            certsStringURL = certsStringURL.join("&");
+-            let url = `about:certificate?${certsStringURL}`;
+-
+-            let window = this.browser.documentGlobal;
+-            if (AppConstants.MOZ_BUILD_APP === "browser") {
+-              window.switchToTabHavingURI(url, true, {});
+-            } else {
+-              window.open(url, "_blank");
+-            }
++            this.viewCertificate(message.data.handshakeCertificates);
+             break;
+           }
+         }
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
+@@ -211,14 +211,25 @@
+     ownerGlobal: window,
+     browsingContext: {
+       id: 7003,
++      currentWindowGlobal: { innerWindowId: 7003001 },
+       originAttributes: { privateBrowsingId: 0, userContextId: 0 },
+     },
+     goBack() {
+       backCalls++;
+     },
++    canGoBack: true,
+   };
+   policy._scheduleAddressOnlyOpen = (...args) => scheduled.push(args);
+-  policy._promptAddressOnlyOpen = () => 1;
++  policy._promptAddressOnlyOpen = (
++    _window,
++    _browser,
++    _body,
++    _changed,
++    _contextId,
++    onChoice
++  ) => {
++    onChoice("back", () => true);
++  };
+   policy._openAddressOnlyInContainer = (...args) => opened.push(args);
+   try {
+     ok(
+@@ -240,7 +251,7 @@
+       "a body-bearing method remains explicitly non-replayable"
+     );
+ 
+-    policy._handleAddressOnlyChoice(
++    await policy._handleAddressOnlyChoice(
+       window,
+       browser,
+       origin,
+@@ -370,117 +381,314 @@
+   );
+ });
+ 
++const { GoodBearRussianPKIInterstitial } = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIInterstitial.sys.mjs"
++);
++
++async function openGoodBearInterstitial(browser, options = {}) {
++  const calls = [];
++  const pending = GoodBearRussianPKIInterstitial.open(browser, {
++    userContextId: GoodBearRussianPKIContainer.dedicatedUserContextId,
++    hasRequestBody: true,
++    trustSourceChanged: true,
++    onChoice(choice, isCurrent) {
++      ok(isCurrent(), "consent is current at the actual action boundary");
++      calls.push(choice);
++    },
++    ...options,
++  });
++  const manager = gBrowser.getTabDialogBox(browser).getTabDialogManager();
++  await TestUtils.waitForCondition(
++    () =>
++      manager._dialogs
++        .at(-1)
++        ?._frame?.contentDocument?.getElementById("goodbear-interstitial-back")
++        ?.disabled === false,
++    "the actual tab-scoped chrome interstitial is localized and ready"
++  );
++  const dialog = manager._dialogs.at(-1);
++  return { pending, dialog, doc: dialog._frame.contentDocument, calls };
++}
++
+ add_task(async function test_localized_address_only_prompt_choices() {
+-  const { sinon } = ChromeUtils.importESModule(
+-    "resource://testing-common/Sinon.sys.mjs"
+-  );
++  await SpecialPowers.pushPrefEnv({
++    set: [["security.goodbear.russian_pki.enabled", true]],
++  });
++  await GoodBearRussianPKIContainer.initialize();
+   const l10n = new Localization(["browser/browser.ftl"], true);
+-  const prompt = sinon.stub(Services.prompt, "confirmEx");
+   try {
+     for (const hasRequestBody of [false, true]) {
+       for (const trustSourceChanged of [false, true]) {
+-        const expected = l10n.formatValuesSync([
+-          trustSourceChanged
+-            ? "goodbear-russian-pki-prompt-trust-changed-title"
+-            : "goodbear-russian-pki-prompt-title",
+-          {
+-            "false,false": "goodbear-russian-pki-prompt-address",
+-            "false,true": "goodbear-russian-pki-prompt-body",
+-            "true,false": "goodbear-russian-pki-prompt-trust-changed-address",
+-            "true,true": "goodbear-russian-pki-prompt-trust-changed-body",
+-          }[`${trustSourceChanged},${hasRequestBody}`],
+-          trustSourceChanged
+-            ? "goodbear-russian-pki-prompt-open-isolated"
+-            : "goodbear-russian-pki-prompt-open-address",
+-          "goodbear-russian-pki-prompt-go-back",
+-        ]);
+-        ok(
+-          expected.every(value => value?.trim()),
+-          "all consent strings resolve"
+-        );
+-        for (const selected of [0, 1, 2]) {
+-          prompt.resetHistory();
+-          prompt.returns(selected);
+-          is(
+-            GoodBearRussianPKINavigationPolicy._promptAddressOnlyOpen(
+-              window,
++        for (const selected of ["open", "back", "cancel"]) {
++          await BrowserTestUtils.withNewTab("about:blank", async browser => {
++            const surface = await openGoodBearInterstitial(browser, {
+               hasRequestBody,
+-              trustSourceChanged
+-            ),
+-            selected,
+-            "localized prompt preserves open, back and dismissal results"
+-          );
+-          const args = prompt.firstCall.args;
+-          Assert.deepEqual(
+-            [args[1], args[2], args[4], args[5]],
+-            expected,
+-            "native prompt receives Fluent values for this security decision"
+-          );
+-          is(
+-            args.length,
+-            9,
+-            "no URL or request state is added to prompt arguments"
+-          );
++              trustSourceChanged,
++            });
++            let titleId = "goodbear-russian-pki-interstitial-title";
++            if (trustSourceChanged) {
++              titleId = "goodbear-russian-pki-interstitial-trust-changed-title";
++            } else if (hasRequestBody) {
++              titleId = "goodbear-russian-pki-interstitial-body-title";
++            }
++            is(
++              surface.doc.getElementById("goodbear-interstitial-title")
++                .textContent,
++              l10n.formatValueSync(titleId),
++              "the native dialog shows the Fluent title"
++            );
++            is(
++              surface.doc.activeElement.id,
++              "goodbear-interstitial-back",
++              "initial focus is the non-authorizing Back action"
++            );
++            ok(
++              surface.doc.getElementById("goodbear-interstitial-certificate")
++                .disabled,
++              "a source without failedChannel cannot manufacture a certificate"
++            );
++            is(
++              surface.doc.getElementById(
++                "goodbear-interstitial-body-description"
++              ).hidden,
++              !(hasRequestBody && trustSourceChanged),
++              "combined trust/body explanation is present"
++            );
++            if (selected === "cancel") {
++              EventUtils.synthesizeKey(
++                "KEY_Escape",
++                {},
++                surface.doc.defaultView
++              );
++            } else {
++              EventUtils.synthesizeMouseAtCenter(
++                surface.doc.getElementById("goodbear-interstitial-" + selected),
++                {},
++                surface.doc.defaultView
++              );
++            }
++            await surface.pending;
++            Assert.deepEqual(
++              surface.calls,
++              selected === "cancel" ? [] : [selected],
++              "native Open, Back and Escape have separate one-shot outcomes"
++            );
++          });
+         }
+       }
+     }
+   } finally {
+-    prompt.restore();
++    await SpecialPowers.popPrefEnv();
+   }
+ });
+ 
+ add_task(
+   async function test_prompt_localization_failure_never_opens_destination() {
+-    const policy = GoodBearRussianPKINavigationPolicy;
+-    const originalOpen = policy._openAddressOnlyInContainer;
+-    let opened = 0;
+-    let wentBack = 0;
+-    policy._openAddressOnlyInContainer = () => opened++;
+-    const browser = { goBack: () => wentBack++ };
++    const { sinon } = ChromeUtils.importESModule(
++      "resource://testing-common/Sinon.sys.mjs"
++    );
++    await SpecialPowers.pushPrefEnv({
++      set: [["security.goodbear.russian_pki.enabled", true]],
++    });
++    await GoodBearRussianPKIContainer.initialize();
++    const formatter = sinon.stub(
++      window.Localization.prototype,
++      "formatValuesSync"
++    );
+     try {
+       for (const failedValues of [
+         null,
+         [],
+-        ["title", null, "open", "back"],
+-        ["title", " ", "open", "back"],
++        ["title"],
++        Array(9).fill(null),
++        Array(9).fill(" "),
++        Array(9).fill(1),
+       ]) {
+-        const promptWindow = {
+-          Localization: class {
+-            formatValuesSync() {
+-              if (failedValues === null) {
+-                throw new Error("test-only localization failure");
+-              }
+-              return failedValues;
+-            }
+-          },
+-        };
++        formatter.resetBehavior();
++        formatter.callsFake(function (ids) {
++          if (
++            !ids.some(id => id.startsWith("goodbear-russian-pki-interstitial-"))
++          ) {
++            return formatter.wrappedMethod.call(this, ids);
++          }
++          if (failedValues === null) {
++            throw new Error("test-only Fluent failure");
++          }
++          return failedValues;
++        });
+         for (const hasRequestBody of [false, true]) {
+           for (const trustSourceChanged of [false, true]) {
+-            policy._handleAddressOnlyChoice(
+-              promptWindow,
+-              browser,
+-              "https://must-not-open.example.test/",
+-              17,
+-              true,
+-              hasRequestBody,
+-              false,
+-              trustSourceChanged
+-            );
++            await BrowserTestUtils.withNewTab("about:blank", async browser => {
++              let actions = 0;
++              const result = await GoodBearRussianPKIInterstitial.open(
++                browser,
++                {
++                  userContextId:
++                    GoodBearRussianPKIContainer.dedicatedUserContextId,
++                  hasRequestBody,
++                  trustSourceChanged,
++                  onChoice: () => actions++,
++                }
++              );
++              is(
++                result,
++                "cancel",
++                "missing or malformed localized consent fails closed"
++              );
++              is(
++                actions,
++                0,
++                "localization failure authorizes neither Open nor Back"
++              );
++            });
+           }
+         }
+       }
+-      is(
+-        opened,
+-        0,
+-        "a missing localized choice never authorizes any navigation"
+-      );
+-      is(
+-        wentBack,
+-        0,
+-        "localization failure does not manufacture a Back decision"
+-      );
+     } finally {
+-      policy._openAddressOnlyInContainer = originalOpen;
++      formatter.restore();
++      await SpecialPowers.popPrefEnv();
+     }
+   }
+ );
++
++add_task(
++  async function test_interstitial_navigation_and_scope_changes_revoke_consent() {
++    await SpecialPowers.pushPrefEnv({
++      set: [["security.goodbear.russian_pki.enabled", true]],
++    });
++    await GoodBearRussianPKIContainer.initialize();
++    try {
++      for (const change of [
++        "reload",
++        "same-document",
++        "history",
++        "pref",
++        "tab-select",
++      ]) {
++        await BrowserTestUtils.withNewTab(
++          "https://example.com/",
++          async browser => {
++            if (change === "history") {
++              BrowserTestUtils.startLoadingURIString(
++                browser,
++                "https://example.org/"
++              );
++              await BrowserTestUtils.browserLoaded(browser);
++            }
++            const surface = await openGoodBearInterstitial(browser);
++            if (change === "reload") {
++              const loaded = BrowserTestUtils.browserLoaded(browser);
++              browser.reload();
++              await loaded;
++            } else if (change === "same-document") {
++              await SpecialPowers.spawn(browser, [], () => {
++                content.location.hash = "new-document-state";
++              });
++            } else if (change === "history") {
++              const loaded = BrowserTestUtils.browserLoaded(browser);
++              browser.goBack();
++              await loaded;
++            } else if (change === "pref") {
++              Services.prefs.setBoolPref(
++                "security.goodbear.russian_pki.enabled",
++                false
++              );
++              Services.prefs.setBoolPref(
++                "security.goodbear.russian_pki.enabled",
++                true
++              );
++            } else {
++              const other = await BrowserTestUtils.openNewForegroundTab(
++                gBrowser,
++                "about:blank"
++              );
++              await BrowserTestUtils.switchTab(
++                gBrowser,
++                gBrowser.getTabForBrowser(browser)
++              );
++              BrowserTestUtils.removeTab(other);
++            }
++            await surface.pending;
++            Assert.deepEqual(
++              surface.calls,
++              [],
++              change + " permanently revokes consent"
++            );
++          }
++        );
++      }
++    } finally {
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++);
++
++add_task(
++  async function test_interstitial_certificate_view_selects_native_viewer_without_consent() {
++    await SpecialPowers.pushPrefEnv({
++      set: [["security.goodbear.russian_pki.enabled", true]],
++    });
++    await GoodBearRussianPKIContainer.initialize();
++    const tab = await BrowserTestUtils.openNewForegroundTab(
++      gBrowser,
++      "about:blank"
++    );
++    const browser = tab.linkedBrowser;
++    let certificateTab;
++    try {
++      const errorLoaded = BrowserTestUtils.waitForErrorPage(browser);
++      BrowserTestUtils.startLoadingURIString(
++        browser,
++        "https://expired.example.com/"
++      );
++      await errorLoaded;
++      const certificates = await SpecialPowers.spawn(browser, [], () =>
++        content.docShell.failedChannel.securityInfo.handshakeCertificates.map(
++          cert => cert.getBase64DERString()
++        )
++      );
++      ok(
++        certificates.length,
++        "the native failed TLS channel has actual handshake certificates"
++      );
++      const windowGlobal = browser.browsingContext.currentWindowGlobal;
++      const surface = await openGoodBearInterstitial(browser, {
++        viewCertificate: async isCurrent => {
++          ok(isCurrent(), "the original document is current before viewing");
++          windowGlobal.getActor("NetError").viewCertificate(certificates);
++        },
++      });
++      const newTab = BrowserTestUtils.waitForNewTab(gBrowser, null, true);
++      EventUtils.synthesizeMouseAtCenter(
++        surface.doc.getElementById("goodbear-interstitial-certificate"),
++        {},
++        surface.doc.defaultView
++      );
++      certificateTab = await newTab;
++      ok(
++        certificateTab.linkedBrowser.currentURI.spec.startsWith(
++          "about:certificate?"
++        ),
++        "the existing native certificate viewer is shown"
++      );
++      await surface.pending;
++      Assert.deepEqual(
++        surface.calls,
++        [],
++        "viewing a real handshake chain creates no site consent"
++      );
++      await BrowserTestUtils.switchTab(gBrowser, tab);
++      Assert.deepEqual(
++        surface.calls,
++        [],
++        "returning to the stopped source does not revive consent"
++      );
++    } finally {
++      if (certificateTab) {
++        BrowserTestUtils.removeTab(certificateTab);
++      }
++      BrowserTestUtils.removeTab(tab);
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++);
+diff --git a/browser/locales/en-US/browser/browser.ftl b/browser/locales/en-US/browser/browser.ftl
+--- a/browser/locales/en-US/browser/browser.ftl
++++ b/browser/locales/en-US/browser/browser.ftl
+@@ -1715,14 +1715,14 @@
+ reduced-protection-infobar-never-show-button = Don’t show again
+   .accesskey = D
+ 
+-## Good Bear isolated Russian PKI navigation consent
+-
+-goodbear-russian-pki-prompt-title = Good Bear — Russian PKI
+-goodbear-russian-pki-prompt-address = Moving to the isolated container does not transfer request data. Open only the address?
+-goodbear-russian-pki-prompt-body = Requests with data are never replayed automatically. Open only the address in the isolated container without the request data?
+-goodbear-russian-pki-prompt-open-address = Open the address in the Russian PKI container
+-goodbear-russian-pki-prompt-go-back = Go back
+-goodbear-russian-pki-prompt-trust-changed-title = Good Bear — trust source changed
+-goodbear-russian-pki-prompt-trust-changed-address = This site previously used the standard trust infrastructure. Its certificate is now validated through Russian PKI. Good Bear will not send ordinary-container data to this connection.
+-goodbear-russian-pki-prompt-trust-changed-body = This site previously used the standard trust infrastructure. Its certificate is now validated through Russian PKI. Good Bear will not send ordinary-container data or replay the request with data.
+-goodbear-russian-pki-prompt-open-isolated = Open in isolation
++## Good Bear blocking trust-domain and request-data interstitial
++
++goodbear-russian-pki-interstitial-title = An isolated container is required
++goodbear-russian-pki-interstitial-description = The certificate validates through Russian PKI. Good Bear opens this trust infrastructure only in an isolated container and does not transfer ordinary-tab data.
++goodbear-russian-pki-interstitial-body-title = The request with data was stopped
++goodbear-russian-pki-interstitial-body-description = Good Bear never automatically replays requests with data when moving to Russian PKI. Only the address can be opened in an isolated container; request data will not be sent.
++goodbear-russian-pki-interstitial-trust-changed-title = The site's trust source has changed
++goodbear-russian-pki-interstitial-trust-changed-description = This site previously used the standard trust infrastructure. Its certificate now validates through Russian PKI. Good Bear will not send ordinary-container data to this connection.
++goodbear-russian-pki-interstitial-open-isolated = Open in isolation
++goodbear-russian-pki-interstitial-go-back = Go back
++goodbear-russian-pki-interstitial-view-certificate = View certificate
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -16,9 +16,10 @@
+ const { DesktopActorRegistry } = ChromeUtils.importESModule(
+   "resource:///modules/DesktopActorRegistry.sys.mjs"
+ );
+-const { getRussianPKIRoutingCandidate } = ChromeUtils.importESModule(
+-  "resource:///actors/GoodBearRussianPKICertificateErrorChild.sys.mjs"
+-);
++const { getRussianPKIRoutingCandidate, getAssignedPolicyRoutingCandidate } =
++  ChromeUtils.importESModule(
++    "resource:///actors/GoodBearRussianPKICertificateErrorChild.sys.mjs"
++  );
+ 
+ const TEST_STORE_FILE_PATH = PathUtils.join(
+   PathUtils.tempDir,
+@@ -110,7 +111,11 @@
+         failedChannel: {
+           securityInfo,
+           requestMethod: "GET",
+-          QueryInterface: ChromeUtils.generateQI(["nsIHttpChannel"]),
++          uploadStream: null,
++          QueryInterface: ChromeUtils.generateQI([
++            "nsIHttpChannel",
++            "nsIUploadChannel",
++          ]),
+           URI: Services.io.newURI("https://fstec.ru/"),
+         },
+       });
+@@ -123,7 +128,7 @@
+     });
+     Assert.deepEqual(
+       candidate,
+-      { url: "https://fstec.ru/", method: "GET" },
++      { url: "https://fstec.ru/", method: "GET", hasRequestBody: false },
+       "the native exact-anchor result reaches address-only routing despite UI error mapping"
+     );
+ 
+@@ -154,6 +159,92 @@
+     ok(!assignments.isAssigned(origin), "no partial assignment survives");
+     is(history.get(origin), null, "the paired history entry is rolled back");
+   });
++});
++
++add_task(
++  function test_assigned_policy_candidate_uses_native_stopped_channel_only() {
++    const channel = {
++      status: Cr.NS_ERROR_BLOCKED_BY_POLICY,
++      requestMethod: "GET",
++      uploadStream: {},
++      URI: Services.io.newURI("https://assigned-body.example.test/"),
++      loadInfo: {
++        externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++        originAttributes: { userContextId: 0, privateBrowsingId: 0 },
++      },
++      QueryInterface: ChromeUtils.generateQI([
++        "nsIHttpChannel",
++        "nsIUploadChannel",
++      ]),
++    };
++    const candidate = getAssignedPolicyRoutingCandidate({
++      failedChannel: channel,
++    });
++    ok(
++      candidate.hasRequestBody,
++      "the typed policy-stopped upload requires body consent"
++    );
++    ok(
++      !("certificates" in candidate),
++      "policy cancellation never manufactures a certificate result"
++    );
++    channel.status = Cr.NS_ERROR_FAILURE;
++    is(
++      getAssignedPolicyRoutingCandidate({ failedChannel: channel }),
++      null,
++      "another failure code is not a policy recovery capability"
++    );
++    channel.status = Cr.NS_ERROR_BLOCKED_BY_POLICY;
++    channel.loadInfo.originAttributes.privateBrowsingId = 1;
++    is(
++      getAssignedPolicyRoutingCandidate({ failedChannel: channel }),
++      null,
++      "a private failed channel cannot enter ordinary recovery"
++    );
++  }
++);
++
++add_task(function test_native_upload_presence_blocks_get_head_auto_replay() {
++  const stream = new Proxy(
++    {},
++    {
++      get() {
++        throw new Error("the upload stream must not be read");
++      },
++    }
++  );
++  for (const [method, uploadStream, missingInterface, expected] of [
++    ["GET", null, false, false],
++    ["HEAD", null, false, false],
++    ["GET", stream, false, true],
++    ["HEAD", stream, false, true],
++    ["POST", null, false, true],
++    ["GET", undefined, false, true],
++    ["GET", null, true, true],
++  ]) {
++    const channel = {
++      securityInfo: { goodBearRussianPKIRequired: true },
++      requestMethod: method,
++      uploadStream,
++      URI: Services.io.newURI("https://body-presence.example.test/"),
++      QueryInterface: ChromeUtils.generateQI(
++        missingInterface
++          ? ["nsIHttpChannel"]
++          : ["nsIHttpChannel", "nsIUploadChannel"]
++      ),
++    };
++    const candidate = getRussianPKIRoutingCandidate({ failedChannel: channel });
++    is(
++      candidate.hasRequestBody,
++      expected,
++      "body presence or uncertainty requires explicit consent"
++    );
++    Assert.deepEqual(
++      Object.keys(candidate).sort(),
++      ["hasRequestBody", "method", "url"],
++      "the candidate never contains body bytes, headers or a channel"
++    );
++  }
+ });
+ 
+ add_task(async function test_only_native_managed_russian_response_commits() {
+@@ -240,7 +331,8 @@
+       policy.openAddressOnlyAfterRussianPKICertificateError(
+         browser,
+         "https://unknown-first-visit.example.test/",
+-        "GET"
++        "GET",
++        false
+       ),
+       "the PSM-qualified first GET accepts address-only recovery"
+     );
+@@ -256,7 +348,8 @@
+       policy.openAddressOnlyAfterRussianPKICertificateError(
+         browser,
+         "https://unknown-head.example.test/",
+-        "HEAD"
++        "HEAD",
++        false
+       ),
+       "the PSM-qualified first HEAD accepts address-only recovery"
+     );
+@@ -315,6 +408,8 @@
+     {
+       URI: Services.io.newURI(origin),
+       requestMethod: "GET",
++      uploadStream: null,
++      QueryInterface: ChromeUtils.generateQI(["nsIUploadChannel"]),
+       loadInfo,
+       cancel(reason) {
+         cancellations.push(reason);
+@@ -342,6 +437,23 @@
+     loadInfo.originAttributes
+   );
+   is(
++    calls.length,
++    1,
++    "body consent is not attached to the replaced pre-error document"
++  );
++  const windowGlobal = browser.browsingContext.currentWindowGlobal;
++  ok(
++    policy.openAddressOnlyAfterAssignedPolicyError(
++      browser,
++      origin,
++      "POST",
++      true,
++      windowGlobal,
++      windowGlobal.innerWindowId
++    ),
++    "the privileged stopped-channel handoff rechecks the exact assignment"
++  );
++  is(
+     cancellations.length,
+     2,
+     "the ordinary POST is also stopped before cookies"
+diff --git a/browser/components/GoodBearRussianPKIInterstitial.sys.mjs b/browser/components/GoodBearRussianPKIInterstitial.sys.mjs
+new file mode 100644
+--- /dev/null
++++ b/browser/components/GoodBearRussianPKIInterstitial.sys.mjs
+@@ -0,0 +1,235 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++const lazy = {};
++ChromeUtils.defineESModuleGetters(lazy, {
++  ContextualIdentityService:
++    "resource://gre/modules/ContextualIdentityService.sys.mjs",
++  GoodBearRussianPKIContainer:
++    "resource:///modules/GoodBearRussianPKIContainer.sys.mjs",
++});
++
++const ENABLED_PREF = "security.goodbear.russian_pki.enabled";
++const IDENTITY_TOPICS = [
++  "contextual-identity-deleted",
++  "contextual-identity-created",
++  "contextual-identity-updated",
++];
++const MESSAGE_IDS = [
++  "goodbear-russian-pki-interstitial-title",
++  "goodbear-russian-pki-interstitial-description",
++  "goodbear-russian-pki-interstitial-body-title",
++  "goodbear-russian-pki-interstitial-body-description",
++  "goodbear-russian-pki-interstitial-trust-changed-title",
++  "goodbear-russian-pki-interstitial-trust-changed-description",
++  "goodbear-russian-pki-interstitial-open-isolated",
++  "goodbear-russian-pki-interstitial-go-back",
++  "goodbear-russian-pki-interstitial-view-certificate",
++];
++
++export const GoodBearRussianPKIInterstitial = {
++  // A tab-scoped chrome surface, never a new trust classifier. Callers already
++  // stopped the request and retain only its address, not its upload or state.
++  async open(
++    browser,
++    {
++      userContextId,
++      hasRequestBody,
++      trustSourceChanged,
++      onChoice,
++      viewCertificate = null,
++    }
++  ) {
++    const window = browser?.documentGlobal;
++    const context = browser?.browsingContext;
++    const windowGlobal = context?.currentWindowGlobal;
++    const innerWindowId = windowGlobal?.innerWindowId;
++    const manager = lazy.GoodBearRussianPKIContainer;
++    const sourceURI = browser?.currentURI?.spec;
++    let revoked = false;
++    let chosen = false;
++    let viewingCertificate = false;
++    let result = "cancel";
++    let dialog;
++    const listeners = [];
++
++    const current = () => {
++      const identity =
++        lazy.ContextualIdentityService.getPublicIdentityFromId(userContextId);
++      return (
++        !revoked &&
++        window &&
++        !window.closed &&
++        browser.isConnected &&
++        window.gBrowser.selectedBrowser === browser &&
++        browser.browsingContext === context &&
++        context === context.top &&
++        context.currentWindowGlobal === windowGlobal &&
++        windowGlobal?.innerWindowId === innerWindowId &&
++        !!innerWindowId &&
++        browser.currentURI?.spec === sourceURI &&
++        context.originAttributes.privateBrowsingId === 0 &&
++        context.originAttributes.userContextId === 0 &&
++        lazy.GoodBearRussianPKIContainer === manager &&
++        manager.dedicatedUserContextId === userContextId &&
++        Services.prefs.getBoolPref(ENABLED_PREF, false) &&
++        identity?.userContextId === userContextId &&
++        identity.managedPurpose === "goodbear-russian-pki"
++      );
++    };
++    const revoke = () => {
++      revoked = true;
++      result = "cancel";
++      dialog?.abort();
++    };
++    const tabSelect = () => {
++      if (window.gBrowser.selectedBrowser !== browser) {
++        revoke();
++      }
++    };
++    const identityObserver = {
++      observe(subject) {
++        const changedId = subject?.wrappedJSObject?.userContextId;
++        if (!changedId || changedId === userContextId) {
++          revoke();
++        }
++      },
++    };
++    const prefObserver = { observe: revoke };
++    const progress = {
++      onLocationChange(webProgress) {
++        if (webProgress.isTopLevel) {
++          // Includes same-document changes that TabDialogBox itself ignores.
++          revoke();
++        }
++      },
++      QueryInterface: ChromeUtils.generateQI([
++        "nsIWebProgressListener",
++        "nsISupportsWeakReference",
++      ]),
++    };
++
++    try {
++      if (typeof onChoice !== "function" || !current()) {
++        return "cancel";
++      }
++      Services.prefs.addObserver(ENABLED_PREF, prefObserver);
++      listeners.push(() =>
++        Services.prefs.removeObserver(ENABLED_PREF, prefObserver)
++      );
++      for (const topic of IDENTITY_TOPICS) {
++        Services.obs.addObserver(identityObserver, topic);
++        listeners.push(() =>
++          Services.obs.removeObserver(identityObserver, topic)
++        );
++      }
++      window.gBrowser.tabContainer.addEventListener("TabSelect", tabSelect);
++      listeners.push(() =>
++        window.gBrowser.tabContainer.removeEventListener("TabSelect", tabSelect)
++      );
++      const tab = window.gBrowser.getTabForBrowser(browser);
++      tab.addEventListener("TabClose", revoke);
++      listeners.push(() => tab.removeEventListener("TabClose", revoke));
++      browser.webProgress.addProgressListener(
++        progress,
++        Ci.nsIWebProgress.NOTIFY_LOCATION
++      );
++      listeners.push(() =>
++        browser.webProgress.removeProgressListener(progress)
++      );
++
++      const values = new window.Localization(
++        ["browser/browser.ftl"],
++        true
++      ).formatValuesSync(MESSAGE_IDS);
++      if (
++        values.length !== MESSAGE_IDS.length ||
++        values.some(
++          (value, index) =>
++            typeof value !== "string" ||
++            !value.trim() ||
++            value === MESSAGE_IDS[index]
++        )
++      ) {
++        return "cancel";
++      }
++      let messageIndex = 0;
++      if (trustSourceChanged) {
++        messageIndex = 4;
++      } else if (hasRequestBody) {
++        messageIndex = 2;
++      }
++      const model = {
++        title: values[messageIndex],
++        description: values[messageIndex + 1],
++        bodyDescription: trustSourceChanged && hasRequestBody ? values[3] : "",
++        openLabel: values[6],
++        backLabel: values[7],
++        certificateLabel: values[8],
++        canViewCertificate: typeof viewCertificate === "function",
++        async choose(action) {
++          if (chosen || viewingCertificate || !current()) {
++            revoke();
++            return false;
++          }
++          if (action === "certificate") {
++            if (typeof viewCertificate !== "function") {
++              return false;
++            }
++            viewingCertificate = true;
++            try {
++              // Opening the native viewer selects its tab; TabSelect revokes
++              // this consent permanently. No exemption and no revived token.
++              await viewCertificate(current);
++            } catch {
++              revoke();
++            } finally {
++              viewingCertificate = false;
++            }
++            return false;
++          }
++          if (action !== "open" && action !== "back") {
++            revoke();
++            return false;
++          }
++          chosen = true;
++          result = action;
++          return true;
++        },
++      };
++      const opened = window.gBrowser.getTabDialogBox(browser).open(
++        "chrome://browser/content/goodbearRussianPKIInterstitial.xhtml",
++        {
++          sizeTo: "available",
++          keepOpenSameOriginNav: false,
++          allowDuplicateDialogs: false,
++          hideContent: true,
++        },
++        model
++      );
++      dialog = opened.dialog;
++      if (!dialog || !current()) {
++        revoke();
++        return "cancel";
++      }
++      await opened.closedPromise;
++      if (!current() || (result !== "open" && result !== "back")) {
++        return "cancel";
++      }
++      const selected = result;
++      // Keep revocation observers until the action itself. Returning a bare
++      // consent flag and removing observers before the caller's await resumes
++      // would let disable/re-enable revive consent between two microtasks.
++      onChoice(selected, current);
++      return selected;
++    } catch {
++      revoke();
++      return "cancel";
++    } finally {
++      for (const cleanup of listeners.reverse()) {
++        cleanup();
++      }
++    }
++  },
++};
+diff --git a/browser/base/content/goodbearRussianPKIInterstitial.xhtml b/browser/base/content/goodbearRussianPKIInterstitial.xhtml
+new file mode 100644
+--- /dev/null
++++ b/browser/base/content/goodbearRussianPKIInterstitial.xhtml
+@@ -0,0 +1,48 @@
++<?xml version="1.0"?>
++<!-- This Source Code Form is subject to the terms of the Mozilla Public
++   - License, v. 2.0. If a copy of the MPL was not distributed with this
++   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
++<html xmlns="http://www.w3.org/1999/xhtml">
++  <head>
++    <meta
++      http-equiv="Content-Security-Policy"
++      content="default-src chrome:; object-src 'none'; connect-src 'none'; style-src chrome: 'unsafe-inline'"
++    />
++    <meta name="referrer" content="no-referrer" />
++    <link rel="stylesheet" href="chrome://global/skin/in-content/common.css" />
++    <link rel="localization" href="browser/browser.ftl" />
++    <script
++      src="chrome://browser/content/goodbearRussianPKIInterstitial.js"
++      defer="defer"
++    ></script>
++  </head>
++  <body
++    role="dialog"
++    aria-modal="true"
++    aria-labelledby="goodbear-interstitial-title"
++    aria-describedby="goodbear-interstitial-description goodbear-interstitial-body-description"
++    style="padding: 2em; max-width: 48em; margin-inline: auto"
++  >
++    <h1 id="goodbear-interstitial-title"></h1>
++    <p id="goodbear-interstitial-description"></p>
++    <p id="goodbear-interstitial-body-description" hidden="hidden"></p>
++    <div>
++      <button
++        id="goodbear-interstitial-back"
++        type="button"
++        autofocus="autofocus"
++        disabled="disabled"
++      ></button>
++      <button
++        id="goodbear-interstitial-certificate"
++        type="button"
++        disabled="disabled"
++      ></button>
++      <button
++        id="goodbear-interstitial-open"
++        type="button"
++        disabled="disabled"
++      ></button>
++    </div>
++  </body>
++</html>
+diff --git a/browser/base/content/goodbearRussianPKIInterstitial.js b/browser/base/content/goodbearRussianPKIInterstitial.js
+new file mode 100644
+--- /dev/null
++++ b/browser/base/content/goodbearRussianPKIInterstitial.js
+@@ -0,0 +1,51 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++document.mozSubdialogReady = new Promise(resolve => {
++  document.addEventListener(
++    "DOMContentLoaded",
++    () => {
++      const model = window.arguments?.[0];
++      if (!model || typeof model.choose !== "function") {
++        window.close();
++        resolve();
++        return;
++      }
++      for (const [id, value] of [
++        ["title", model.title],
++        ["description", model.description],
++        ["body-description", model.bodyDescription],
++        ["open", model.openLabel],
++        ["back", model.backLabel],
++        ["certificate", model.certificateLabel],
++      ]) {
++        document.getElementById("goodbear-interstitial-" + id).textContent =
++          value;
++      }
++      document.title = model.title;
++      document.getElementById("goodbear-interstitial-body-description").hidden =
++        !model.bodyDescription;
++      for (const action of ["back", "certificate", "open"]) {
++        const button = document.getElementById(
++          "goodbear-interstitial-" + action
++        );
++        button.disabled = action === "certificate" && !model.canViewCertificate;
++        button.addEventListener("click", async event => {
++          if (!event.isTrusted) {
++            return;
++          }
++          button.disabled = true;
++          if (await model.choose(action)) {
++            window.close();
++          } else if (action === "certificate" && !window.closed) {
++            button.disabled = !model.canViewCertificate;
++          }
++        });
++      }
++      document.getElementById("goodbear-interstitial-back").focus();
++      resolve();
++    },
++    { once: true }
++  );
++});

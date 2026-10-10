@@ -1,0 +1,63 @@
+# Good Bear M11-04: do not authorize alternate Russian PKI trust in Private Browsing
+#
+# The managed container ID alone is insufficient to claim a separately proven
+# Private Browsing boundary.  Keep Private Browsing on the ordinary TLS path.
+
+--- a/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
++++ b/security/manager/ssl/GoodBearRussianPKIScopeAuthority.cpp
+@@ -76,6 +76,14 @@ bool GoodBearRussianPKIScopeAuthority::Allows(
+   if (!StaticPrefs::security_goodbear_russian_pki_enabled()) {
+     return false;
+   }
++
++  // Good Bear does not claim a separately verified Private Browsing storage
++  // boundary for the alternate trust flow.  A private tab must therefore
++  // retain the ordinary TLS result instead of inheriting the managed
++  // container's alternate trust merely because it has the same context ID.
++  if (aOriginAttributes.mPrivateBrowsingId != 0) {
++    return false;
++  }
+ 
+   auto scope = mScope.Lock();
+   return scope->mDedicatedUserContextId.isSome() &&
+--- a/security/manager/ssl/GoodBearRussianPKIContainerScope.h
++++ b/security/manager/ssl/GoodBearRussianPKIContainerScope.h
+@@ -28,6 +28,7 @@ struct GoodBearRussianPKIContainerScope final {
+     return mEnabled && mDedicatedUserContextId.isSome() &&
+            mDedicatedUserContextId.ref() !=
+                nsIScriptSecurityManager::DEFAULT_USER_CONTEXT_ID &&
++           aOriginAttributes.mPrivateBrowsingId == 0 &&
+            aOriginAttributes.mUserContextId == mDedicatedUserContextId.ref();
+   }
+ };
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIScopeAuthorityTest.cpp
+@@ -19,6 +19,12 @@ OriginAttributes AttributesFor(uint32_t aUserContextId) {
+   return attributes;
+ }
+ 
++OriginAttributes PrivateAttributesFor(uint32_t aUserContextId) {
++  OriginAttributes attributes = AttributesFor(aUserContextId);
++  attributes.mPrivateBrowsingId = 1;
++  return attributes;
++}
++
+ class AutoRestoreEnabledPref final {
+  public:
+   AutoRestoreEnabledPref()
+@@ -71,6 +77,15 @@ TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+   ASSERT_FALSE(authority.Allows(AttributesFor(18)));
+ }
+ 
++TEST_F(GoodBearRussianPKIScopeAuthorityTest,
++       PrivateBrowsingNeverReceivesAlternateRussianPKITrust) {
++  auto& authority = GetGoodBearRussianPKIScopeAuthority();
++
++  ASSERT_TRUE(authority.SetManagedContainer(17));
++  ASSERT_TRUE(authority.Allows(AttributesFor(17)));
++  ASSERT_FALSE(authority.Allows(PrivateAttributesFor(17)));
++}
++
+ TEST_F(GoodBearRussianPKIScopeAuthorityTest,
+        InvalidPublicationClearsPreviousAuthorization) {
+   auto& authority = GetGoodBearRussianPKIScopeAuthority();

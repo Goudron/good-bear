@@ -1,0 +1,57 @@
+# Good Bear M13: keep NSIS navigation controls visible on Modern UI pages.
+# The wizard artwork remains a separate pinned branding input.
+
+diff --git a/browser/installer/windows/nsis/installer.nsi b/browser/installer/windows/nsis/installer.nsi
+--- a/browser/installer/windows/nsis/installer.nsi
++++ b/browser/installer/windows/nsis/installer.nsi
+@@ -180,8 +180,24 @@
+ ; Windows theme or high-contrast mode hasn't changed it, so we need to
+ ; override that with GetSysColor(COLOR_WINDOW) (this string ends up getting
+ ; passed to SetCtlColors, which uses this custom syntax to mean that).
+ !define MUI_BGCOLOR SYSCLR:WINDOW
++
++; On current Windows builds the Modern UI page background can leave the
++; navigation buttons visually transparent, even though the underlying Button
++; controls are present and enabled.  Keep the controls native and give them the
++; system button colours used by the rest of the Windows shell.
++!macro EnsureNavigationButtonContrast
++  GetDlgItem $0 $HWNDPARENT 1 ; Next / Finish
++  System::Call 'uxtheme::SetWindowTheme(i $0, w "", w "")'
++  SetCtlColors $0 SYSCLR:BTNTEXT SYSCLR:BTNFACE
++  ShowWindow $0 ${SW_SHOW}
++
++  GetDlgItem $0 $HWNDPARENT 2 ; Cancel
++  System::Call 'uxtheme::SetWindowTheme(i $0, w "", w "")'
++  SetCtlColors $0 SYSCLR:BTNTEXT SYSCLR:BTNFACE
++  ShowWindow $0 ${SW_SHOW}
++!macroend
+-
++
+ ; Use a right to left header image when the language is right to left
+ !ifdef ${AB_CD}_rtl
+ !define MUI_HEADERIMAGE_BITMAP_RTL wizHeaderRTL.bmp
+@@ -1184,8 +1200,9 @@
+-
++
+   ; We need to overwrite the sidebar image so that we get it drawn with proper
+   ; scaling if the display is scaled at anything above 100%.
+   ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
++  !insertmacro EnsureNavigationButtonContrast
+ FunctionEnd
+-
++
+ Function leaveWelcome
+   ; Bring back the header bitmap for the next pages.
+@@ -1533,8 +1550,10 @@
+-
++
+   ; We need to overwrite the sidebar image so that we get it drawn with proper
+   ; scaling if the display is scaled at anything above 100%.
+   ${ChangeMUISidebarImage} "$PLUGINSDIR\modern-wizard.bmp"
++
++  !insertmacro EnsureNavigationButtonContrast
+-
++
+   ; Field 4 is the launch checkbox. Since it's a checkbox, we need to
+   ; clear the theme from it before we can set its background color.
+   ReadINIStr $0 "$PLUGINSDIR\ioSpecial.ini" "Field 4" "HWND"

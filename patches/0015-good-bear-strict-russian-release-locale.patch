@@ -1,0 +1,159 @@
+# Good Bear M10-03 follow-up: do not ship en-US locale resources in RU releases
+#
+# Firefox normally preserves en-US as a runtime l10n fallback. Good Bear's
+# declared release contract is stricter: its RU artifact ships only Russian
+# resources. The opt-out is unavailable unless the host wrapper explicitly
+# sets GOODBEAR_RUSSIAN_ONLY=1 for an installers-ru repack.
+
+diff --git a/toolkit/locales/gen_multilocale.py b/toolkit/locales/gen_multilocale.py
+index 1d151b6..5b78b13 100644
+--- a/toolkit/locales/gen_multilocale.py
++++ b/toolkit/locales/gen_multilocale.py
+@@ -2,12 +2,13 @@
+ # License, v. 2.0. If a copy of the MPL was not distributed with this
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
++import os
+ import sys
+ 
+ 
+ def main(output, *locales):
+     locales = list(locales)
+-    if "en-US" not in locales:
++    if "en-US" not in locales and os.environ.get("GOODBEAR_RUSSIAN_ONLY") != "1":
+         locales.append("en-US")
+ 
+     print(",".join(locales), file=output)
+diff --git a/toolkit/locales/l10n.mk b/toolkit/locales/l10n.mk
+index c207eb1..5f9c62b 100644
+--- a/toolkit/locales/l10n.mk
++++ b/toolkit/locales/l10n.mk
+@@ -91,6 +91,7 @@ MOZDEPTH ?= $(DEPTH)
+ repackage-zip:
+ 	$(PYTHON3) $(MOZILLA_DIR)/toolkit/mozapps/installer/l10n-repack.py '$(STAGEDIST)' $(ABS_DIST)/xpi-stage/locale-$(AB_CD) \
+ 		$(MOZ_PKG_EXTRAL10N) \
++		$(if $(filter 1,$(GOODBEAR_RUSSIAN_ONLY)),--without-source-l10n-fallback) \
+ 		$(if $(MOZ_PACKAGER_MINIFY),--minify) \
+ 		$(if $(filter omni,$(MOZ_PACKAGER_FORMAT)),$(if $(NON_OMNIJAR_FILES),--non-resource $(NON_OMNIJAR_FILES)))
+ 
+diff --git a/toolkit/mozapps/installer/packager.mk b/toolkit/mozapps/installer/packager.mk
+index 2322886..8c8e3ce 100644
+--- a/toolkit/mozapps/installer/packager.mk
++++ b/toolkit/mozapps/installer/packager.mk
+@@ -180,5 +180,9 @@
+ 
++ifeq ($(GOODBEAR_RUSSIAN_ONLY),1)
++ALL_LOCALES = $(LOCALES)
++else
+ ALL_LOCALES = $(if $(filter en-US,$(LOCALES)),$(LOCALES),$(LOCALES) en-US)
++endif
+ 
+ # Firefox uses @RESPATH@.
+ # Fennec uses @BINPATH@ and doesn't have the @RESPATH@ variable defined.
+diff --git a/toolkit/mozapps/installer/l10n-repack.py b/toolkit/mozapps/installer/l10n-repack.py
+index 063e8de..65804df 100644
+--- a/toolkit/mozapps/installer/l10n-repack.py
++++ b/toolkit/mozapps/installer/l10n-repack.py
+@@ -60,6 +60,11 @@ def main():
+         default=False,
+         help="Make some files more compact while packaging",
+     )
++    parser.add_argument(
++        "--without-source-l10n-fallback",
++        action="store_true",
++        help="do not retain the source locale under localization/",
++    )
+     args = parser.parse_args()
+ 
+     buildconfig.substs["USE_ELF_HACK"] = False
+@@ -71,6 +76,7 @@ def main():
+         non_resources=args.non_resource,
+         non_chrome=NON_CHROME,
+         minify=args.minify,
++        source_locale_fallback=not args.without_source_l10n_fallback,
+     )
+ 
+ 
+diff --git a/python/mozbuild/mozpack/packager/l10n.py b/python/mozbuild/mozpack/packager/l10n.py
+index caff3d9..3deddce 100644
+--- a/python/mozbuild/mozpack/packager/l10n.py
++++ b/python/mozbuild/mozpack/packager/l10n.py
+@@ -119,7 +119,14 @@ JarFormatter = L10NRepackFormatter(JarFormatter)
+ OmniJarFormatter = L10NRepackFormatter(OmniJarFormatter)
+ 
+ 
+-def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
++def _repack(
++    app_finder,
++    l10n_finder,
++    copier,
++    formatter,
++    non_chrome=set(),
++    source_locale_fallback=True,
++):
+     app = LocaleManifestFinder(app_finder)
+     l10n = LocaleManifestFinder(l10n_finder)
+ 
+@@ -187,6 +194,11 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
+     # package, and localized bits coming from the langpack.
+     packager = SimplePackager(formatter)
+     for p, f in app_finder:
++        if not source_locale_fallback and (
++            p.startswith(f"localization/{locale}/")
++            or f"/localization/{locale}/" in p
++        ):
++            continue
+         if is_manifest(p):
+             # Remove localized manifest entries.
+             for e in [e for e in f if e.localized]:
+@@ -243,10 +255,16 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
+ 
+     # Resources in `localization` directories are packaged from the source and then
+     # if localized versions are present in the l10n dir, we package them as well
+-    # keeping the source dir resources as a runtime fallback.
+-    for p, f in l10n_finder.find("**/localization"):
+-        if not formatter.contains(p):
+-            formatter.add(p, f)
++    # keeping the source dir resources as a runtime fallback. Downstreams may opt
++    # out when they must ship exactly one localized resource tree.
++    if source_locale_fallback:
++        for p, f in l10n_finder.find("**/localization"):
++            if not formatter.contains(p):
++                formatter.add(p, f)
++    else:
++        for p, f in l10n_finder.find(f"**/localization/{l10n_locale}"):
++            if not formatter.contains(p):
++                formatter.add(p, f)
+ 
+     # Transplant jar preloading information.
+     for path, log in app_finder.jarlogs.items():
+@@ -255,7 +273,13 @@ def _repack(app_finder, l10n_finder, copier, formatter, non_chrome=set()):
+ 
+ 
+ def repack(
+-    source, l10n, extra_l10n={}, non_resources=[], non_chrome=set(), minify=False
++    source,
++    l10n,
++    extra_l10n={},
++    non_resources=[],
++    non_chrome=set(),
++    minify=False,
++    source_locale_fallback=True,
+ ):
+     """
+     Replace localized data from the `source` directory with localized data
+@@ -298,6 +322,13 @@ def repack(
+         )
+ 
+     with errors.accumulate():
+-        _repack(app_finder, l10n_finder, copier, formatter, non_chrome)
++        _repack(
++            app_finder,
++            l10n_finder,
++            copier,
++            formatter,
++            non_chrome,
++            source_locale_fallback,
++        )
+     copier.copy(source, skip_if_older=False)
+     generate_precomplete(source)

@@ -1,0 +1,783 @@
+# M9-01/02/05: localize container identity and show native verified-chain details.
+
+diff --git a/browser/base/content/browser-siteIdentity.js b/browser/base/content/browser-siteIdentity.js
+--- a/browser/base/content/browser-siteIdentity.js
++++ b/browser/base/content/browser-siteIdentity.js
+@@ -236,6 +236,9 @@
+       },
+       "identity-popup-more-info": event => {
+         this.handleMoreInfoClick(event);
++      },
++      "goodbear-russian-pki-view-certificate": () => {
++        this._showGoodBearRussianPKICertificate();
+       },
+     };
+ 
+@@ -729,6 +732,7 @@
+     // the documentation of the individual properties for details.
+     this.setURI(uri);
+     this._secInfo = gBrowser.securityUI.secInfo;
++    this._updateGoodBearRussianPKIDetails();
+     this._isSecureContext = this._getIsSecureContext();
+     if (locationChanged) {
+       this._qwac = null;
+@@ -1087,7 +1091,123 @@
+    * based on the specified mode, and the details of the SSL cert, where
+    * applicable
+    */
++  _getGoodBearRussianPKIDetails(browser = gBrowser.selectedBrowser) {
++    try {
++      const { state, secInfo } = browser.securityUI;
++      const { userContextId, privateBrowsingId } =
++        browser.browsingContext.originAttributes;
++      if (
++        !(state & Ci.nsIWebProgressListener.STATE_IS_SECURE) ||
++        state & Ci.nsIWebProgressListener.STATE_CERT_USER_OVERRIDDEN ||
++        secInfo?.goodBearTrustDomain !==
++          Ci.nsITransportSecurityInfo.RussianPKI ||
++        secInfo.errorCode !== 0 ||
++        !Number.isInteger(userContextId) ||
++        userContextId <= 0 ||
++        privateBrowsingId !== 0 ||
++        !browser.currentURI.schemeIs("https")
++      ) {
++        return null;
++      }
++      const innerWindowId =
++        browser.browsingContext.currentWindowGlobal.innerWindowId;
++      if (!Number.isSafeInteger(innerWindowId) || innerWindowId <= 0) {
++        return null;
++      }
++      // Only the verifier's successful path names the actual trust anchor.
++      // Never substitute the server-supplied handshakeCertificates array.
++      const chain = secInfo.succeededCertChain;
++      if (chain.length < 2 || !chain[0].equals(secInfo.serverCert)) {
++        return null;
++      }
++      const leaf = chain[0].subjectName;
++      const issuer = chain[0].issuerName;
++      const root = chain[chain.length - 1].subjectName;
++      const fingerprint = chain[chain.length - 1].sha256Fingerprint;
++      if (
++        [leaf, issuer, root].some(value => typeof value !== "string") ||
++        !/^(?:[0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(fingerprint)
++      ) {
++        return null;
++      }
++      const certificates = chain.map(cert => cert.getBase64DERString());
++      if (certificates.some(value => typeof value !== "string" || !value)) {
++        return null;
++      }
++      return Object.freeze({
++        browser,
++        secInfo,
++        innerWindowId,
++        documentURI: browser.currentURI.spec,
++        hostname: browser.currentURI.displayHost,
++        leaf,
++        issuer,
++        root,
++        fingerprint,
++        certificateURL:
++          "about:certificate?" +
++          certificates
++            .map(cert => `cert=${encodeURIComponent(cert)}`)
++            .join("&"),
++      });
++    } catch {
++      // Incomplete or stale native security information must clear the panel.
++      return null;
++    }
++  },
++
++  _updateGoodBearRussianPKIDetails(browser = gBrowser.selectedBrowser) {
++    this._goodBearRussianPKIDetails = null;
++    const panel = document.getElementById("goodbear-russian-pki-details");
++    if (!panel) {
++      return;
++    }
++    const details = this._getGoodBearRussianPKIDetails(browser);
++    panel.hidden = !details;
++    document.getElementById("goodbear-russian-pki-view-certificate").disabled =
++      !details;
++    for (const name of ["hostname", "leaf", "issuer", "root", "fingerprint"]) {
++      const field = document.getElementById(`goodbear-russian-pki-${name}`);
++      field.removeAttribute("data-l10n-id");
++      field.textContent = details?.[name] || "";
++      if (details && !details[name]) {
++        document.l10n.setAttributes(
++          field,
++          "identity-goodbear-russian-pki-empty-name"
++        );
++      }
++    }
++    this._goodBearRussianPKIDetails = details;
++  },
++
++  _showGoodBearRussianPKICertificate() {
++    const shown = this._goodBearRussianPKIDetails;
++    const current = this._getGoodBearRussianPKIDetails();
++    if (
++      !shown ||
++      !current ||
++      current.browser !== shown.browser ||
++      current.secInfo !== shown.secInfo ||
++      current.innerWindowId !== shown.innerWindowId ||
++      current.documentURI !== shown.documentURI
++    ) {
++      this._updateGoodBearRussianPKIDetails();
++      return false;
++    }
++    const popup =
++      document.getElementById("trustpanel-popup") || this._identityPopup;
++    if (popup) {
++      PanelMultiView.hidePopup(popup);
++    }
++    openTrustedLinkIn(shown.certificateURL, "tab", {
++      userContextId:
++        shown.browser.browsingContext.originAttributes.userContextId,
++    });
++    return true;
++  },
++
+   refreshIdentityPopup() {
++    this._updateGoodBearRussianPKIDetails();
+     // Update cookies and site data information and show the
+     // "Clear Site Data" button if the site is storing local data, and
+     // if the page is not controlled by a WebExtension.
+diff --git a/browser/base/content/browser-trustPanel.js b/browser/base/content/browser-trustPanel.js
+--- a/browser/base/content/browser-trustPanel.js
++++ b/browser/base/content/browser-trustPanel.js
+@@ -333,6 +333,11 @@
+         .getElementById("trustpanel-siteinformation-morelink")
+         .addEventListener("click", () => this.#showSecurityPopup());
+       document
++        .getElementById("goodbear-russian-pki-view-certificate")
++        .addEventListener("command", () =>
++          gIdentityHandler._showGoodBearRussianPKICertificate()
++        );
++      document
+         .getElementById("trustpanel-clear-cookie-cancel")
+         .addEventListener("click", () => this.#hidePopup());
+       document
+@@ -1003,6 +1008,7 @@
+   }
+ 
+   #updateSecurityInformationSubview() {
++    gIdentityHandler._updateGoodBearRussianPKIDetails();
+     document.l10n.setAttributes(
+       document.getElementById("trustpanel-securityInformationView"),
+       "trustpanel-site-information-header",
+diff --git a/browser/components/controlcenter/content/securityInformation.inc.xhtml b/browser/components/controlcenter/content/securityInformation.inc.xhtml
+--- a/browser/components/controlcenter/content/securityInformation.inc.xhtml
++++ b/browser/components/controlcenter/content/securityInformation.inc.xhtml
+@@ -61,6 +61,32 @@
+                        class="identity-popup-warning-box identity-popup-warning-gray"
+                        when-goodbear-trust-domain="russian-pki"
+                        data-l10n-id="identity-goodbear-russian-pki-description"></description>
++
++          <vbox id="goodbear-russian-pki-details" hidden="true"
++                aria-labelledby="goodbear-russian-pki-details-heading">
++            <label id="goodbear-russian-pki-details-heading" class="header"
++                   data-l10n-id="identity-goodbear-russian-pki-details-heading"/>
++            <html:dl>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-status-label"/>
++              <html:dd data-l10n-id="identity-goodbear-russian-pki-status"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-hostname-label"/>
++              <html:dd id="goodbear-russian-pki-hostname"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-leaf-label"/>
++              <html:dd id="goodbear-russian-pki-leaf"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-issuer-label"/>
++              <html:dd id="goodbear-russian-pki-issuer"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-root-label"/>
++              <html:dd id="goodbear-russian-pki-root"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-root-fingerprint-label"/>
++              <html:dd id="goodbear-russian-pki-fingerprint"/>
++              <html:dt data-l10n-id="identity-goodbear-russian-pki-trust-source-label"/>
++              <html:dd data-l10n-id="identity-goodbear-russian-pki-trust-source"/>
++            </html:dl>
++            <description data-l10n-id="identity-goodbear-russian-pki-scoped-anchor-explanation"/>
++            <toolbarbutton id="goodbear-russian-pki-view-certificate"
++                           data-l10n-id="identity-goodbear-russian-pki-view-certificate"
++                           class="subviewbutton" disabled="true"/>
++          </vbox>
+ 
+           <!-- Remove Certificate Exception -->
+           <button id="identity-popup-remove-cert-exception"
+diff --git a/browser/components/GoodBearRussianPKIContainer.sys.mjs b/browser/components/GoodBearRussianPKIContainer.sys.mjs
+--- a/browser/components/GoodBearRussianPKIContainer.sys.mjs
++++ b/browser/components/GoodBearRussianPKIContainer.sys.mjs
+@@ -10,7 +10,6 @@
+ // enabled. Neither a name nor an icon authorizes trust.
+ export const GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE = "goodbear-russian-pki";
+ 
+-const CONTAINER_NAME = "Российская PKI";
+ const CONTAINER_ICON = "fence";
+ const CONTAINER_COLOR = "gray";
+ const CONTAINER_DELETED_TOPIC = "contextual-identity-deleted";
+@@ -1041,6 +1040,18 @@
+       return null;
+     }
+ 
++    let name;
++    try {
++      name = new Localization(["browser/browser.ftl"], true).formatValueSync(
++        "urlbar-goodbear-russian-pki-container-label"
++      );
++    } catch {
++      return null;
++    }
++    if (typeof name !== "string" || !name.trim()) {
++      return null;
++    }
++
+     const matches = this._identityService
+       .getPublicIdentities()
+       .filter(isUsableManagedIdentity);
+@@ -1054,7 +1065,7 @@
+ 
+     if (matches.length === 1) {
+       const identity = matches[0];
+-      this._repairPresentation(identity);
++      this._repairPresentation(identity, name);
+       const repairedIdentity = this._identityService.getPublicIdentityFromId(
+         identity.userContextId
+       );
+@@ -1062,7 +1073,7 @@
+     }
+ 
+     const identity = this._identityService.createManagedIdentity(
+-      CONTAINER_NAME,
++      name,
+       CONTAINER_ICON,
+       CONTAINER_COLOR,
+       GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
+@@ -1070,15 +1081,15 @@
+     return this._publishValidatedContainer(identity);
+   }
+ 
+-  _repairPresentation(identity) {
+-    if (
+-      identity.name !== CONTAINER_NAME ||
++  _repairPresentation(identity, name) {
++    if (
++      identity.name !== name ||
+       identity.icon !== CONTAINER_ICON ||
+       identity.color !== CONTAINER_COLOR
+     ) {
+       this._identityService.update(
+         identity.userContextId,
+-        CONTAINER_NAME,
++        name,
+         CONTAINER_ICON,
+         CONTAINER_COLOR
+       );
+diff --git a/browser/components/tabbrowser/Tabbrowser.sys.mjs b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+--- a/browser/components/tabbrowser/Tabbrowser.sys.mjs
++++ b/browser/components/tabbrowser/Tabbrowser.sys.mjs
+@@ -839,6 +839,12 @@
+     }
+ 
+     let hbox = this.document.getElementById("userContext-icons");
++    let containerLabel = this.document.getElementById("userContext-label");
++    // Container identity is independent of the current certificate trust domain.
++    hbox.removeAttribute("data-l10n-id");
++    hbox.removeAttribute("aria-label");
++    hbox.removeAttribute("tooltiptext");
++    containerLabel.removeAttribute("data-l10n-id");
+ 
+     let userContextId = this.selectedBrowser.getAttribute("usercontextid");
+     if (!userContextId) {
+@@ -865,12 +871,22 @@
+ 
+     replaceContainerClass("color", hbox, identity.color);
+ 
+-    let label =
+-      lazy.ContextualIdentityService.getUserContextLabel(userContextId);
+-    this.document.getElementById("userContext-label").textContent = label;
+-    // Also set the container label as the tooltip so we can only show the icon
+-    // in small windows.
+-    hbox.setAttribute("tooltiptext", label);
++    if (identity.managedPurpose === "goodbear-russian-pki") {
++      this.document.l10n.setAttributes(
++        containerLabel,
++        "urlbar-goodbear-russian-pki-container-label"
++      );
++      this.document.l10n.setAttributes(
++        hbox,
++        "urlbar-goodbear-russian-pki-container-marker"
++      );
++    } else {
++      let label =
++        lazy.ContextualIdentityService.getUserContextLabel(userContextId);
++      containerLabel.textContent = label;
++      // Keep the native label as the tooltip for ordinary containers.
++      hbox.setAttribute("tooltiptext", label);
++    }
+ 
+     let indicator = this.document.getElementById("userContext-indicator");
+     replaceContainerClass("icon", indicator, identity.icon);
+diff --git a/browser/locales/en-US/browser/browser.ftl b/browser/locales/en-US/browser/browser.ftl
+--- a/browser/locales/en-US/browser/browser.ftl
++++ b/browser/locales/en-US/browser/browser.ftl
+@@ -483,6 +483,23 @@
+     .tooltiptext = Certificate validated through Russian PKI
+ identity-goodbear-russian-pki-connection = Connection uses Russian PKI
+ identity-goodbear-russian-pki-description = Certificate validation uses the Russian PKI trust domain. This trust domain is permitted only in the isolated Good Bear container.
++identity-goodbear-russian-pki-details-heading = Russian PKI certificate details
++identity-goodbear-russian-pki-status-label = Connection status:
++identity-goodbear-russian-pki-status = Certificate verified through Russian PKI
++identity-goodbear-russian-pki-hostname-label = Hostname:
++identity-goodbear-russian-pki-leaf-label = Site certificate subject:
++identity-goodbear-russian-pki-issuer-label = Issuer:
++identity-goodbear-russian-pki-root-label = Verified trust anchor:
++identity-goodbear-russian-pki-root-fingerprint-label = SHA-256 fingerprint:
++identity-goodbear-russian-pki-trust-source-label = Trust source:
++identity-goodbear-russian-pki-trust-source = Good Bear Russian PKI
++identity-goodbear-russian-pki-scoped-anchor-explanation = This trust anchor is permitted only in the isolated Good Bear Russian PKI container. It is not added to the browser’s general certificate trust store.
++identity-goodbear-russian-pki-view-certificate = View certificate
++identity-goodbear-russian-pki-empty-name = Not specified
++urlbar-goodbear-russian-pki-container-label = Russian PKI container
++urlbar-goodbear-russian-pki-container-marker =
++    .tooltiptext = Russian PKI container. Its data is isolated from ordinary tabs.
++    .aria-label = Russian PKI container
+ identity-ev-owner-label2 = Certificate issued to
+ identity-verifier-label2 = Verified by
+ # "qualified" here refers to the qualified website authentication certificate presented by the site.
+diff --git a/browser/themes/shared/controlcenter/panel.css b/browser/themes/shared/controlcenter/panel.css
+--- a/browser/themes/shared/controlcenter/panel.css
++++ b/browser/themes/shared/controlcenter/panel.css
+@@ -104,6 +104,12 @@
+   display: none;
+ }
+ 
++/* Certificate names and fingerprints are untrusted text, not layout hints. */
++#goodbear-russian-pki-details dd {
++  margin-inline-start: 0;
++  overflow-wrap: anywhere;
++}
++
+ #identity-popup-content-eu-trust-mark {
+   list-style-image: light-dark(url("chrome://global/skin/icons/EU-trust-mark.svg"), url("chrome://global/skin/icons/EU-trust-mark-inverted.svg"));
+   align-self: start;
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_container.js
+@@ -1,9 +1,6 @@
+ /* Any copyright is dedicated to the Public Domain.
+  * http://creativecommons.org/publicdomain/zero/1.0/ */
+ 
+-const { ContextualIdentityService } = ChromeUtils.importESModule(
+-  "moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs"
+-);
+ const {
+   GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
+   GoodBearRussianPKIContainerManager,
+@@ -16,102 +13,121 @@
+   `goodbear-container-${Services.uuid.generateUUID()}.json`
+ );
+ 
+-add_task(async function test_managed_russian_pki_container_uses_native_identity() {
+-  await SpecialPowers.pushPrefEnv({
+-    set: [["privacy.userContext.enabled", true]],
+-  });
++add_task(
++  async function test_managed_russian_pki_container_uses_native_identity() {
++    await SpecialPowers.pushPrefEnv({
++      set: [["privacy.userContext.enabled", true]],
++    });
+ 
+-  const identityService =
+-    ContextualIdentityService.createNewInstanceForTesting(TEST_STORE_FILE_PATH);
+-  const manager = new GoodBearRussianPKIContainerManager(identityService);
+-  registerCleanupFunction(async () => {
+-    manager.stop();
+-    for (const identity of identityService.getPublicIdentities()) {
+-      if (
+-        identity.managedPurpose === GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
+-      ) {
+-        identityService.remove(identity.userContextId);
++    const identityService =
++      ContextualIdentityService.createNewInstanceForTesting(
++        TEST_STORE_FILE_PATH
++      );
++    const manager = new GoodBearRussianPKIContainerManager(identityService);
++    registerCleanupFunction(async () => {
++      manager.stop();
++      for (const identity of identityService.getPublicIdentities()) {
++        if (
++          identity.managedPurpose === GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
++        ) {
++          identityService.remove(identity.userContextId);
++        }
+       }
+-    }
+-    await IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true });
+-  });
++      await IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true });
++    });
+ 
+-  const container = manager.start();
+-  ok(container, "managed container is created");
+-  is(
+-    container.managedPurpose,
+-    GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
+-    "stable technical purpose is stored with the native identity"
+-  );
+-  ok(container.userContextId > 0, "a real non-default userContextId is used");
+-  is(container.name, "Российская PKI", "Russian-only visible name is set");
++    const container = manager.start();
++    ok(container, "managed container is created");
++    is(
++      container.managedPurpose,
++      GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE,
++      "stable technical purpose is stored with the native identity"
++    );
++    Assert.greater(
++      container.userContextId,
++      0,
++      "a real non-default userContextId is used"
++    );
++    const localizedName = new Localization(
++      ["browser/browser.ftl"],
++      true
++    ).formatValueSync("urlbar-goodbear-russian-pki-container-label");
++    is(
++      container.name,
++      localizedName,
++      "visible name comes from the active Fluent locale"
++    );
+ 
+-  const scopeAuthority = Cc["@mozilla.org/psm;1"].getService(
+-    Ci.nsINSSComponent
+-  );
+-  is(
+-    typeof scopeAuthority.setGoodBearRussianPKIContainerId,
+-    "function",
+-    "the native Russian PKI scope publication API is exposed to JavaScript"
+-  );
+-  ok(
+-    scopeAuthority.isGoodBearRussianPKIContainer(
++    const scopeAuthority = Cc["@mozilla.org/psm;1"].getService(
++      Ci.nsINSSComponent
++    );
++    is(
++      typeof scopeAuthority.setGoodBearRussianPKIContainerId,
++      "function",
++      "the native Russian PKI scope publication API is exposed to JavaScript"
++    );
++    ok(
++      scopeAuthority.isGoodBearRussianPKIContainer(
++        container.userContextId,
++        false
++      ),
++      "the native scope authority recognizes the published managed container"
++    );
++
++    const tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
++      userContextId: container.userContextId,
++    });
++    const browser = gBrowser.getBrowserForTab(tab);
++    is(
++      browser.contentPrincipal.userContextId,
+       container.userContextId,
+-      false
+-    ),
+-    "the native scope authority recognizes the published managed container"
+-  );
++      "tab origin attributes carry the managed container userContextId"
++    );
++    BrowserTestUtils.removeTab(tab);
+ 
+-  const tab = BrowserTestUtils.addTab(gBrowser, "about:blank", {
+-    userContextId: container.userContextId,
+-  });
+-  const browser = gBrowser.getBrowserForTab(tab);
+-  is(
+-    browser.contentPrincipal.userContextId,
+-    container.userContextId,
+-    "tab origin attributes carry the managed container userContextId"
+-  );
+-  BrowserTestUtils.removeTab(tab);
++    identityService.update(
++      container.userContextId,
++      "ordinary-looking name",
++      "cart",
++      "red"
++    );
++    const repaired = manager.ensureContainer();
++    is(repaired.userContextId, container.userContextId, "repair keeps the ID");
++    is(
++      repaired.name,
++      localizedName,
++      "managed localized presentation is repaired"
++    );
++    is(repaired.icon, "fence", "managed icon is repaired");
++    is(repaired.color, "gray", "neutral managed color is repaired");
+ 
+-  identityService.update(
+-    container.userContextId,
+-    "ordinary-looking name",
+-    "cart",
+-    "red"
+-  );
+-  const repaired = manager.ensureContainer();
+-  is(repaired.userContextId, container.userContextId, "repair keeps the ID");
+-  is(repaired.name, "Российская PKI", "managed presentation is repaired");
+-  is(repaired.icon, "fence", "managed icon is repaired");
+-  is(repaired.color, "gray", "neutral managed color is repaired");
+-
+-  ok(
+-    identityService.remove(container.userContextId),
+-    "simulated user-visible removal succeeds"
+-  );
+-  const replacement = manager.ensureContainer();
+-  ok(replacement, "the manager recreates a removed managed container");
+-  isnot(
+-    replacement.userContextId,
+-    container.userContextId,
+-    "replacement gets a new real userContextId"
+-  );
+-  ok(
+-    !identityService.getPublicIdentityFromId(container.userContextId),
+-    "stale ID no longer names a container"
+-  );
+-  is(
+-    manager.getScopeSnapshot().userContextId,
+-    replacement.userContextId,
+-    "the authoritative snapshot publishes only the replacement ID"
+-  );
+-});
++    ok(
++      identityService.remove(container.userContextId),
++      "simulated user-visible removal succeeds"
++    );
++    const replacement = manager.ensureContainer();
++    ok(replacement, "the manager recreates a removed managed container");
++    isnot(
++      replacement.userContextId,
++      container.userContextId,
++      "replacement gets a new real userContextId"
++    );
++    ok(
++      !identityService.getPublicIdentityFromId(container.userContextId),
++      "stale ID no longer names a container"
++    );
++    is(
++      manager.getScopeSnapshot().userContextId,
++      replacement.userContextId,
++      "the authoritative snapshot publishes only the replacement ID"
++    );
++  }
++);
+ 
+ add_task(async function test_ambiguous_managed_purpose_fails_closed() {
+-  const identityService =
+-    ContextualIdentityService.createNewInstanceForTesting(
+-      `${TEST_STORE_FILE_PATH}.ambiguous`
+-    );
++  const identityService = ContextualIdentityService.createNewInstanceForTesting(
++    `${TEST_STORE_FILE_PATH}.ambiguous`
++  );
+   const manager = new GoodBearRussianPKIContainerManager(identityService);
+   registerCleanupFunction(async () => {
+     manager.stop();
+diff --git a/browser/components/contextualidentity/test/browser/browser.toml b/browser/components/contextualidentity/test/browser/browser.toml
+--- a/browser/components/contextualidentity/test/browser/browser.toml
++++ b/browser/components/contextualidentity/test/browser/browser.toml
+@@ -29,6 +29,8 @@
+ ["browser_favicon.js"]
+ 
+ ["browser_goodbear_russian_pki_container.js"]
++
++["browser_goodbear_russian_pki_security_ui.js"]
+ 
+ ["browser_goodbear_user_agent.js"]
+ 
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_security_ui.js
+@@ -0,0 +1,182 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const { GoodBearRussianPKIContainer } = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++const TEST_URL =
++  "https://example.com/browser/browser/components/contextualidentity/test/browser/empty_file.html";
++
++add_task(
++  async function test_goodbear_marker_is_independent_of_standard_trust() {
++    await SpecialPowers.pushPrefEnv({
++      set: [["privacy.userContext.enabled", true]],
++    });
++    await GoodBearRussianPKIContainer.initialize();
++    const identity = GoodBearRussianPKIContainer.ensureContainer();
++    const { tab, browser } = await openTabInUserContext(
++      TEST_URL,
++      identity.userContextId
++    );
++    let ordinary;
++    try {
++      is(
++        browser.securityUI.secInfo.goodBearTrustDomain,
++        Ci.nsITransportSecurityInfo.Standard,
++        "Real STANDARD TLS remains STANDARD inside the managed container"
++      );
++      const marker = document.getElementById("userContext-icons");
++      const label = document.getElementById("userContext-label");
++      await document.l10n.translateElements([marker, label]);
++      ok(!marker.hidden, "The neutral container marker remains visible");
++      ok(
++        marker.classList.contains("identity-color-gray"),
++        "Neutral color is retained"
++      );
++      is(
++        label.getAttribute("data-l10n-id"),
++        "urlbar-goodbear-russian-pki-container-label",
++        "Visible container name is localized independently of TLS"
++      );
++      const [translation] = await document.l10n.formatMessages([
++        { id: "urlbar-goodbear-russian-pki-container-marker" },
++      ]);
++      for (const attribute of translation.attributes) {
++        is(
++          marker.getAttribute(attribute.name),
++          attribute.value,
++          "Isolation tooltip and accessible name use Fluent"
++        );
++      }
++      ok(
++        document.getElementById("trust-goodbear-russian-pki-label").hidden,
++        "A STANDARD chain does not acquire the Russian certificate badge"
++      );
++      ordinary = await BrowserTestUtils.openNewForegroundTab({
++        gBrowser,
++        url: TEST_URL,
++      });
++      ok(marker.hidden, "Ordinary context has no container marker");
++      ok(
++        !marker.hasAttribute("data-l10n-id"),
++        "Ordinary tab clears managed localization"
++      );
++      ok(
++        !marker.hasAttribute("aria-label"),
++        "Ordinary tab clears stale accessible name"
++      );
++    } finally {
++      if (ordinary) {
++        BrowserTestUtils.removeTab(ordinary);
++      }
++      BrowserTestUtils.removeTab(tab);
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++);
++
++add_task(async function test_goodbear_verified_details_and_stale_viewer() {
++  for (const trustPanel of [false, true]) {
++    await SpecialPowers.pushPrefEnv({
++      set: [["browser.urlbar.trustPanel.featureGate", trustPanel]],
++    });
++    const win = await BrowserTestUtils.openNewBrowserWindow();
++    try {
++      const tab = await BrowserTestUtils.openNewForegroundTab({
++        gBrowser: win.gBrowser,
++        url: TEST_URL,
++      });
++      if (trustPanel) {
++        await win.gTrustPanel.showPopup();
++      } else {
++        win.gIdentityHandler._initializePopup();
++        win.gIdentityHandler.refreshIdentityPopup();
++      }
++      const handler = win.gIdentityHandler;
++      const doc = win.document;
++      const browser = tab.linkedBrowser;
++      is(
++        handler._getGoodBearRussianPKIDetails(browser),
++        null,
++        "Real STANDARD security info cannot show Russian PKI details"
++      );
++      const nativeInfo = browser.securityUI.secInfo;
++      // This is a UI rendering fixture using a real verified certificate path.
++      // It is not evidence that native TLS classified this server as Russian PKI.
++      const info = {
++        goodBearTrustDomain: Ci.nsITransportSecurityInfo.RussianPKI,
++        errorCode: 0,
++        serverCert: nativeInfo.serverCert,
++        succeededCertChain: nativeInfo.succeededCertChain,
++      };
++      Object.defineProperty(info, "handshakeCertificates", {
++        get() {
++          throw new Error("Unverified chain must never be read");
++        },
++      });
++      const fixture = {
++        securityUI: {
++          state: Ci.nsIWebProgressListener.STATE_IS_SECURE,
++          secInfo: info,
++        },
++        currentURI: browser.currentURI,
++        browsingContext: {
++          originAttributes: { userContextId: 1, privateBrowsingId: 0 },
++          currentWindowGlobal: browser.browsingContext.currentWindowGlobal,
++        },
++      };
++      handler._updateGoodBearRussianPKIDetails(fixture);
++      ok(
++        !doc.getElementById("goodbear-russian-pki-details").hidden,
++        "Both native popup variants render complete verified-path details"
++      );
++      is(
++        doc.getElementById("goodbear-russian-pki-leaf").textContent,
++        info.serverCert.subjectName,
++        "Leaf subject is displayed as text"
++      );
++      const anchor = info.succeededCertChain.at(-1);
++      is(
++        doc.getElementById("goodbear-russian-pki-root").textContent,
++        anchor.subjectName,
++        "Root is the verifier-selected path endpoint"
++      );
++      is(
++        doc.getElementById("goodbear-russian-pki-fingerprint").textContent,
++        anchor.sha256Fingerprint,
++        "Fingerprint belongs to that exact root"
++      );
++      const button = doc.getElementById(
++        "goodbear-russian-pki-view-certificate"
++      );
++      ok(
++        !button.disabled,
++        "Certificate action is a keyboard-accessible native button"
++      );
++      const tabCount = win.gBrowser.tabs.length;
++      button.doCommand();
++      is(
++        win.gBrowser.tabs.length,
++        tabCount,
++        "A fixture from a different document cannot open a certificate tab"
++      );
++      ok(
++        doc.getElementById("goodbear-russian-pki-details").hidden,
++        "Stale certificate details are cleared"
++      );
++      info.succeededCertChain = [];
++      handler._updateGoodBearRussianPKIDetails(fixture);
++      ok(button.disabled, "Missing verified path disables the viewer");
++      is(
++        doc.getElementById("goodbear-russian-pki-root").textContent,
++        "",
++        "Missing verified path never leaves an old anchor visible"
++      );
++    } finally {
++      await BrowserTestUtils.closeWindow(win);
++      await SpecialPowers.popPrefEnv();
++    }
++  }
++});

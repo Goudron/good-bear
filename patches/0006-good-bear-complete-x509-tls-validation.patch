@@ -1,0 +1,686 @@
+# Good Bear M4-04: complete X.509/TLS validation for exact scoped anchors
+#
+# Reuses the unchanged upstream CertVerifier with per-check exact DER anchors;
+# preserves all normal TLS checks and never mutates NSS/profile/global trust.
+
+--- /dev/null
++++ b/security/manager/ssl/GoodBearRussianPKIX509Verifier.h
+@@ -0,0 +1,91 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearRussianPKIX509Verifier_h
++#define GoodBearRussianPKIX509Verifier_h
++
++#include "CertVerifier.h"
++#include "EnterpriseRoots.h"
++#include "mozilla/Maybe.h"
++#include "mozpkix/Result.h"
++#include "nsTArray.h"
++
++namespace mozilla::psm {
++
++// Runs the normal upstream TLS server verifier with a local trust store whose
++// only additional roots are exact DER certificates already admitted by the M3
++// pin, provenance, role, and self-signature gates. This verifier is created for
++// one alternate check, so the roots never enter the profile or global NSS
++// trust store. M4-05 owns any safe cache/lifetime optimization.
++inline mozilla::pkix::Result VerifyGoodBearRussianPKISSLServerCert(
++    const CertVerifier& aVerificationSettings,
++    const nsTArray<uint8_t>& aPeerCert, mozilla::pkix::Time aTime,
++    void* aPinArg, const nsACString& aHostname,
++    /*out*/ nsTArray<nsTArray<uint8_t>>& aBuiltChain,
++    const nsTArray<nsTArray<uint8_t>>& aVerifiedExactTrustAnchors,
++    CertVerifier::Flags aFlags = 0,
++    const Maybe<nsTArray<nsTArray<uint8_t>>>& aExtraCertificates = Nothing(),
++    const Maybe<nsTArray<uint8_t>>& aStapledOCSPResponse = Nothing(),
++    const Maybe<nsTArray<uint8_t>>& aSctsFromTLS = Nothing(),
++    const Maybe<DelegatedCredentialInfo>& aDCInfo = Nothing(),
++    const OriginAttributes& aOriginAttributes = OriginAttributes(),
++    EVStatus* aEVStatus = nullptr,
++    CertVerifier::OCSPStaplingStatus* aOCSPStaplingStatus = nullptr,
++    KeySizeStatus* aKeySizeStatus = nullptr,
++    PinningTelemetryInfo* aPinningTelemetryInfo = nullptr,
++    CertificateTransparencyInfo* aCTInfo = nullptr,
++    bool* aIsBuiltChainRootBuiltInRoot = nullptr,
++    bool* aMadeOCSPRequests = nullptr,
++    IssuerSources* aIssuerSources = nullptr) {
++  if (aVerifiedExactTrustAnchors.IsEmpty()) {
++    return mozilla::pkix::Result::FATAL_ERROR_INVALID_ARGS;
++  }
++
++  nsTArray<EnterpriseCert> exactTrustAnchors;
++  for (const auto& anchorDER : aVerifiedExactTrustAnchors) {
++    if (anchorDER.IsEmpty()) {
++      return mozilla::pkix::Result::FATAL_ERROR_INVALID_ARGS;
++    }
++    exactTrustAnchors.EmplaceBack(anchorDER.Elements(), anchorDER.Length(),
++                                  true);
++  }
++
++  CertVerifier alternateVerifier(
++      aVerificationSettings.mOCSPDownloadConfig,
++      aVerificationSettings.mOCSPStrict ? CertVerifier::ocspStrict
++                                        : CertVerifier::ocspRelaxed,
++      aVerificationSettings.mOCSPTimeoutSoft,
++      aVerificationSettings.mOCSPTimeoutHard,
++      aVerificationSettings.mCertShortLifetimeInDays,
++      CertVerifier::CertificateTransparencyConfig(
++          aVerificationSettings.mCTConfig.mMode,
++          nsCString(aVerificationSettings.mCTConfig.mSkipForHosts),
++          aVerificationSettings.mCTConfig.mSkipForSPKIHashes.Clone()),
++      aVerificationSettings.mCRLiteMode, exactTrustAnchors);
++
++  mozilla::pkix::Result result = alternateVerifier.VerifySSLServerCert(
++      aPeerCert, aTime, aPinArg, aHostname, aBuiltChain, aFlags,
++      aExtraCertificates, aStapledOCSPResponse, aSctsFromTLS, aDCInfo,
++      aOriginAttributes, aEVStatus, aOCSPStaplingStatus, aKeySizeStatus,
++      aPinningTelemetryInfo, aCTInfo, aIsBuiltChainRootBuiltInRoot,
++      aMadeOCSPRequests, aIssuerSources);
++  if (result != mozilla::pkix::Success) {
++    return result;
++  }
++  if (aBuiltChain.IsEmpty()) {
++    return mozilla::pkix::Result::FATAL_ERROR_LIBRARY_FAILURE;
++  }
++  for (const auto& anchorDER : aVerifiedExactTrustAnchors) {
++    if (aBuiltChain.LastElement() == anchorDER) {
++      return mozilla::pkix::Success;
++    }
++  }
++
++  aBuiltChain.Clear();
++  return mozilla::pkix::Result::ERROR_UNKNOWN_ISSUER;
++}
++
++}  // namespace mozilla::psm
++
++#endif  // GoodBearRussianPKIX509Verifier_h
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -2,8 +2,19 @@
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
++#include "CertVerifier.h"
+ #include "GoodBearRussianPKIContainerScope.h"
++#include "GoodBearRussianPKIX509Verifier.h"
++#include "ScopedNSSTypes.h"
++#include "cert.h"
+ #include "gtest/gtest.h"
++#include "nsDirectoryServiceDefs.h"
++#include "nsDirectoryServiceUtils.h"
++#include "nsIFile.h"
++#include "nsIInputStream.h"
++#include "nsNetUtil.h"
++#include "nsStreamUtils.h"
++#include "nss.h"
+ 
+ using namespace mozilla;
+ using namespace mozilla::pkix;
+@@ -20,6 +31,116 @@
+   return attributes;
+ }
+ 
++nsTArray<uint8_t> ReadCertificateFixture(const nsACString& aName) {
++  nsCOMPtr<nsIFile> file;
++  if (NS_FAILED(NS_GetSpecialDirectory(NS_OS_CURRENT_WORKING_DIR,
++                                       getter_AddRefs(file))) ||
++      NS_FAILED(file->AppendNative(aName))) {
++    return {};
++  }
++
++  nsCOMPtr<nsIInputStream> stream;
++  if (NS_FAILED(NS_NewLocalFileInputStream(getter_AddRefs(stream), file))) {
++    return {};
++  }
++  nsCString pem;
++  if (NS_FAILED(NS_ConsumeStream(stream, UINT32_MAX, pem))) {
++    return {};
++  }
++  UniqueCERTCertificate cert(
++      CERT_DecodeCertFromPackage(pem.BeginWriting(), pem.Length()));
++  if (!cert) {
++    return {};
++  }
++  return nsTArray<uint8_t>(cert->derCert.data, cert->derCert.len);
++}
++
++class GoodBearRussianPKIX509Test : public ::testing::Test {
++ protected:
++  static void SetUpTestSuite() {
++    ASSERT_EQ(SECSuccess, NSS_NoDB_Init(nullptr));
++  }
++
++  void SetUp() override {
++    nsTArray<EnterpriseCert> thirdPartyCerts;
++    mVerifier = MakeUnique<CertVerifier>(
++        CertVerifier::ocspOff, CertVerifier::ocspRelaxed,
++        TimeDuration::FromSeconds(1), TimeDuration::FromSeconds(1), 10,
++        CertVerifier::CertificateTransparencyConfig(
++            CertVerifier::CertificateTransparencyMode::Disabled, nsCString(),
++            nsTArray<CopyableTArray<uint8_t>>()),
++        CRLiteMode::Disabled, thirdPartyCerts);
++  }
++
++  PKIXResult VerifyRussianPKI(
++      const nsACString& aLeafName, const nsACString& aHostname,
++      std::initializer_list<const char*> aIntermediateNames,
++      Time aTime = TimeFromEpochInSeconds(1787832000)) {
++    nsTArray<uint8_t> leaf = ReadCertificateFixture(aLeafName);
++    nsTArray<uint8_t> root = ReadCertificateFixture("russian-root.pem"_ns);
++    if (leaf.IsEmpty() || root.IsEmpty()) {
++      return PKIXResult::FATAL_ERROR_LIBRARY_FAILURE;
++    }
++
++    nsTArray<nsTArray<uint8_t>> roots;
++    roots.AppendElement(std::move(root));
++    nsTArray<nsTArray<uint8_t>> intermediates;
++    for (const char* name : aIntermediateNames) {
++      nsTArray<uint8_t> intermediate =
++          ReadCertificateFixture(nsDependentCString(name));
++      if (intermediate.IsEmpty()) {
++        return PKIXResult::FATAL_ERROR_LIBRARY_FAILURE;
++      }
++      intermediates.AppendElement(std::move(intermediate));
++    }
++    Maybe<nsTArray<nsTArray<uint8_t>>> extraCertificates =
++        intermediates.IsEmpty()
++            ? Nothing()
++            : Some(nsTArray<nsTArray<uint8_t>>(std::move(intermediates)));
++    nsTArray<nsTArray<uint8_t>> builtChain;
++    return VerifyGoodBearRussianPKISSLServerCert(
++        *mVerifier, leaf, aTime, nullptr, aHostname, builtChain, roots,
++        CertVerifier::FLAG_LOCAL_ONLY, extraCertificates);
++  }
++
++  PKIXResult VerifyStandardRussianPKI() {
++    nsTArray<uint8_t> leaf = ReadCertificateFixture("russian-leaf.pem"_ns);
++    nsTArray<uint8_t> intermediate =
++        ReadCertificateFixture("russian-intermediate.pem"_ns);
++    if (leaf.IsEmpty() || intermediate.IsEmpty()) {
++      return PKIXResult::FATAL_ERROR_LIBRARY_FAILURE;
++    }
++
++    nsTArray<nsTArray<uint8_t>> intermediates;
++    intermediates.AppendElement(std::move(intermediate));
++    nsTArray<nsTArray<uint8_t>> builtChain;
++    return mVerifier->VerifySSLServerCert(
++        leaf, TimeFromEpochInSeconds(1787832000), nullptr,
++        "test-russian.example"_ns, builtChain, CertVerifier::FLAG_LOCAL_ONLY,
++        Some(nsTArray<nsTArray<uint8_t>>(std::move(intermediates))));
++  }
++
++  GoodBearContainerVerificationResult ClassifyRussianPKI(
++      const nsACString& aLeafName, const nsACString& aHostname,
++      std::initializer_list<const char*> aIntermediateNames,
++      PKIXResult& aAlternateResult,
++      Time aTime = TimeFromEpochInSeconds(1787832000)) {
++    GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++    return ClassifyGoodBearContainerServerCertificate(
++        PKIXResult::ERROR_UNKNOWN_ISSUER, ChannelAttributes(17),
++        [&](const OriginAttributes& aOriginAttributes) {
++          return scope.Allows(aOriginAttributes);
++        },
++        [&]() {
++          aAlternateResult =
++              VerifyRussianPKI(aLeafName, aHostname, aIntermediateNames, aTime);
++          return aAlternateResult;
++        });
++  }
++
++  UniquePtr<CertVerifier> mVerifier;
++};
++
+ }  // namespace
+ 
+ TEST(psm_GoodBearRussianPKIVerifier, DefaultResultIsFailClosed)
+@@ -190,3 +311,118 @@
+   ASSERT_EQ(PKIXResult::ERROR_BAD_CERT_DOMAIN, result.mResult);
+   ASSERT_FALSE(result.ChannelUsable());
+ }
++
++TEST_F(GoodBearRussianPKIX509Test,
++       CompleteUpstreamValidationAcceptsExactAnchorOnlyInScopedFlow) {
++  PKIXResult alternateResult = PKIXResult::FATAL_ERROR_INVALID_STATE;
++  auto result =
++      ClassifyRussianPKI("russian-leaf.pem"_ns, "test-russian.example"_ns,
++                         {"russian-intermediate.pem"}, alternateResult);
++
++  ASSERT_EQ(Success, alternateResult);
++  ASSERT_EQ(GoodBearTrustDomain::RussianPKI, result.mTrustDomain);
++  ASSERT_EQ(Success, result.mResult);
++  ASSERT_TRUE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test,
++       AlternateVerifierDoesNotMutateOrdinaryOrGlobalTrust) {
++  ASSERT_NE(Success, VerifyStandardRussianPKI());
++  ASSERT_EQ(Success,
++            VerifyRussianPKI("russian-leaf.pem"_ns, "test-russian.example"_ns,
++                             {"russian-intermediate.pem"}));
++  ASSERT_NE(Success, VerifyStandardRussianPKI());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, EmptyAnchorSetFailsClosed) {
++  nsTArray<uint8_t> leaf = ReadCertificateFixture("russian-leaf.pem"_ns);
++  nsTArray<nsTArray<uint8_t>> noAnchors;
++  nsTArray<nsTArray<uint8_t>> builtChain;
++  ASSERT_EQ(PKIXResult::FATAL_ERROR_INVALID_ARGS,
++            VerifyGoodBearRussianPKISSLServerCert(
++                *mVerifier, leaf, TimeFromEpochInSeconds(1787832000), nullptr,
++                "test-russian.example"_ns, builtChain, noAnchors,
++                CertVerifier::FLAG_LOCAL_ONLY));
++}
++
++TEST_F(GoodBearRussianPKIX509Test, SameNameFakeRootDoesNotMatchExactAnchor) {
++  PKIXResult alternateResult = Success;
++  auto result =
++      ClassifyRussianPKI("same-name-fake-leaf.pem"_ns,
++                         "test-russian.example"_ns, {}, alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, HostnameMismatchRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result = ClassifyRussianPKI(
++      "wrong-hostname-leaf.pem"_ns, "test-russian.example"_ns,
++      {"russian-intermediate.pem"}, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_BAD_CERT_DOMAIN, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, ExpiredChainRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result =
++      ClassifyRussianPKI("expired-leaf.pem"_ns, "expired-russian.example"_ns,
++                         {"russian-intermediate.pem"}, alternateResult,
++                         TimeFromEpochInSeconds(2524608000));
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, InvalidSignatureRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result = ClassifyRussianPKI(
++      "bad-signature-leaf.pem"_ns, "bad-signature-russian.example"_ns,
++      {"russian-intermediate.pem"}, alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, WrongEKURetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result = ClassifyRussianPKI(
++      "wrong-eku-leaf.pem"_ns, "wrong-eku-russian.example"_ns,
++      {"russian-intermediate.pem"}, alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, NonCAIntermediateRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result =
++      ClassifyRussianPKI("not-ca-leaf.pem"_ns, "not-ca-russian.example"_ns,
++                         {"not-ca-intermediate.pem"}, alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, PathLengthRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result = ClassifyRussianPKI(
++      "pathlen-leaf.pem"_ns, "pathlen-russian.example"_ns,
++      {"russian-intermediate.pem", "pathlen-intermediate.pem",
++       "pathlen-subintermediate.pem"},
++      alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
++
++TEST_F(GoodBearRussianPKIX509Test, MissingIntermediateRetainsOriginalTLSError) {
++  PKIXResult alternateResult = Success;
++  auto result = ClassifyRussianPKI(
++      "russian-leaf.pem"_ns, "test-russian.example"_ns, {}, alternateResult);
++  ASSERT_NE(Success, alternateResult);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mResult);
++  ASSERT_FALSE(result.ChannelUsable());
++}
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -16,5 +16,20 @@
+     "TLSIntoleranceTest.cpp",
+ ]
++TEST_HARNESS_FILES.gtest += [
++    "goodbear-russian-pki/bad-signature-leaf.pem",
++    "goodbear-russian-pki/expired-leaf.pem",
++    "goodbear-russian-pki/not-ca-intermediate.pem",
++    "goodbear-russian-pki/not-ca-leaf.pem",
++    "goodbear-russian-pki/pathlen-intermediate.pem",
++    "goodbear-russian-pki/pathlen-leaf.pem",
++    "goodbear-russian-pki/pathlen-subintermediate.pem",
++    "goodbear-russian-pki/russian-intermediate.pem",
++    "goodbear-russian-pki/russian-leaf.pem",
++    "goodbear-russian-pki/russian-root.pem",
++    "goodbear-russian-pki/same-name-fake-leaf.pem",
++    "goodbear-russian-pki/wrong-eku-leaf.pem",
++    "goodbear-russian-pki/wrong-hostname-leaf.pem",
++]
+ 
+ if CONFIG["NIGHTLY_BUILD"] and not CONFIG["MOZ_NO_SMART_CARDS"]:
+     SOURCES += [
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/bad-signature-leaf.pem
+@@ -0,0 +1,18 @@
++-----BEGIN CERTIFICATE-----
++MIIDhTCCAm2gAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bcwDQYJKoZIhvcNAQELBQAwLjEsMCoG
++A1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlhdGUwHhcNMjYwODI2MDIxOTU5
++WhcNMzYwODIzMDIxOTU5WjAoMSYwJAYDVQQDDB1iYWQtc2lnbmF0dXJlLXJ1c3NpYW4uZXhhbXBs
++ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAI3pghyKDJBXLKExiEaG7FlXtoOYIszs
++A3hica+nKq46MU+LYYYofvH3gNEIS/QxBF2SzpB2LDsg87XgAoM+iAY83rTG5ykJicya7Fsy74gd
++md7AGlyAVt68N2WG3eyyySYzBup9Fb3LKzYBdHRC53A5H+1j7P3dK1gRdCoarDXAqavr3YGtgeHt
++HRSqW6siO30KJF+90zkqy8vrjnBTbglYGD97lBUR9et+UfK6AOg5kYQ02/FU+zcIIKZYGpzekk36
++PiNeXSJNa9bGfTI0pwbSPsDFqtNtrJXM5gGo/eaMQ0UAJ3/wYs/ejmFrv/eaJWWLAYt9t/f2XvU6
++wBHLi5UCAwEAAaOBoDCBnTAMBgNVHRMBAf8EAjAAMA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAK
++BggrBgEFBQcDATAoBgNVHREEITAfgh1iYWQtc2lnbmF0dXJlLXJ1c3NpYW4uZXhhbXBsZTAdBgNV
++HQ4EFgQUQ/DcZ5FNF/sMNNyJ92h62suEExIwHwYDVR0jBBgwFoAUyXlevaXzXIV7VJCPu091xHqZ
++9TQwDQYJKoZIhvcNAQELBQADggEBAKKlynJfVxvRXB0TLb4U0MvTzug+QWuj4goSqbSw645scOkb
++7wKICa5yU3C1dVwIkXSqO8dPBfQZZHL9CVEkpXIUAgnUPmpWqUnAqpRzuwU+5fwraWlLzrmfp7GL
++58xeCfdIHnNqEBg57DbRXYwhjvgv0F2IB7Ia5Ny/F6pFG+cfXSROmFdZ8qUeShwVHoOLQQNBN7A7
++DuTO+TgcFeGh6i5mUaSIc6xJPn4ahr0SsdMao+Cx1jOdeK3RWXTno1PWQo/o86Z4Az/m4WAYQNzP
++CCIafFpTMUeM6fbhCIOs7quC9f5wjRM6j7nR2UDfItPl2caR9HZll0Ur1mXD1dkFjV4=
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/expired-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDeTCCAmGgAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bYwDQYJKoZIhvcNAQEL
++BQAwLjEsMCoGA1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlh
++dGUwHhcNMjYwODI2MDIxOTU4WhcNMzYwODIzMDIxOTU4WjAiMSAwHgYDVQQDDBdl
++eHBpcmVkLXJ1c3NpYW4uZXhhbXBsZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
++AQoCggEBAM19Z+uFbTGSpMZGtgpZnbBnd0Zg+HLCAP6g2wHdl+qCFkYncn7Tr/T/
++pe6T5OPpfBY0grs6b8jATJ+jNSYb4c2DqWfsao8vWhcYLHwrTuKPTaLlik5+6BRj
++Ph+BGyMxNgzVu+fk77pkrbnCmiapwCPi/OOQE6TRQMr7rkT/+2knad5RpBCcBw32
++A2QSoK3/SCX3ilHqkDaaSNuqmtji0C3Q2UaMuhEdkCxY9+WOZAvXpMMeswbdtJzi
++GlVreGhzKDwTIsOY4Rok6eMGoGvIUiMNpa1WTRK/Uim/WoZm/mLddvJQ77bHMUa8
++EKgdgc9tQpl+tgkXFdLSDyZ9KispsvcCAwEAAaOBmjCBlzAMBgNVHRMBAf8EAjAA
++MA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAiBgNVHREEGzAZ
++ghdleHBpcmVkLXJ1c3NpYW4uZXhhbXBsZTAdBgNVHQ4EFgQUGXPNjTmNjRWbjfRE
++UDemRzZb1WowHwYDVR0jBBgwFoAUyXlevaXzXIV7VJCPu091xHqZ9TQwDQYJKoZI
++hvcNAQELBQADggEBAClJHJVLc3qVLp9Nt+ECivJim3gd7MTo49WTvo9GfoSl0Ck0
++3lPrUGr7Q3punWrcYyEGSWpESlye9oiutfXTzRHJvzG33LC1BY4OfsrmnXEWETRH
++D4e6r7xSuwZfRIPWHPpJF2Ot5YFzzQ6TjKdkyaknYg1BwOa0GYiUCLPJqzMcg6XA
++L+qSR+PnmHmgdRyc5P0Gb7SS8O/LhDnr4gXu0vbrpw8nBIZ93aBDClQFFNcl/sWD
++Rf0MMHXvVw88GqGJ5EYR9McJQkF50NdMlNxbl3aIgHlKDqmsV7y8XCuWYXhaOhPy
++ml7FlFZM/SoBfrDgDDHkSYxrPHyER4+QX1GZb3k=
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/not-ca-intermediate.pem
+@@ -0,0 +1,20 @@
++-----BEGIN CERTIFICATE-----
++MIIDUzCCAjugAwIBAgIUDKgKgeVNmg5cFEmPsShhGXUqfqQwDQYJKoZIhvcNAQEL
++BQAwQzEkMCIGA1UEAwwbR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBSb290MRswGQYD
++VQQKDBJHb29kIEJlYXIgVGVzdCBQS0kwHhcNMjYwODI2MDIxOTU5WhcNMzYwODIz
++MDIxOTU5WjAiMSAwHgYDVQQDDBdHb29kIEJlYXIgVGVzdCBOb3QgQSBDQTCCASIw
++DQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKYb8R3GgdDA7E7JHytqMN1ALYKn
++szSEGa7JCAFObyp/YyQkcgicPcK0G3DwxCmomaltENdr++vBW6wGXqnlUbMwZeBV
++0ls/sOVyyLlJVBGd5t20ILPwpth+eS5jkqL6cMk4hWbsKW8PZ9rUFeSdiah/IfyE
++NNH49Wf1T45xHp8l5v4TdildBPBBnL69Jni9JYH1VToklg8agCA1ToWzOFKVF5pr
++8shtNW2K9lPasjg9YDc45xOWE0U40oCG0osI+Oqif6OfyXE9Tuiiyh/R6XmnbrhQ
++dWNxXn3ZzLtaHahRLEvPpPLo15AQ0Dr7mfg0VE8EW34hsE7aMAfeg2n51xMCAwEA
++AaNgMF4wDAYDVR0TAQH/BAIwADAOBgNVHQ8BAf8EBAMCBaAwHQYDVR0OBBYEFJ8H
++fZePCFzn2kzGsv/4uUMGCTcBMB8GA1UdIwQYMBaAFE+CgbKA0zMpV+kAiWBmTIWd
++XNNNMA0GCSqGSIb3DQEBCwUAA4IBAQCCVk/2z9Q8Y+0RQaz8ZGO74rsbnueeKMdI
++UnKlqa8soBGcbGXS2VHPfqnq7j55V6hVogpc33sgTPOMHzwB619coCnJemw1dEAe
++wGaaO5yJIS++Ko/qWBVEBePBhYLhPb0fKFB1IU1tAULSyf3YIkn1bkWqfk2ApeZs
+++H8JeBEUxCrCpi7frczfSfar0lOiu1cB35rcAaSAD/pCzI7mo92rNH+9UimYqIMk
++y8pFjYUAf4CDG/saECBvaMTRsR5Z+6rvHl62oPz2m79oM+4vR06izn85x14JoqxI
++FUxx5M0qJkHx15EYDpKvnHB69FAAg3AaL9jwaMwTrR0KMLRjIJmU
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/not-ca-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDazCCAlOgAwIBAgIUVr/FFkU1XG3sq3q+4nZjs08CUTswDQYJKoZIhvcNAQEL
++BQAwIjEgMB4GA1UEAwwXR29vZCBCZWFyIFRlc3QgTm90IEEgQ0EwHhcNMjYwODI2
++MDIxOTU5WhcNMzYwODIzMDIxOTU5WjAhMR8wHQYDVQQDDBZub3QtY2EtcnVzc2lh
++bi5leGFtcGxlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvgnd1UFQ
++do28xWBwFYrOiP62qCxddzsZGGKaw5U2nKsTi6/DPpNR/A7DNvvpgVAbFd4YV5IR
++cNsPXLt59oOSFGwUOgWR+q15jRgn8ouQSflNISpxTuJySkqVzf5NN79WbyTy3uuX
++CDXTS9nwYW96uzXzgjGG+uz2Qg8lyM8XJxdt8/zmvjaTQZzCISDkZ9OHMzlGSXJS
++yzEN//cgQgWQaGk28KPsp/HaEb/vSvQnItKGrnAqEt2HTCybXERdTeFWBWFrNvLp
++6VXvNbVV7MmRfaezUXS/Kjsaq0iMm0rGJ8PfL5xP3IJk7jDoHje9inNknSILRpDx
++wc7/WMpz07qWGQIDAQABo4GZMIGWMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQD
++AgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMCEGA1UdEQQaMBiCFm5vdC1jYS1ydXNz
++aWFuLmV4YW1wbGUwHQYDVR0OBBYEFH1xqEgHL648oOJQUlbB9vz5TG8fMB8GA1Ud
++IwQYMBaAFJ8HfZePCFzn2kzGsv/4uUMGCTcBMA0GCSqGSIb3DQEBCwUAA4IBAQB/
++ytI2MNNjf2mjKhfgetD35Fle0cZ1Be5ZE0XCyZcs4yU3Vuad+/HsozyygD2GYB5P
++H1chBMksuBvdeV6Mv/IJV3QM4IcxzNeZq7u+lni+Ps/JO03yd9Q8CaTD+eLqjiA+
++FHkgODq5b+HDZY4siyfb8R5B2jkniJKfjoDBYyUhnSIslWH51rSN/LTzNgCcE55+
++E8fLr+V2oqf2Y+XhNwWZo7jE1wMWF4gzVr+EWy5pj1sPnppfVf357YyRLFnw9lhC
++d9G9osN4vkos0okpxrW/zgb2OYMkfVqFxi/FtiuNIA8buZXaSdIq3tPbinF6sbYT
++xSTDymtrYOnMbrz4yH35
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/pathlen-intermediate.pem
+@@ -0,0 +1,20 @@
++-----BEGIN CERTIFICATE-----
++MIIDSDCCAjCgAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bkwDQYJKoZIhvcNAQEL
++BQAwLjEsMCoGA1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlh
++dGUwHhcNMjYwODI2MDIxOTU5WhcNMzYwODIzMDIxOTU5WjAmMSQwIgYDVQQDDBtH
++b29kIEJlYXIgVGVzdCBQYXRobGVuIFplcm8wggEiMA0GCSqGSIb3DQEBAQUAA4IB
++DwAwggEKAoIBAQCWvXDuDqdDhaFNAH4uia1ubDbFcKWbKDbRTBZ9hUuOXte6OBUU
++oOeyrMeg0VkVEWnGqvN9u61ukf1MoTnBMvt5vx89T6NRogaxIVLX/1liKaE0Qv3t
++5vbdsMcnglZl8pDWpQfFZxhNdq5FtUvTuSkrx3t3CME5H2GGlGpZ9xV6kj50DzZt
++EMypcARUbKaP9GzjsqRZpr8Z0dfGnRlgna2rZa2uq2RRQph5lUWHx3L8Dn0rTHdL
++bqC3GHgLpxlC5RuNLaqyjk7rTgtbdq/eJWAhln4Gf+LaHPMIZIQ+1hCWy395uwYu
++lyOjpZhLZiuIa/xdIrh5L+ffH3dlkcJKM7bxAgMBAAGjZjBkMBIGA1UdEwEB/wQI
++MAYBAf8CAQAwDgYDVR0PAQH/BAQDAgEGMB0GA1UdDgQWBBQmFs7i8bYJZlxcP5yD
++HQbJJ7XLrTAfBgNVHSMEGDAWgBTJeV69pfNchXtUkI+7T3XEepn1NDANBgkqhkiG
++9w0BAQsFAAOCAQEAilRpE79Z67NetbSbk17Bl6p06XYVJEMYAIeq8xDbxTgVrB0+
++82v1nGtQQ4tKDhihuyDmRS315O3KQ/CVdvo22uJ0P6uLzolAc8Y1j829kIk+NUY5
++Vur/oabiyIKTbjw0N5Hc/P0HwMPmsHLqggu4xhwkch0KTV2BnEbfSg1SR3EE2vN1
++0QSP9ASk2V5erOWZpN5nFnT1+yIfOWbcSWoRDAetaia1wmYN2fhkEVSQnN3MggHF
++RRJtc8bxQlrGEKjaA8MTUnL281Tm+tMohRRc7rDhJzQNNxQRa35gVDWIjEqfuXXH
++7QcHmx/UIOd28P9+zRKNSecMzValqjufJgjing==
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/pathlen-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDdTCCAl2gAwIBAgIUYP5hj31ivweLU5rB5CRZxunzXXowDQYJKoZIhvcNAQEL
++BQAwKjEoMCYGA1UEAwwfR29vZCBCZWFyIFRlc3QgUGF0aGxlbiBPdmVyZmxvdzAe
++Fw0yNjA4MjYwMjIwMDBaFw0zNjA4MjMwMjIwMDBaMCIxIDAeBgNVBAMMF3BhdGhs
++ZW4tcnVzc2lhbi5leGFtcGxlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKC
++AQEA7+Uh3r5VCarrDSJimdKYArRoSRRcG2delsOtub4nNbXfdWmag75Q8kIXJP+E
++AjPBclqnQNdXRcikp5hf6fpjp2jcob0r49uOp6ly+ny5Q8/aNglBiZVs/XbKW33n
++inTiL65R/qNwAI1hch3HUMZIx2ABy7o4wpBqb6XKU4+424KPxX1OyQtiYwdwrJ3w
++KOMKi/kbpJp32uNCLK6Gt5uo9kbrOayjXZS41EsPbCk2oa2AIST71AQ04fnYIjBR
++ZQbKjWuhjLcD5oV91RttHvLu4KWa16QkUXrZZQMBhmKbRiN+211rkWC7dD76btsG
++mAhkX1deY3a9sZrM9ZSYSsq3KwIDAQABo4GaMIGXMAwGA1UdEwEB/wQCMAAwDgYD
++VR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMBMCIGA1UdEQQbMBmCF3Bh
++dGhsZW4tcnVzc2lhbi5leGFtcGxlMB0GA1UdDgQWBBTF+MCkH9lbR39MNxV7nHXf
++Xiz9ETAfBgNVHSMEGDAWgBSr5vZ2NjWEgonnvj3K0EgvAIyMhDANBgkqhkiG9w0B
++AQsFAAOCAQEAB8PUsEqaGBvlnlz9wfyQsAhDxlHjCB13ozBcBKXskBrUfu7vximh
++dimbtXV15FDao+T0CBBGKbNEiSgosFSFlvjnIpl/PruQZ2Yd/RJbPRzAC1fOGuOl
++v+bwitRlHz1LnkaJMwuwZ4nhZjY7ylzweOLGY5c0khxJKAhkduNpodzeotke0J4k
++ZzqGWnuImKWBHoiM9o6GHTYLj7f8VBdugh5d9Ng78AN4kZnGIMt5yqrAT+05R149
++KhYkUFxqf48ftbzWiVvt9mO4R20UdO4sjISDP/LBKbV2HaQ2G/u8riZ65ilLdS2+
++e7Puc6pmIrQCG4sBgEjA3JCFTWH6dTCc9Q==
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/pathlen-subintermediate.pem
+@@ -0,0 +1,20 @@
++-----BEGIN CERTIFICATE-----
++MIIDRDCCAiygAwIBAgIUE+Yw9i6RNG4+4rk6ZkglK+EGvgEwDQYJKoZIhvcNAQEL
++BQAwJjEkMCIGA1UEAwwbR29vZCBCZWFyIFRlc3QgUGF0aGxlbiBaZXJvMB4XDTI2
++MDgyNjAyMjAwMFoXDTM2MDgyMzAyMjAwMFowKjEoMCYGA1UEAwwfR29vZCBCZWFy
++IFRlc3QgUGF0aGxlbiBPdmVyZmxvdzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
++AQoCggEBAMI5OGOqfMc/1Fbl1AL6vDuuK+i1LDSkDkR5olF2+sNHfVoHQWbqP6YF
++q+O0sL6bYwPvuZtDU7s5vfNxsMJydvOIYyp/lzooLj/9xVEV73AMhd1ME6rykAs1
++ekq9qTl1JdWtRpq9xGvqKS+jXeiP9s30E17sNHfS7AA+V1zc0exYthBy496/QMe+
++66brrBag5c0/FTgMPgxHZUdLlFXEnpIW4z0IF/5olwQiTHKx4D8/bX/mJItc45MK
++VOidIbdvaDONrN4dYZSxGWBD0jimogo/5H3huf6IgaYzMSUK1r7waiQj8EwmgcBk
++fuBJzi6dv6qgOUvRsgeT9T/ZxIzU9ysCAwEAAaNmMGQwEgYDVR0TAQH/BAgwBgEB
++/wIBADAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFKvm9nY2NYSCiee+PcrQSC8A
++jIyEMB8GA1UdIwQYMBaAFCYWzuLxtglmXFw/nIMdBskntcutMA0GCSqGSIb3DQEB
++CwUAA4IBAQBQRqWCGoO+pMtXk+BfOOQZLWQ5eja0hLmU+d7Em+HjhzxYWpHSlcdw
++RUyr4QXaEiVBItLPo2dwkVKHv/BmX989pYEguShC6VN1KjMZNa6Z8eDt0IqFIKaK
++30XPbNP5YyvszJprFfnZXa8OqXvF9vO2nvcJeh3x+JUMYqSWzHdfwLd2OWx158IO
++BeNVmJJJmpbN9U8TgspHtfIUfaP7VMsPhCz8Dbma+9WSW9lieNXikShFYR8wx6du
++n1/8M7mwpE9tGGvokkVuqmd4T/IoejEqW6ChKnfbTPSGQuitjhCjkQTFNz1gRrNZ
++hAZaalgwxT8ytdHtBa0/3Jpow3MZYUAK
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/russian-intermediate.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDZTCCAk2gAwIBAgIUDKgKgeVNmg5cFEmPsShhGXUqfqMwDQYJKoZIhvcNAQEL
++BQAwQzEkMCIGA1UEAwwbR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBSb290MRswGQYD
++VQQKDBJHb29kIEJlYXIgVGVzdCBQS0kwHhcNMjYwODI2MDIxOTU4WhcNMzYwODIz
++MDIxOTU4WjAuMSwwKgYDVQQDDCNHb29kIEJlYXIgVGVzdCBSdXNzaWFuIEludGVy
++bWVkaWF0ZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALtCmaAWawuc
++gT1kOAlNidaX7heLR5D0Xoqba7bxr68lLcSNbTozh4Pn2mU+oxmV/RJY7UCson7o
++/QakFJs9og4uwH3V7fe0LB+N3XlMpvqiuCqvcVg0qY8HYspbBmZ/JO627irf252f
++PdzCEC87VsAt3t/mpJTVoFwQlr8WFXsZNmHEKVrDrN8z/PCnenoJ/fhkgv2BOet/
++XzjrW0WNnUc3VviEcCW6nTFrTAbP0QC8EShN/sR1pslhTEMRY5AsXlTUjdp0xffT
++ZY+lR5TuYMPrNgtGDhetgs6nQacMPyKj2sV4Z8TMLfs2wyu1ltFTS7LDpwpMSfgm
++Dw+OtA6eK5sCAwEAAaNmMGQwEgYDVR0TAQH/BAgwBgEB/wIBATAOBgNVHQ8BAf8E
++BAMCAQYwHQYDVR0OBBYEFMl5Xr2l81yFe1SQj7tPdcR6mfU0MB8GA1UdIwQYMBaA
++FE+CgbKA0zMpV+kAiWBmTIWdXNNNMA0GCSqGSIb3DQEBCwUAA4IBAQBEiHQtfrQM
++/LqgHp5KsJ4+nN7KhV6rnpU20CZf+jO28rCy86FWfzS1PdJduiVeL8Lib07B6H1K
++safXGWKiun+/ogbbr2AigdXlhmWnCd257b2TYkJCIgk8wkAmMEIS802wZzGf24Si
++f2U+pt0SxAA3CYg+s8fsIzdIuBT1e2RffGbA+nVQQWtHIp5cy2OiN37iaK4uEZq5
++4zdM6RdLNlZCclo1UdE717TGj1hVFoapI5w4t7piutraZU3eaKcaHVnvGlevE+UM
++lsZ3oFuq0La2asPTgYLtIHKKb1faIVcbAOT9NjczgaKj7iLeB0+ksNaM+NaqCneX
++1qhRk3TuNtBv
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/russian-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDczCCAlugAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bQwDQYJKoZIhvcNAQEL
++BQAwLjEsMCoGA1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlh
++dGUwHhcNMjYwODI2MDIxOTU4WhcNMzYwODIzMDIxOTU4WjAfMR0wGwYDVQQDDBR0
++ZXN0LXJ1c3NpYW4uZXhhbXBsZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
++ggEBAM8R1mv7ObOQlfzTjMxfM0JDlO7Eoo6K9SK+rfUe7rs3Ly+H75Mjd1uVMLNE
++q7lyYi1Hg09USrUb3AkvDutBnEf4a8m7VunQK4o6cW3+51EOon/Z/cE15WRAal8+
++TC4Z2wKXZ3qd5kHjiO+Mcq66hTdYWUAyxwMTuhq37BefOhfK2FJlx9JTVdKOl9uw
++Trx6lmsWl6PkSUKznKCt7VEO+Ta0Qmi33rpGCL8FH5A1fZbREKyu3jjZIfd7NxRB
+++LKq1wpz7AJ828hpOgxIlw5e8OOS0lIrn3jg9g8Vrxd38AOtfMgD4MI2Kb5pvZiO
++FnOE8LFM1Nyhc9N1oAfkqHJ5hyECAwEAAaOBlzCBlDAMBgNVHRMBAf8EAjAAMA4G
++A1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcDATAfBgNVHREEGDAWghR0
++ZXN0LXJ1c3NpYW4uZXhhbXBsZTAdBgNVHQ4EFgQUATsr6AIK1v9Ud/Pw/NBsZ8/q
++1wgwHwYDVR0jBBgwFoAUyXlevaXzXIV7VJCPu091xHqZ9TQwDQYJKoZIhvcNAQEL
++BQADggEBADj3iEJiopCKbH1QmtFxB+AB+Bsy6ORCVpfo6XefFSkeh+0F3UapcyAd
++jTq/EWBTM8WkjOEwYqE0BjA1aU6jdsLaZJwFlzaca+But+i6vVTrb5tmvvrzIENC
++4kB5OD7XePRVjEK6U4F6+5asmbUdXRiA/pH5noL7kQFFt1dS3Ys706K8FdjoKYOV
++yUBT9TNiAlEV9jsZfI4wmb8D05oT8b9RU5QCSg9715SAx9MMTEGY0uNJbo9InVj9
++7ny5GuxuP2Msrtm1tdGi6KaiLjI6HdaoxcTXLS5omUwhlWTo+hwMyCgSGrUM6x9r
++Pa2Hz9MjYUGb/SKIgfp3pe5wJrAM4xs=
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/russian-root.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDejCCAmKgAwIBAgIUFH2WVllGs1X40uVDBmZcr6N+riswDQYJKoZIhvcNAQEL
++BQAwQzEkMCIGA1UEAwwbR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBSb290MRswGQYD
++VQQKDBJHb29kIEJlYXIgVGVzdCBQS0kwHhcNMjYwODI2MDIxOTU3WhcNMzYwODIz
++MDIxOTU3WjBDMSQwIgYDVQQDDBtHb29kIEJlYXIgVGVzdCBSdXNzaWFuIFJvb3Qx
++GzAZBgNVBAoMEkdvb2QgQmVhciBUZXN0IFBLSTCCASIwDQYJKoZIhvcNAQEBBQAD
++ggEPADCCAQoCggEBALtscxijhwexbhJ8R5jB2S4dMj7bOogCdve6KpZp8XwXnSgO
++ASk7wdfnAnvke4yhOJNh9vRF8JALOmb+neZcBuwvNZE6428+x2xGSeycmsk5lB+X
++EieKUcwNfV3JY5TuDqfMfGqURR6Ejc/EJ/WH8ZXUURmZBI44tQAmjduwnHvV6cvK
++JM3J75Ysg0nF6moJXWoHPSJ/hfb2EFMLoSF/Ft5uTRdyIBA/QoZZPEpsU++8+33b
++hbMtn4Sb36CtqaTln0n45aASB30tXwZ7X/nn++v/T0wzCLiucLsAM+6fhuQPrmBX
++cbK6RVzbrS57pbdj9O02P5WP7Vphx8yzfBbltF0CAwEAAaNmMGQwEgYDVR0TAQH/
++BAgwBgEB/wIBAjAOBgNVHQ8BAf8EBAMCAQYwHQYDVR0OBBYEFE+CgbKA0zMpV+kA
++iWBmTIWdXNNNMB8GA1UdIwQYMBaAFE+CgbKA0zMpV+kAiWBmTIWdXNNNMA0GCSqG
++SIb3DQEBCwUAA4IBAQBGm2oN+jsNNKVfX6/KBkSgBEAdRr1LBMOmtMbj3UxUgkA7
++UIF2GyanLi+YoPulTs/luyuqJj7Y7jdkGZOnIjYWlI1IAlbp/YLHpGtGrVce3Bx7
++ULPJ2AN2kDXqSUisy7EbsxRgrHBdBk5PpDQdIsBkoJ+xEsdDtNqrxk4YdKQXA3jO
++OkpYwu/KrCAU1pVEqrSZn9wfTjrJkglMWbdi6hkNapIF3JJTus+u4E5GvCQ3d9E+
++Eo4j97mFtZyk8hliZGSiRA5OKjfrHabBGtMSr0iKIezrArO54Oghg5bt0f/ihO2X
++1iX9X/J7ncvDaOhA6Wv1LrJb5CL0rMeY8En5MGgQ
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/same-name-fake-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDhzCCAm+gAwIBAgITENZcjwlQgZuD9r3mYTBHIrgaUjANBgkqhkiG9w0BAQsF
++ADBDMSQwIgYDVQQDDBtHb29kIEJlYXIgVGVzdCBSdXNzaWFuIFJvb3QxGzAZBgNV
++BAoMEkdvb2QgQmVhciBUZXN0IFBLSTAeFw0yNjA4MjYwMjE5NThaFw0zNjA4MjMw
++MjE5NThaMB8xHTAbBgNVBAMMFHRlc3QtcnVzc2lhbi5leGFtcGxlMIIBIjANBgkq
++hkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz8KldoPCMmP5tfxf6MCnOUmidSmeMxfD
++JsCXv/ez782ggjwstdO6CSqLGlJNOiCNFDAD5+I75PnDms9G5YmA68wfk/JYChGp
++0NZVizzAiiRwifiZJjBZqg+c8lPdU2uT8FSmiLVmQgg/CORJV1sPbtX6JSeplrkF
++YcntajEFwK+s/IH4ApYMb+il1Afws+vKi8S04wD984k0u/Y7h5gVv4c3Ho9kKD6X
++V4hIBCx6vTZ33hWrUrV2w/wz2j7g7TT03vG11zYAzTAR+lW/65R8/YYcEmVWoq8e
++hr2yJlKb4SYVX6B5XWhjIZZzxOoMIN69nLuox2mA3Mup5F7X0pq12wIDAQABo4GX
++MIGUMAwGA1UdEwEB/wQCMAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsG
++AQUFBwMBMB8GA1UdEQQYMBaCFHRlc3QtcnVzc2lhbi5leGFtcGxlMB0GA1UdDgQW
++BBSE1YQHu5J9TWRS7V60GIl4/KbCfDAfBgNVHSMEGDAWgBQilQ2pQteQJFGSS207
++jbUiryNfWTANBgkqhkiG9w0BAQsFAAOCAQEAWMioQ5491RUJfOXCRPZZ8xUvRAzR
++gw6sEZWneK+7mgK0oBMCs8x7aM2tiLS1KRFvJmk6as+uVPutKKEQoAfchxJDtCia
++EaT8J2X2Sk6xWWJ9UYNPFB9CkExbuBtHSYgqlQWJv12fVfXMZlgiRAthuZ9wtEQY
++GVXNzUkwWEh7j+0OowP8ys/qfbzxT81N8LO5BXORPXmudGqm+D+c86O7i6U+cyHf
++PXNqxUzVCNVmu/guO1cPIZIogz9rXLwdDxnv6kCsPebci1oDFtN0ieUhQSDzcjnB
++ROlLL4/vAplog/Wfup2yTql8K4voQXhR5F/ZTdaAm57Cq8ydRJv+Iujt1w==
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/wrong-eku-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDfTCCAmWgAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bgwDQYJKoZIhvcNAQEL
++BQAwLjEsMCoGA1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlh
++dGUwHhcNMjYwODI2MDIxOTU5WhcNMzYwODIzMDIxOTU5WjAkMSIwIAYDVQQDDBl3
++cm9uZy1la3UtcnVzc2lhbi5leGFtcGxlMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A
++MIIBCgKCAQEAnAZ46QkusNJ/a9pE283/D/tMScuncawkf3dKGu2N7aVInEonYFEW
++cCwk91KZPoGiEOAOm2dIhVo/4Cw0Lcnhx1i6zPhKZM/5kUOiIsf5b1+WpKFoXjsb
++kSybVWu9LFeQ7cxmulc1YyvoXe9BbE0UVtBDGpx76jI6/K+AAszCTdHHk8hIxhIu
++KGSts/CqqVobiiWwc/VedvHA6tIH7+SaLa5NbicRXfBoj5TnFhS46eW2DytAkg0x
++DeRJLgviR/tZQ9lkY2DTqAib92HkRBqkaPpD5YLxNUxJvGiKnqRJf7k+shvLHnbD
++XlOFubl8PkL1dhHco0RDfUTalcYRc1LcQwIDAQABo4GcMIGZMAwGA1UdEwEB/wQC
++MAAwDgYDVR0PAQH/BAQDAgWgMBMGA1UdJQQMMAoGCCsGAQUFBwMCMCQGA1UdEQQd
++MBuCGXdyb25nLWVrdS1ydXNzaWFuLmV4YW1wbGUwHQYDVR0OBBYEFMAOkIO3nXtv
++CSCvNiJCiTgMt1lMMB8GA1UdIwQYMBaAFMl5Xr2l81yFe1SQj7tPdcR6mfU0MA0G
++CSqGSIb3DQEBCwUAA4IBAQBWCs7DHsy+KlFA8KTtaSd6WgZNGbjBkoTd+MmA3VdT
++0qQOYsAID3ozDcndyxSc8NDG6kZ5HjJeNMxaNv4trDpnn7ejaKI/JsS21hIgHyq4
++NOnbJ/4uE/KoyGH8aDoeRgB8ApKDD6yi/Slcp3PWajTQ4Jlgn4vHCpaBec4z2/D4
++KPXfTLenVz8KqJbk6ImlkbXTZKcrGFBRr+Yo9XRIQnFHoqFZPBHiTti+HjVXSROq
++a2xOWGTm6pvLBFbxTwzp4RPrUNoWl243kSV2fnybwB6ThCc+fqkHsZagW9ob2BEI
++xfqwL9ynq9IgQ7CZHj1AOrgHpTTWO734C0LJ5OYBeETU
++-----END CERTIFICATE-----
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/goodbear-russian-pki/wrong-hostname-leaf.pem
+@@ -0,0 +1,21 @@
++-----BEGIN CERTIFICATE-----
++MIIDbzCCAlegAwIBAgIUe18XIwjmgf1mB7bl5BYQfS1a2bUwDQYJKoZIhvcNAQEL
++BQAwLjEsMCoGA1UEAwwjR29vZCBCZWFyIFRlc3QgUnVzc2lhbiBJbnRlcm1lZGlh
++dGUwHhcNMjYwODI2MDIxOTU4WhcNMzYwODIzMDIxOTU4WjAdMRswGQYDVQQDDBJ3
++cm9uZy1ob3N0LmV4YW1wbGUwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIB
++AQDaACo2BURu3sGjhtrP1dtrf/+mC6+kcEOSbdHulpB4g8uCM/jcf5wJbDm/3G6P
++rUI0+FaGbXNcG8QNqple52ujgt0jBTVU2N8gQy3k6Vdbvmn+DJ3OEAlSRNK/RQM8
++45MxAbBmR5TFw5xo4wmLA0M9MU0fG42NdWDgl9Xh7974RLv3EQPSIPNMz/cvE590
++scxFGunmp5xIylhnNSVUmBw+7OUNbfJBUT7XEek+/DcxHiJX/lzyI2n9AIy2xxAl
++Nu6yJMjbpOZ743Y4+j6yxC4SRnbXf8N1KIjsRb5QCe015kgsxDCYtW8wVEpTS+xk
++5L9lHz3drdsHOxmM0VjzZ5htAgMBAAGjgZUwgZIwDAYDVR0TAQH/BAIwADAOBgNV
++HQ8BAf8EBAMCBaAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYDVR0RBBYwFIISd3Jv
++bmctaG9zdC5leGFtcGxlMB0GA1UdDgQWBBSrRYrzifoUIgVQzahdI14pxi0wlDAf
++BgNVHSMEGDAWgBTJeV69pfNchXtUkI+7T3XEepn1NDANBgkqhkiG9w0BAQsFAAOC
++AQEAHmQFpbIw/IphkeF22Ccq1yWQLwM0bs/8Z17Kgc1/JDoExuPchd5YGvz98qVH
++U9NsLPAu/pxR5LLN6Yg5usdbHjEy47a5KKpo8uwylvCawfKDn1g1ej+G21oD/MMs
++9wrXD+/ciG1/mt7sYZM3PNexYxyKC8M3qjMq65kAXz0xEDtxLD9tXk+d5pQ4XeRr
++ZlxcRDNG6xlgDpY4lav5axAjYz/p4D3QFaIUT9m49Qx7e28F0/TbxqZpiY25tKnm
++jwcOhdUak5mgzAqKWEX7Qgp7CvbDcQYAas8ydYH0yQf4Jb03GpEnTXwjP9UqiVR9
++WYcj9o1XPWETiRFJw5/laL0PcA==
++-----END CERTIFICATE-----

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "selected_at": "2026-09-16",
+  "product": "Firefox Desktop / Gecko",
+  "channel": "release",
+  "version": "156.0",
+  "vcs": {
+    "repository": "https://github.com/mozilla-firefox/firefox.git",
+    "release_tag": "FIREFOX_156_0_RELEASE",
+    "revision": "3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1",
+    "version_file_url": "https://raw.githubusercontent.com/mozilla-firefox/firefox/3bf8f468258c2181f455e23d4ffcd6acb8f4cdb1/browser/config/version.txt"
+  },
+  "source": {
+    "archive_path": "source/firefox-156.0.source.tar.xz",
+    "archive_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz",
+    "detached_signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/source/firefox-156.0.source.tar.xz.asc",
+    "sha256": "1f2768c043510009abaa3f078123664e106d3ab9dfce75d1819ad96b2145aab9",
+    "sha512": "0463304a0898670d248114f66f7c235166ae2397c3989a7c878c96f0c589fbbba1f1c87432daa22633b9fadd94394adf1dc37f0e67d22b066c75efe5eead75ce"
+  },
+  "signing": {
+    "key_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/KEY",
+    "key_sha256": "b0c538f0f145fa902ac55455d92d4e9a627c2c6865d79c81b280bcb55d75b798",
+    "primary_key_fingerprint": "14F26682D0916CDD81E37B6D61B7B526D98F0353",
+    "signing_subkey_fingerprint": "827E658608679618CD349F93678E455D76767AA3",
+    "signed_summaries": {
+      "sha256": {
+        "url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA256SUMS",
+        "content_sha256": "3dd4a7de5e85a8182f874f428e32d3365233885faf0f8fa4d2a9c7607a74e931",
+        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA256SUMS.asc",
+        "signature_sha256": "c75245a3718ff8f3668bd122975488ad2943ae2c2c05d698d29db636b17ab710"
+      },
+      "sha512": {
+        "url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA512SUMS",
+        "content_sha256": "58b34fa7d7c7135db40439ee2b04ffe9db9bba3a56d258f90dd92bfef2e3f54e",
+        "signature_url": "https://archive.mozilla.org/pub/firefox/releases/156.0/SHA512SUMS.asc",
+        "signature_sha256": "a985005d5a12b981d7f33f982135a2c813b86e7b416070615202a3b95a899b06"
+      }
+    }
+  },
+  "release_observation": {
+    "product_details_url": "https://product-details.mozilla.org/1.0/firefox_versions.json",
+    "latest_version_field": "LATEST_FIREFOX_VERSION",
+    "latest_version_at_selection": "156.0",
+    "last_release_date_field": "LAST_RELEASE_DATE",
+    "last_release_date_at_selection": "2026-09-15"
+  },
+  "security_support": {
+    "basis": "mozilla_current_rapid_release",
+    "support_state_at_selection": "current",
+    "authoritative_latest_version_url": "https://product-details.mozilla.org/1.0/firefox_versions.json",
+    "security_advisories_url": "https://www.mozilla.org/en-US/security/known-vulnerabilities/firefox/",
+    "release_management_url": "https://wiki.mozilla.org/Release_Management",
+    "rebase_boundary": "new_latest_firefox_version_or_security_dot_release",
+    "action_at_boundary": "stop_release_and_select_a_new_verified_baseline"
+  }
+}

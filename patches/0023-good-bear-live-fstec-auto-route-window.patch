@@ -1,0 +1,116 @@
+diff --git a/browser/components/BrowserGlue.sys.mjs b/browser/components/BrowserGlue.sys.mjs
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -132,6 +132,19 @@ function exactHTTPSOriginKey(uri) {
+   return `https\u0000${uri.asciiHost.toLowerCase()}\u0000${port}`;
+ }
+ 
++// <browser> is an XUL element, not a window-global object.  In live desktop
++// windows it has a top Chrome BrowsingContext but no ownerGlobal property.
++// Keep the lookup in one fail-closed helper so certificate-error recovery,
++// assigned-origin blocking, and the deferred callback use the same real
++// browser window without widening any trust decision.
++function getBrowserWindow(browser) {
++  const window =
++    browser?.browsingContext?.topChromeWindow ??
++    browser?.ownerGlobal ??
++    browser?.ownerDocument?.defaultView;
++  return window && !window.closed ? window : null;
++}
++
+ export const GoodBearRussianPKINavigationPolicy = {
+   _started: false,
+   _scheduledTopLevelNavigations: new Set(),
+@@ -332,7 +345,7 @@ export const GoodBearRussianPKINavigationPolicy = {
+       browsingContext?.top === browsingContext
+         ? browsingContext.embedderElement
+         : null;
+-    if (!browser?.ownerGlobal || browser.ownerGlobal.closed) {
++    if (!getBrowserWindow(browser)) {
+       console.warn(
+         "Good Bear: ресурс Российской PKI заблокирован вне выделенного контейнера."
+       );
+@@ -375,8 +388,8 @@ export const GoodBearRussianPKINavigationPolicy = {
+     this._scheduledTopLevelNavigations.add(browsingContextId);
+     Services.tm.dispatchToMainThread(() => {
+       this._scheduledTopLevelNavigations.delete(browsingContextId);
+-      const window = browser.ownerGlobal;
+-      if (!window || window.closed) {
++      const window = getBrowserWindow(browser);
++      if (!window) {
+         return;
+       }
+       this._handleAddressOnlyChoice(
+@@ -535,7 +548,7 @@ export const GoodBearRussianPKINavigationPolicy = {
+   // The actor gives us an address and method, never a channel, certificates,
+   // referrer, opener, form data, cookies, or session state.
+   openAddressOnlyAfterRussianPKICertificateError(browser, url, method) {
+-    if (!browser?.ownerGlobal || browser.ownerGlobal.closed) {
++    if (!getBrowserWindow(browser)) {
+       return false;
+     }
+     const originAttributes = browser.browsingContext?.originAttributes;
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -206,12 +206,15 @@ add_task(
+       policy._scheduleAddressOnlyOpen = originalSchedule;
+     });
+ 
+-    const browser = {
+-      ownerGlobal: window,
+-      browsingContext: {
+-        originAttributes: { privateBrowsingId: 0, userContextId: 0 },
+-      },
+-    };
++    // Use the production XUL <browser>, which deliberately has no
++    // ownerGlobal property.  A former mock added that property and masked the
++    // live first-visit routing regression.
++    const browser = gBrowser.selectedBrowser;
++    is(
++      browser.ownerGlobal,
++      undefined,
++      "the live browser window is reached through its BrowsingContext"
++    );
+     ok(
+       policy.openAddressOnlyAfterRussianPKICertificateError(
+         browser,
+@@ -254,3 +257,37 @@ add_task(
+     );
+   }
+ );
++
++add_task(async function test_assigned_origin_uses_the_real_browser_window() {
++  const policy = GoodBearRussianPKINavigationPolicy;
++  const managedContainer = ChromeUtils.importESModule(
++    "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++  ).GoodBearRussianPKIContainer;
++  const browser = gBrowser.selectedBrowser;
++  const origin = "https://assigned-window.example.test/";
++  await managedContainer.assignmentStore.load();
++  ok(
++    await managedContainer.assignmentStore.assign(origin),
++    "the exact test origin is assigned"
++  );
++  registerCleanupFunction(() => managedContainer.assignmentStore.clear(origin));
++
++  const originalSchedule = policy._scheduleAddressOnlyOpen;
++  const calls = [];
++  policy._scheduleAddressOnlyOpen = (...args) => calls.push(args);
++  registerCleanupFunction(() => {
++    policy._scheduleAddressOnlyOpen = originalSchedule;
++  });
++
++  is(
++    policy.shouldLoad(Services.io.newURI(origin), {
++      originAttributes: { privateBrowsingId: 0, userContextId: 0 },
++      browsingContextID: browser.browsingContext.id,
++      externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++    }),
++    Ci.nsIContentPolicy.REJECT_POLICY,
++    "an ordinary request to an assigned origin is stopped before loading"
++  );
++  is(calls.length, 1, "the real browser is available for isolated recovery");
++  is(calls[0][0], browser, "recovery uses the original top-level browser");
++});
+

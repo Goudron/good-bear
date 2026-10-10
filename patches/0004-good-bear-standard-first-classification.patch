@@ -1,0 +1,181 @@
+# Good Bear M4-02: standard-first ordinary classification
+#
+# Constrains secondary Russian PKI verification to unknown-issuer failures and
+# makes alternate success a non-usable RussianPKIRequired classification.
+
+--- a/security/manager/ssl/GoodBearRussianPKIClassification.h
++++ b/security/manager/ssl/GoodBearRussianPKIClassification.h
+@@ -0,0 +1,64 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#ifndef GoodBearRussianPKIClassification_h
++#define GoodBearRussianPKIClassification_h
++
++#include <stdint.h>
++
++#include "mozilla/FunctionRef.h"
++#include "mozpkix/Result.h"
++#include "nsITransportSecurityInfo.h"
++
++namespace mozilla::psm {
++
++enum class GoodBearOrdinaryTrustClassification : uint8_t {
++  Standard,
++  RussianPKIRequired,
++  Invalid,
++};
++
++struct GoodBearOrdinaryVerificationResult {
++  GoodBearOrdinaryTrustClassification mClassification;
++  mozilla::pkix::Result mOriginalResult;
++
++  bool OrdinaryChannelUsable() const {
++    return mClassification == GoodBearOrdinaryTrustClassification::Standard;
++  }
++
++  nsITransportSecurityInfo::GoodBearTrustDomain TransportTrustDomain() const {
++    return OrdinaryChannelUsable()
++               ? nsITransportSecurityInfo::GoodBearTrustDomain::Standard
++               : nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++  }
++};
++
++inline bool IsGoodBearRussianPKISecondaryVerificationEligible(
++    mozilla::pkix::Result aStandardResult) {
++  return aStandardResult == mozilla::pkix::Result::ERROR_UNKNOWN_ISSUER;
++}
++
++inline GoodBearOrdinaryVerificationResult
++ClassifyGoodBearOrdinaryServerCertificate(
++    mozilla::pkix::Result aStandardResult,
++    mozilla::FunctionRef<mozilla::pkix::Result()> aVerifyRussianPKI) {
++  if (aStandardResult == mozilla::pkix::Success) {
++    return {GoodBearOrdinaryTrustClassification::Standard, aStandardResult};
++  }
++
++  if (!IsGoodBearRussianPKISecondaryVerificationEligible(aStandardResult)) {
++    return {GoodBearOrdinaryTrustClassification::Invalid, aStandardResult};
++  }
++
++  if (aVerifyRussianPKI() == mozilla::pkix::Success) {
++    return {GoodBearOrdinaryTrustClassification::RussianPKIRequired,
++            aStandardResult};
++  }
++
++  return {GoodBearOrdinaryTrustClassification::Invalid, aStandardResult};
++}
++
++}  // namespace mozilla::psm
++
++#endif  // GoodBearRussianPKIClassification_h
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIClassificationTest.cpp
+@@ -0,0 +1,96 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#include "GoodBearRussianPKIClassification.h"
++#include "gtest/gtest.h"
++
++using namespace mozilla;
++using namespace mozilla::pkix;
++using namespace mozilla::psm;
++
++using PKIXResult = mozilla::pkix::Result;
++
++TEST(psm_GoodBearRussianPKIClassification, StandardSuccessReturnsImmediately)
++{
++  bool secondaryCalled = false;
++  auto result = ClassifyGoodBearOrdinaryServerCertificate(Success, [&]() {
++    secondaryCalled = true;
++    return Success;
++  });
++
++  ASSERT_FALSE(secondaryCalled);
++  ASSERT_EQ(GoodBearOrdinaryTrustClassification::Standard,
++            result.mClassification);
++  ASSERT_EQ(Success, result.mOriginalResult);
++  ASSERT_TRUE(result.OrdinaryChannelUsable());
++  ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
++            result.TransportTrustDomain());
++}
++
++TEST(psm_GoodBearRussianPKIClassification,
++     EligibleAlternateSuccessRequiresAnotherChannel)
++{
++  int secondaryCalls = 0;
++  auto result = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, [&]() {
++        secondaryCalls++;
++        return Success;
++      });
++
++  ASSERT_EQ(1, secondaryCalls);
++  ASSERT_EQ(GoodBearOrdinaryTrustClassification::RussianPKIRequired,
++            result.mClassification);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mOriginalResult);
++  ASSERT_FALSE(result.OrdinaryChannelUsable());
++  ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++            result.TransportTrustDomain());
++}
++
++TEST(psm_GoodBearRussianPKIClassification,
++     EligibleAlternateFailurePreservesOriginalError)
++{
++  int secondaryCalls = 0;
++  auto result = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, [&]() {
++        secondaryCalls++;
++        return PKIXResult::ERROR_BAD_SIGNATURE;
++      });
++
++  ASSERT_EQ(1, secondaryCalls);
++  ASSERT_EQ(GoodBearOrdinaryTrustClassification::Invalid,
++            result.mClassification);
++  ASSERT_EQ(PKIXResult::ERROR_UNKNOWN_ISSUER, result.mOriginalResult);
++  ASSERT_FALSE(result.OrdinaryChannelUsable());
++  ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++            result.TransportTrustDomain());
++}
++
++TEST(psm_GoodBearRussianPKIClassification,
++     NonEligibleFailuresNeverRunSecondaryVerification)
++{
++  for (PKIXResult standardResult : {
++           PKIXResult::ERROR_BAD_CERT_DOMAIN,
++           PKIXResult::ERROR_EXPIRED_CERTIFICATE,
++           PKIXResult::ERROR_NOT_YET_VALID_CERTIFICATE,
++           PKIXResult::ERROR_BAD_SIGNATURE,
++           PKIXResult::ERROR_INADEQUATE_KEY_USAGE,
++           PKIXResult::ERROR_UNTRUSTED_ISSUER,
++           PKIXResult::ERROR_MITM_DETECTED,
++       }) {
++    bool secondaryCalled = false;
++    auto result =
++        ClassifyGoodBearOrdinaryServerCertificate(standardResult, [&]() {
++          secondaryCalled = true;
++          return Success;
++        });
++
++    ASSERT_FALSE(secondaryCalled);
++    ASSERT_EQ(GoodBearOrdinaryTrustClassification::Invalid,
++              result.mClassification);
++    ASSERT_EQ(standardResult, result.mOriginalResult);
++    ASSERT_FALSE(result.OrdinaryChannelUsable());
++    ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++              result.TransportTrustDomain());
++  }
++}
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -7,6 +7,7 @@
+     "CoseTest.cpp",
+     "DeserializeCertTest.cpp",
++    "GoodBearRussianPKIClassificationTest.cpp",
+     "GoodBearTrustDomainTest.cpp",
+     "HMACTest.cpp",
+     "MD4Test.cpp",
+     "NSSBenchTest.cpp",

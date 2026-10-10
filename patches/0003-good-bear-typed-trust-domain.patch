@@ -1,0 +1,672 @@
+# Good Bear M2-04: typed trust-domain flow
+#
+# Establishes GoodBearTrustDomain as the single source of truth across verification,
+# socket-process IPC, transport-security snapshots, persistence, and UI exposure.
+
+--- a/browser/base/content/test/siteIdentity/browser_getSecurityInfo.js
++++ b/browser/base/content/test/siteIdentity/browser_getSecurityInfo.js
+@@ -30,6 +30,11 @@
+     ok(securityInfo.succeededCertChain, "Has a succeeded cert chain");
+     is(securityInfo.errorCode, 0, "Has no error code");
+     is(
++      securityInfo.goodBearTrustDomain,
++      Ci.nsITransportSecurityInfo.Standard,
++      "UI receives the verifier-owned typed trust domain"
++    );
++    is(
+       securityInfo.serverCert.commonName,
+       "example.com",
+       "Has the correct certificate"
+--- a/ipc/glue/TransportSecurityInfoUtils.h
++++ b/ipc/glue/TransportSecurityInfoUtils.h
+@@ -40,6 +40,13 @@
+           nsITransportSecurityInfo::OverridableErrorCategory::ERROR_TIME> {};
+ 
+ template <>
++struct ParamTraits<nsITransportSecurityInfo::GoodBearTrustDomain>
++    : public ContiguousEnumSerializerInclusive<
++          nsITransportSecurityInfo::GoodBearTrustDomain,
++          nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++          nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI> {};
++
++template <>
+ struct ParamTraits<mozilla::psm::EVStatus>
+     : public ContiguousEnumSerializerInclusive<mozilla::psm::EVStatus,
+                                                mozilla::psm::EVStatus::NotEV,
+--- a/netwerk/base/FuzzySecurityInfo.cpp
++++ b/netwerk/base/FuzzySecurityInfo.cpp
+@@ -34,6 +34,12 @@
+   return NS_OK;
+ }
+ 
++NS_IMETHODIMP FuzzySecurityInfo::GetGoodBearTrustDomain(
++    GoodBearTrustDomain* aGoodBearTrustDomain) {
++  *aGoodBearTrustDomain = GoodBearTrustDomain::Invalid;
++  return NS_OK;
++}
++
+ NS_IMETHODIMP
+ FuzzySecurityInfo::GetHandshakeCertificates(
+     nsTArray<RefPtr<nsIX509Cert>>& aHandshakeCertificates) {
+--- a/security/manager/ssl/CommonSocketControl.cpp
++++ b/security/manager/ssl/CommonSocketControl.cpp
+@@ -44,7 +44,9 @@
+       mUsedPrivateDNS(aProviderFlags & nsISocketProvider::USED_PRIVATE_DNS),
+       mNPNCompleted(false),
+       mResumed(false),
+-      mIsBuiltCertChainRootBuiltInRoot(false) {
++      mIsBuiltCertChainRootBuiltInRoot(false),
++      mGoodBearTrustDomain(
++          nsITransportSecurityInfo::GoodBearTrustDomain::Invalid) {
+ #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+   mOwningThread = PR_GetCurrentThread();
+ #endif
+@@ -462,7 +464,7 @@
+           mCertificateTransparencyStatus, mIsAcceptedEch,
+           mIsDelegatedCredential, mOverridableErrorCategory, mMadeOCSPRequests,
+           mUsedPrivateDNS, mIsEV, mNPNCompleted, mNegotiatedNPN, mResumed,
+-          mIsBuiltCertChainRootBuiltInRoot, mPeerId));
++          mIsBuiltCertChainRootBuiltInRoot, mPeerId, mGoodBearTrustDomain));
+   securityInfo.forget(aSecurityInfo);
+   return NS_OK;
+ }
+--- a/security/manager/ssl/CommonSocketControl.h
++++ b/security/manager/ssl/CommonSocketControl.h
+@@ -97,6 +97,11 @@
+     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+     mCertificateTransparencyStatus = aCertificateTransparencyStatus;
+   }
++  void SetGoodBearTrustDomain(
++      nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain) {
++    COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
++    mGoodBearTrustDomain = aGoodBearTrustDomain;
++  }
+   void SetOriginAttributes(const mozilla::OriginAttributes& aOriginAttributes) {
+     COMMON_SOCKET_CONTROL_ASSERT_ON_OWNING_THREAD();
+     mOriginAttributes = aOriginAttributes;
+@@ -178,6 +183,10 @@
+   bool mResumed;
+   bool mIsBuiltCertChainRootBuiltInRoot;
+   nsCString mPeerId;
++  // Invalid until the asynchronous verifier explicitly classifies this
++  // connection. The value then lives with this TLS socket and is copied into
++  // immutable TransportSecurityInfo snapshots.
++  nsITransportSecurityInfo::GoodBearTrustDomain mGoodBearTrustDomain;
+ 
+ #if defined(MOZ_DIAGNOSTIC_ASSERT_ENABLED)
+   const PRThread* mOwningThread;
+--- a/security/manager/ssl/PVerifySSLServerCert.ipdl
++++ b/security/manager/ssl/PVerifySSLServerCert.ipdl
+@@ -7,6 +7,7 @@
+ using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
+ using mozilla::psm::EVStatus from "mozilla/ipc/TransportSecurityInfoUtils.h";
+ using nsITransportSecurityInfo::OverridableErrorCategory from "mozilla/ipc/TransportSecurityInfoUtils.h";
++using nsITransportSecurityInfo::GoodBearTrustDomain from "mozilla/ipc/TransportSecurityInfoUtils.h";
+ 
+ namespace mozilla {
+ namespace psm {
+@@ -25,6 +26,7 @@
+                                       uint16_t aCertTransparencyStatus,
+                                       EVStatus aEVStatus,
+                                       bool aSucceeded,
++                                      GoodBearTrustDomain aGoodBearTrustDomain,
+                                       int32_t aFinalError,
+                                       OverridableErrorCategory aOverridableErrorCategory,
+                                       bool aIsBuiltCertChainRootBuiltInRoot,
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -816,8 +816,8 @@
+         std::move(builtChainBytesArray), std::move(mPeerCertChain),
+         TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
+             certificateTransparencyInfo),
+-        evStatus, true, 0,
+-        nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
++        evStatus, true, nsITransportSecurityInfo::GoodBearTrustDomain::Standard,
++        0, nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET,
+         isCertChainRootBuiltInRoot, mProviderFlags, madeOCSPRequests);
+     if (NS_FAILED(rv)) {
+       // We can't release this off the STS thread because some parts of it
+@@ -843,7 +843,9 @@
+       std::move(builtChainBytesArray), std::move(mPeerCertChain),
+       TransportSecurityInfo::ConvertCertificateTransparencyInfoToStatus(
+           certificateTransparencyInfo),
+-      EVStatus::NotEV, false, finalError, overridableErrorCategory,
++      EVStatus::NotEV, false,
++      nsITransportSecurityInfo::GoodBearTrustDomain::Invalid, finalError,
++      overridableErrorCategory,
+       // If the certificate verifier returned Result::ERROR_BAD_CERT_DOMAIN,
+       // a chain was built, so isCertChainRootBuiltInRoot is valid and
+       // potentially useful. Otherwise, assume no chain was built.
+@@ -877,6 +879,11 @@
+     return SECFailure;
+   }
+ 
++  // A fresh verification result must never inherit classification from an
++  // earlier attempt on the same socket control.
++  socketControl->SetGoodBearTrustDomain(
++      nsITransportSecurityInfo::GoodBearTrustDomain::Invalid);
++
+   bool onSTSThread;
+   nsresult nrv;
+   nsCOMPtr<nsIEventTarget> sts =
+@@ -1074,6 +1081,8 @@
+       mCertificateTransparencyStatus(0),
+       mEVStatus(EVStatus::NotEV),
+       mSucceeded(false),
++      mGoodBearTrustDomain(
++          nsITransportSecurityInfo::GoodBearTrustDomain::Invalid),
+       mFinalError(0),
+       mOverridableErrorCategory(
+           nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET),
+@@ -1085,7 +1094,9 @@
+     nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+     nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-    bool aSucceeded, PRErrorCode aFinalError,
++    bool aSucceeded,
++    nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -1095,12 +1106,32 @@
+   mCertificateTransparencyStatus = aCertificateTransparencyStatus;
+   mEVStatus = aEVStatus;
+   mSucceeded = aSucceeded;
++  mGoodBearTrustDomain = aGoodBearTrustDomain;
+   mFinalError = aFinalError;
+   mOverridableErrorCategory = aOverridableErrorCategory;
+   mIsBuiltCertChainRootBuiltInRoot = aIsBuiltCertChainRootBuiltInRoot;
+   mProviderFlags = aProviderFlags;
+   mMadeOCSPRequests = aMadeOCSPRequests;
+ 
++  bool trustDomainIsValid = false;
++  switch (mGoodBearTrustDomain) {
++    case nsITransportSecurityInfo::GoodBearTrustDomain::Invalid:
++      break;
++    case nsITransportSecurityInfo::GoodBearTrustDomain::Standard:
++    case nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI:
++      trustDomainIsValid = true;
++      break;
++  }
++  if (mSucceeded != trustDomainIsValid) {
++    MOZ_ASSERT_UNREACHABLE(
++        "successful verification requires an explicit trust domain and "
++        "failed verification requires Invalid");
++    mSucceeded = false;
++    mGoodBearTrustDomain =
++        nsITransportSecurityInfo::GoodBearTrustDomain::Invalid;
++    mFinalError = SEC_ERROR_LIBRARY_FAILURE;
++  }
++
+   if (mSucceeded &&
+       (mBuiltChain.IsEmpty() || mFinalError != 0 ||
+        mOverridableErrorCategory !=
+@@ -1154,6 +1185,7 @@
+       mIsBuiltCertChainRootBuiltInRoot);
+   mSocketControl->SetCertificateTransparencyStatus(
+       mCertificateTransparencyStatus);
++  mSocketControl->SetGoodBearTrustDomain(mGoodBearTrustDomain);
+ 
+   if (mSucceeded) {
+     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+--- a/security/manager/ssl/SSLServerCertVerification.h
++++ b/security/manager/ssl/SSLServerCertVerification.h
+@@ -47,7 +47,9 @@
+       nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+       nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-      bool aSucceeded, PRErrorCode aFinalError,
++      bool aSucceeded,
++      nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -73,7 +75,9 @@
+       nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+       nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-      bool aSucceeded, PRErrorCode aFinalError,
++      bool aSucceeded,
++      nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -88,6 +92,7 @@
+   uint16_t mCertificateTransparencyStatus;
+   EVStatus mEVStatus;
+   bool mSucceeded;
++  nsITransportSecurityInfo::GoodBearTrustDomain mGoodBearTrustDomain;
+   PRErrorCode mFinalError;
+   nsITransportSecurityInfo::OverridableErrorCategory mOverridableErrorCategory;
+   bool mIsBuiltCertChainRootBuiltInRoot;
+--- a/security/manager/ssl/TransportSecurityInfo.cpp
++++ b/security/manager/ssl/TransportSecurityInfo.cpp
+@@ -46,7 +46,8 @@
+     Maybe<OverridableErrorCategory> aOverridableErrorCategory,
+     bool aMadeOCSPRequests, bool aUsedPrivateDNS, Maybe<bool> aIsEV,
+     bool aNPNCompleted, const nsCString& aNegotiatedNPN, bool aResumed,
+-    bool aIsBuiltCertChainRootBuiltInRoot, const nsCString& aPeerId)
++    bool aIsBuiltCertChainRootBuiltInRoot, const nsCString& aPeerId,
++    GoodBearTrustDomain aGoodBearTrustDomain)
+     : mSecurityState(aSecurityState),
+       mErrorCode(aErrorCode),
+       mHandshakeCertificates(std::move(aHandshakeCertificates)),
+@@ -67,7 +68,8 @@
+       mNegotiatedNPN(aNegotiatedNPN),
+       mResumed(aResumed),
+       mIsBuiltCertChainRootBuiltInRoot(aIsBuiltCertChainRootBuiltInRoot),
+-      mPeerId(aPeerId) {}
++      mPeerId(aPeerId),
++      mGoodBearTrustDomain(aGoodBearTrustDomain) {}
+ 
+ NS_IMPL_ISUPPORTS(TransportSecurityInfo, nsITransportSecurityInfo)
+ 
+@@ -147,7 +149,7 @@
+   // Re-purpose mErrorMessageCached to represent serialization version
+   // If string doesn't match exact version it will be treated as older
+   // serialization.
+-  rv = objStream->WriteWStringZ(NS_ConvertUTF8toUTF16("9").get());
++  rv = objStream->WriteWStringZ(NS_ConvertUTF8toUTF16("10").get());
+   if (NS_FAILED(rv)) {
+     return rv;
+   }
+@@ -252,6 +254,11 @@
+     return rv;
+   }
+ 
++  rv = objStream->Write32(static_cast<uint32_t>(mGoodBearTrustDomain));
++  if (NS_FAILED(rv)) {
++    return rv;
++  }
++
+   rv = stream->Finish(aResult);
+   if (NS_FAILED(rv)) {
+     return rv;
+@@ -488,6 +495,22 @@
+   return nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
+ }
+ 
++static Maybe<nsITransportSecurityInfo::GoodBearTrustDomain>
++IntToGoodBearTrustDomain(uint32_t aValue) {
++  switch (aValue) {
++    case static_cast<uint32_t>(
++        nsITransportSecurityInfo::GoodBearTrustDomain::Invalid):
++      return Some(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid);
++    case static_cast<uint32_t>(
++        nsITransportSecurityInfo::GoodBearTrustDomain::Standard):
++      return Some(nsITransportSecurityInfo::GoodBearTrustDomain::Standard);
++    case static_cast<uint32_t>(
++        nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI):
++      return Some(nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI);
++  }
++  return Nothing();
++}
++
+ nsresult TransportSecurityInfo::Read(const nsCString& aSerializedSecurityInfo,
+                                      nsITransportSecurityInfo** aResult) {
+   *aResult = nullptr;
+@@ -556,6 +579,7 @@
+   bool aResumed = false;
+   bool aIsBuiltCertChainRootBuiltInRoot = false;
+   nsCString aPeerId;
++  GoodBearTrustDomain aGoodBearTrustDomain = GoodBearTrustDomain::Invalid;
+   rv = objStream->Read32(&aSecurityState);
+   if (NS_FAILED(rv)) {
+     return rv;
+@@ -788,13 +812,28 @@
+     };
+   }
+ 
++  if (serVersionParsedToInt >= 10) {
++    uint32_t goodBearTrustDomain;
++    rv = objStream->Read32(&goodBearTrustDomain);
++    if (NS_FAILED(rv)) {
++      return rv;
++    }
++    Maybe<GoodBearTrustDomain> parsedTrustDomain =
++        IntToGoodBearTrustDomain(goodBearTrustDomain);
++    if (parsedTrustDomain.isNothing()) {
++      return NS_ERROR_UNEXPECTED;
++    }
++    aGoodBearTrustDomain = *parsedTrustDomain;
++  }
++
+   RefPtr<nsITransportSecurityInfo> securityInfo(new TransportSecurityInfo(
+       aSecurityState, aErrorCode, std::move(aHandshakeCertificates),
+       aServerCert, std::move(aSucceededCertChain), aCipherSuite, aKeaGroupName,
+       aSignatureSchemeName, aProtocolVersion, aCertificateTransparencyStatus,
+       aIsAcceptedEch, aIsDelegatedCredential, aOverridableErrorCategory,
+       aMadeOCSPRequests, aUsedPrivateDNS, aIsEV, aNPNCompleted, aNegotiatedNPN,
+-      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId));
++      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId,
++      aGoodBearTrustDomain));
+   securityInfo.forget(aResult);
+   return NS_OK;
+ }
+@@ -821,6 +860,7 @@
+   WriteParam(aWriter, mResumed);
+   WriteParam(aWriter, mIsBuiltCertChainRootBuiltInRoot);
+   WriteParam(aWriter, mPeerId);
++  WriteParam(aWriter, mGoodBearTrustDomain);
+ }
+ 
+ bool TransportSecurityInfo::DeserializeFromIPC(
+@@ -846,6 +886,7 @@
+   bool aResumed;
+   bool aIsBuiltCertChainRootBuiltInRoot;
+   nsCString aPeerId;
++  GoodBearTrustDomain aGoodBearTrustDomain;
+ 
+   if (!ReadParam(aReader, &aSecurityState) ||
+       !ReadParam(aReader, &aErrorCode) ||
+@@ -865,7 +906,8 @@
+       !ReadParam(aReader, &aNPNCompleted) ||
+       !ReadParam(aReader, &aNegotiatedNPN) || !ReadParam(aReader, &aResumed) ||
+       !ReadParam(aReader, &aIsBuiltCertChainRootBuiltInRoot) ||
+-      !ReadParam(aReader, &aPeerId)) {
++      !ReadParam(aReader, &aPeerId) ||
++      !ReadParam(aReader, &aGoodBearTrustDomain)) {
+     return false;
+   }
+ 
+@@ -875,11 +917,18 @@
+       aSignatureSchemeName, aProtocolVersion, aCertificateTransparencyStatus,
+       aIsAcceptedEch, aIsDelegatedCredential, aOverridableErrorCategory,
+       aMadeOCSPRequests, aUsedPrivateDNS, aIsEV, aNPNCompleted, aNegotiatedNPN,
+-      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId));
++      aResumed, aIsBuiltCertChainRootBuiltInRoot, aPeerId,
++      aGoodBearTrustDomain));
+   *aResult = std::move(securityInfo);
+   return true;
+ }
+ 
++NS_IMETHODIMP TransportSecurityInfo::GetGoodBearTrustDomain(
++    GoodBearTrustDomain* aGoodBearTrustDomain) {
++  *aGoodBearTrustDomain = mGoodBearTrustDomain;
++  return NS_OK;
++}
++
+ NS_IMETHODIMP
+ TransportSecurityInfo::GetHandshakeCertificates(
+     nsTArray<RefPtr<nsIX509Cert>>& aHandshakeCertificates) {
+--- a/security/manager/ssl/TransportSecurityInfo.h
++++ b/security/manager/ssl/TransportSecurityInfo.h
+@@ -41,7 +41,8 @@
+       Maybe<OverridableErrorCategory> aOverridableErrorCategory,
+       bool aMadeOCSPRequests, bool aUsedPrivateDNS, Maybe<bool> aIsEV,
+       bool aNPNCompleted, const nsCString& aNegotiatedNPN, bool aResumed,
+-      bool aIsBuiltCertChainRootBuiltInRoot, const nsCString& aPeerId);
++      bool aIsBuiltCertChainRootBuiltInRoot, const nsCString& aPeerId,
++      GoodBearTrustDomain aGoodBearTrustDomain);
+ 
+   NS_DECL_THREADSAFE_ISUPPORTS
+   NS_DECL_NSITRANSPORTSECURITYINFO
+@@ -80,6 +81,9 @@
+   const bool mResumed;
+   const bool mIsBuiltCertChainRootBuiltInRoot;
+   const nsCString mPeerId;
++  // Immutable after construction: routing and UI consume this exact verifier
++  // result rather than independently classifying certificate strings.
++  const GoodBearTrustDomain mGoodBearTrustDomain;
+ 
+   static nsresult ReadOldOverridableErrorBits(
+       nsIObjectInputStream* aStream,
+--- a/security/manager/ssl/VerifySSLServerCertChild.cpp
++++ b/security/manager/ssl/VerifySSLServerCertChild.cpp
+@@ -46,7 +46,9 @@
+ ipc::IPCResult VerifySSLServerCertChild::RecvOnVerifySSLServerCertFinished(
+     nsTArray<ByteArray>&& aBuiltCertChain,
+     const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+-    const bool& aSucceeded, int32_t aFinalError,
++    const bool& aSucceeded,
++    const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
++    int32_t aFinalError,
+     const nsITransportSecurityInfo::OverridableErrorCategory&
+         aOverridableErrorCategory,
+     const bool& aIsBuiltCertChainRootBuiltInRoot,
+@@ -62,8 +64,8 @@
+ 
+   nsresult rv = mResultTask->Dispatch(
+       std::move(certBytesArray), std::move(mPeerCertChain),
+-      aCertTransparencyStatus, aEVStatus, aSucceeded, aFinalError,
+-      aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++      aCertTransparencyStatus, aEVStatus, aSucceeded, aGoodBearTrustDomain,
++      aFinalError, aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+       mProviderFlags, aMadeOCSPRequests);
+   if (NS_FAILED(rv)) {
+     // We can't release this off the STS thread because some parts of it are
+--- a/security/manager/ssl/VerifySSLServerCertChild.h
++++ b/security/manager/ssl/VerifySSLServerCertChild.h
+@@ -29,7 +29,9 @@
+   ipc::IPCResult RecvOnVerifySSLServerCertFinished(
+       nsTArray<ByteArray>&& aBuiltCertChain,
+       const uint16_t& aCertTransparencyStatus, const EVStatus& aEVStatus,
+-      const bool& aSucceeded, int32_t aFinalError,
++      const bool& aSucceeded,
++      const nsITransportSecurityInfo::GoodBearTrustDomain& aGoodBearTrustDomain,
++      int32_t aFinalError,
+       const nsITransportSecurityInfo::OverridableErrorCategory&
+           aOverridableErrorCategory,
+       const bool& aIsBuiltCertChainRootBuiltInRoot,
+--- a/security/manager/ssl/VerifySSLServerCertParent.cpp
++++ b/security/manager/ssl/VerifySSLServerCertParent.cpp
+@@ -42,7 +42,9 @@
+ void VerifySSLServerCertParent::OnVerifiedSSLServerCert(
+     const nsTArray<ByteArray>& aBuiltCertChain,
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-    bool aSucceeded, PRErrorCode aFinalError,
++    bool aSucceeded,
++    nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests) {
+@@ -52,8 +54,8 @@
+ 
+   (void)SendOnVerifySSLServerCertFinished(
+       aBuiltCertChain, aCertificateTransparencyStatus, aEVStatus, aSucceeded,
+-      aFinalError, aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+-      aMadeOCSPRequests);
++      aGoodBearTrustDomain, aFinalError, aOverridableErrorCategory,
++      aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests);
+ 
+   Close();
+ }
+@@ -74,7 +76,9 @@
+       nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+       nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-      bool aSucceeded, PRErrorCode aFinalError,
++      bool aSucceeded,
++      nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -91,7 +95,9 @@
+     nsTArray<nsTArray<uint8_t>>&& aBuiltChain,
+     nsTArray<nsTArray<uint8_t>>&& aPeerCertChain,
+     uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-    bool aSucceeded, PRErrorCode aFinalError,
++    bool aSucceeded,
++    nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++    PRErrorCode aFinalError,
+     nsITransportSecurityInfo::OverridableErrorCategory
+         aOverridableErrorCategory,
+     bool aIsBuiltCertChainRootBuiltInRoot, uint32_t aProviderFlags,
+@@ -108,12 +114,13 @@
+           "psm::VerifySSLServerCertParent::OnVerifiedSSLServerCert",
+           [parent(mParent), builtCertChain{std::move(builtCertChain)},
+            aCertificateTransparencyStatus, aEVStatus, aSucceeded, aFinalError,
+-           aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
+-           aMadeOCSPRequests]() {
++           aGoodBearTrustDomain, aOverridableErrorCategory,
++           aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests]() {
+             parent->OnVerifiedSSLServerCert(
+                 builtCertChain, aCertificateTransparencyStatus, aEVStatus,
+-                aSucceeded, aFinalError, aOverridableErrorCategory,
+-                aIsBuiltCertChainRootBuiltInRoot, aMadeOCSPRequests);
++                aSucceeded, aGoodBearTrustDomain, aFinalError,
++                aOverridableErrorCategory, aIsBuiltCertChainRootBuiltInRoot,
++                aMadeOCSPRequests);
+           }),
+       NS_DISPATCH_NORMAL);
+   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+--- a/security/manager/ssl/VerifySSLServerCertParent.h
++++ b/security/manager/ssl/VerifySSLServerCertParent.h
+@@ -37,7 +37,9 @@
+   void OnVerifiedSSLServerCert(
+       const nsTArray<ByteArray>& aBuiltCertChain,
+       uint16_t aCertificateTransparencyStatus, EVStatus aEVStatus,
+-      bool aSucceeded, PRErrorCode aFinalError,
++      bool aSucceeded,
++      nsITransportSecurityInfo::GoodBearTrustDomain aGoodBearTrustDomain,
++      PRErrorCode aFinalError,
+       nsITransportSecurityInfo::OverridableErrorCategory
+           aOverridableErrorCategory,
+       bool aIsBuiltCertChainRootBuiltInRoot, bool aMadeOCSPRequests);
+--- a/security/manager/ssl/nsITransportSecurityInfo.idl
++++ b/security/manager/ssl/nsITransportSecurityInfo.idl
+@@ -16,7 +16,7 @@
+ 
+ [ptr] native IpcMessageWriterPtr(IPC::MessageWriter);
+ 
+-[builtinclass, scriptable, uuid(216112d3-28bc-4671-b057-f98cc09ba1ea)]
++[builtinclass, scriptable, uuid(72a33332-58ed-49fb-a831-0b0dca50ee80)]
+ interface nsITransportSecurityInfo : nsISupports {
+     cenum OverridableErrorCategory : 32 {
+       ERROR_UNSET,
+@@ -25,11 +25,26 @@
+       ERROR_TIME,
+     };
+ 
++    /**
++     * The certificate trust domain that authenticated this TLS connection.
++     * Invalid is the fail-closed value for incomplete, failed, legacy, or
++     * unrecognized results. Consumers must use this value directly and must
++     * not derive a parallel classification from certificate strings.
++     */
++    cenum GoodBearTrustDomain : 8 {
++      Invalid = 0,
++      Standard = 1,
++      RussianPKI = 2,
++    };
++
+     readonly attribute unsigned long securityState;
+     readonly attribute long errorCode; // PRErrorCode
+     // errorCode as string (e.g. "SEC_ERROR_UNKNOWN_ISSUER")
+     readonly attribute AString errorCodeString;
+ 
++    [infallible]
++    readonly attribute nsITransportSecurityInfo_GoodBearTrustDomain goodBearTrustDomain;
++
+     /**
+      * The following parameters are only valid after the TLS handshake
+      * has completed.  Check securityState first.
+--- a/security/manager/ssl/tests/gtest/DeserializeCertTest.cpp
++++ b/security/manager/ssl/tests/gtest/DeserializeCertTest.cpp
+@@ -37,6 +37,13 @@
+   ASSERT_EQ(NS_OK, rv);
+   ASSERT_TRUE(securityInfo);
+ 
++  nsITransportSecurityInfo::GoodBearTrustDomain trustDomain =
++      nsITransportSecurityInfo::GoodBearTrustDomain::Standard;
++  rv = securityInfo->GetGoodBearTrustDomain(&trustDomain);
++  ASSERT_EQ(NS_OK, rv);
++  ASSERT_EQ(nsITransportSecurityInfo::GoodBearTrustDomain::Invalid,
++            trustDomain);
++
+   nsCOMPtr<nsIX509Cert> cert;
+   rv = securityInfo->GetServerCert(getter_AddRefs(cert));
+   ASSERT_EQ(NS_OK, rv);
+--- /dev/null
++++ b/security/manager/ssl/tests/gtest/GoodBearTrustDomainTest.cpp
+@@ -0,0 +1,65 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++#include <type_traits>
++
++#include "TransportSecurityInfo.h"
++#include "gtest/gtest.h"
++#include "mozilla/Maybe.h"
++#include "nsCOMPtr.h"
++#include "nsITransportSecurityInfo.h"
++#include "nsString.h"
++
++using namespace mozilla;
++using namespace mozilla::psm;
++
++using GoodBearTrustDomain = nsITransportSecurityInfo::GoodBearTrustDomain;
++
++static_assert(
++    std::is_same_v<std::underlying_type_t<GoodBearTrustDomain>, uint8_t>);
++static_assert(static_cast<uint8_t>(GoodBearTrustDomain::Invalid) == 0);
++static_assert(static_cast<uint8_t>(GoodBearTrustDomain::Standard) == 1);
++static_assert(static_cast<uint8_t>(GoodBearTrustDomain::RussianPKI) == 2);
++
++static RefPtr<TransportSecurityInfo> MakeSecurityInfo(
++    GoodBearTrustDomain aTrustDomain) {
++  nsCOMPtr<nsIX509Cert> serverCert;
++  return new TransportSecurityInfo(
++      0, 0, {}, serverCert, {}, Nothing(), Nothing(), Nothing(), Nothing(), 0,
++      Nothing(), Nothing(), Nothing(), false, false, Nothing(), false,
++      EmptyCString(), false, false, EmptyCString(), aTrustDomain);
++}
++
++TEST(psm_GoodBearTrustDomain, TypedValuesSurviveImmutableSecurityInfo)
++{
++  for (GoodBearTrustDomain trustDomain : {
++           GoodBearTrustDomain::Invalid,
++           GoodBearTrustDomain::Standard,
++           GoodBearTrustDomain::RussianPKI,
++       }) {
++    RefPtr<TransportSecurityInfo> securityInfo = MakeSecurityInfo(trustDomain);
++    GoodBearTrustDomain actual = GoodBearTrustDomain::Invalid;
++    ASSERT_EQ(NS_OK, securityInfo->GetGoodBearTrustDomain(&actual));
++    ASSERT_EQ(trustDomain, actual);
++  }
++}
++
++TEST(psm_GoodBearTrustDomain, TypedValuesSurvivePersistentSerialization)
++{
++  for (GoodBearTrustDomain trustDomain : {
++           GoodBearTrustDomain::Invalid,
++           GoodBearTrustDomain::Standard,
++           GoodBearTrustDomain::RussianPKI,
++       }) {
++    nsCString serialized;
++    ASSERT_EQ(NS_OK, MakeSecurityInfo(trustDomain)->ToString(serialized));
++
++    nsCOMPtr<nsITransportSecurityInfo> deserialized;
++    ASSERT_EQ(NS_OK, TransportSecurityInfo::Read(serialized,
++                                                 getter_AddRefs(deserialized)));
++    GoodBearTrustDomain actual = GoodBearTrustDomain::Invalid;
++    ASSERT_EQ(NS_OK, deserialized->GetGoodBearTrustDomain(&actual));
++    ASSERT_EQ(trustDomain, actual);
++  }
++}
+--- a/security/manager/ssl/tests/gtest/moz.build
++++ b/security/manager/ssl/tests/gtest/moz.build
+@@ -6,6 +6,7 @@
+     "CertificateCompressionTest.cpp",
+     "CoseTest.cpp",
+     "DeserializeCertTest.cpp",
++    "GoodBearTrustDomainTest.cpp",
+     "HMACTest.cpp",
+     "MD4Test.cpp",
+     "NSSBenchTest.cpp",
+--- a/xpcom/threads/Queue.h
++++ b/xpcom/threads/Queue.h
+@@ -7,6 +7,7 @@
+ #include <stdint.h>
+ 
+ #include <algorithm>
++#include <limits>
+ #include <utility>
+ 
+ #include "mozalloc.h"

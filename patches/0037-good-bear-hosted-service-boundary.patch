@@ -1,0 +1,146 @@
+# Good Bear deliberately has no implicit Mozilla/partner hosted product-service
+# identity. Security suppliers remain fail-closed until separately pinned.
+diff --git a/browser/moz.configure b/browser/moz.configure
+index acb9f990f9a2..5ffac380c8c8 100644
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -3,11 +3,11 @@
+ # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ 
+ imply_option("MOZ_PLACES", True)
+-imply_option("MOZ_SERVICES_HEALTHREPORT", True)
+-imply_option("MOZ_SERVICES_SYNC", True)
++imply_option("MOZ_SERVICES_HEALTHREPORT", False)
++imply_option("MOZ_SERVICES_SYNC", False)
+ imply_option("MOZ_DEDICATED_PROFILES", True)
+ imply_option("MOZ_BLOCK_PROFILE_DOWNGRADE", True)
+-imply_option("MOZ_NORMANDY", True)
++imply_option("MOZ_NORMANDY", False)
+ imply_option("MOZ_PROFILE_MIGRATOR", True)
+ 
+ 
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+index b31e88f5673a..8cbcc83b53f5 100644
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -3723,3 +3723,120 @@ pref("distribution.mozillaonline.ignore", true);
+ #ifdef XP_MACOSX
+   pref("browser.macAppMenu.setAsDefaultShown", false);
+ #endif
++
++// Good Bear hosted-service boundary. These final defaults intentionally
++// override upstream product-service defaults. A future rebase must classify
++// every new endpoint and Remote Settings collection before promotion.
++pref("identity.fxaccounts.enabled", false);
++pref("identity.fxaccounts.pairing.enabled", false);
++pref("identity.fxaccounts.commands.remoteTabManagement.enabled", false);
++pref("identity.fxaccounts.telemetry.clientAssociationPing.enabled", false);
++pref("identity.fxaccounts.telemetry.clientInfoPing.enabled", false);
++pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "");
++pref("identity.fxaccounts.remote.root", "");
++pref("identity.fxaccounts.remote.profile.uri", "");
++pref("identity.fxaccounts.remote.oauth.uri", "");
++pref("identity.fxaccounts.remote.pairing.uri", "");
++pref("identity.sync.tokenserver.uri", "");
++
++pref("signon.firefoxRelay.feature", "disabled");
++pref("browser.promo.relay.enabled", false);
++pref("signon.firefoxRelay.base_url", "");
++pref("browser.contentblocking.report.monitor.enabled", false);
++pref("browser.contentblocking.report.endpoint_url", "");
++
++pref("extensions.pocket.enabled", false);
++pref("browser.newtabpage.activity-stream.feeds.section.topstories", false);
++pref("browser.newtabpage.activity-stream.discoverystream.enabled", false);
++pref("browser.newtabpage.activity-stream.discoverystream.merino-provider.endpoint", "");
++pref("browser.newtabpage.activity-stream.discoverystream.ohttp.relayURL", "");
++pref("browser.newtabpage.activity-stream.discoverystream.ohttp.configURL", "");
++
++pref("browser.search.suggest.enabled", false);
++pref("browser.urlbar.suggest.searches", false);
++pref("browser.urlbar.quicksuggest.enabled", false);
++pref("browser.urlbar.quicksuggest.online.available", false);
++pref("browser.urlbar.quicksuggest.online.enabled", false);
++pref("browser.urlbar.suggest.quicksuggest.all", false);
++pref("browser.urlbar.suggest.quicksuggest.nonsponsored", false);
++pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
++pref("browser.urlbar.sponsoredTopSites", false);
++pref("browser.topsites.contile.enabled", false);
++pref("browser.topsites.useRemoteSetting", false);
++pref("browser.urlbar.merino.endpointURL", "");
++pref("browser.urlbar.merino.ohttpConfigURL", "");
++pref("browser.urlbar.merino.ohttpRelayURL", "");
++pref("browser.topsites.contile.endpoint", "");
++pref("browser.partnerlink.attributionURL", "");
++
++pref("browser.vpn_promo.enabled", false);
++pref("browser.contentblocking.report.hide_vpn_banner", true);
++pref("browser.ipProtection.enabled", false);
++pref("browser.ipProtection.blockIPProtectionCallouts", true);
++pref("browser.ipProtection.features.autoStart", false);
++pref("browser.ipProtection.userEnabled", false);
++pref("browser.contentblocking.report.vpn.url", "");
++pref("browser.contentblocking.report.vpn-promo.url", "");
++pref("browser.ipProtection.guardian.endpoint", "");
++
++pref("app.normandy.enabled", false);
++pref("app.normandy.first_run", false);
++pref("app.normandy.api_url", "");
++pref("app.shield.optoutstudies.enabled", false);
++pref("nimbus.rollouts.enabled", false);
++pref("nimbus.telemetry.targetingContextEnabled", false);
++pref("browser.aboutwelcome.experimentsGate.enabled", false);
++pref("browser.newtabpage.activity-stream.asrouter.useRemoteL10n", false);
++
++pref("datareporting.policy.dataSubmissionEnabled", false);
++pref("datareporting.healthreport.uploadEnabled", false);
++pref("datareporting.usage.uploadEnabled", false);
++pref("toolkit.telemetry.unified", false);
++pref("toolkit.telemetry.archive.enabled", false);
++pref("toolkit.telemetry.server", "");
++pref("toolkit.telemetry.shutdownPingSender.enabled", false);
++pref("toolkit.telemetry.firstShutdownPing.enabled", false);
++pref("toolkit.telemetry.newProfilePing.enabled", false);
++pref("toolkit.telemetry.updatePing.enabled", false);
++pref("toolkit.telemetry.bhrPing.enabled", false);
++pref("browser.newtabpage.activity-stream.telemetry.privatePing.enabled", false);
++pref("browser.tabs.crashReporting.sendReport", false);
++pref("browser.crashReports.unsubmittedCheck.enabled", false);
++pref("browser.crashReports.unsubmittedCheck.autoSubmit2", false);
++// Good Bear usage telemetry is a separate future transport. The visible user
++// choice defaults on, but an absent endpoint or closed transport gate means
++// no serialization, DNS lookup, connection, queue, retry, or transmission.
++pref("goodbear.telemetry.enabled", true);
++pref("goodbear.telemetry.transport.enabled", false);
++pref("goodbear.telemetry.endpoint", "");
++
++pref("extensions.getAddons.cache.enabled", false);
++pref("extensions.update.enabled", false);
++pref("extensions.update.autoUpdateDefault", false);
++pref("extensions.systemAddon.update.enabled", false);
++pref("browser.discovery.enabled", false);
++pref("browser.dictionaries.download.url", "");
++pref("extensions.getAddons.get.url", "");
++pref("extensions.getAddons.search.browseURL", "");
++pref("extensions.getAddons.link.url", "");
++pref("extensions.getAddons.langpacks.url", "");
++pref("extensions.getAddons.discovery.api_url", "");
++pref("extensions.getAddons.browserMappings.url", "");
++pref("extensions.update.url", "");
++pref("extensions.update.background.url", "");
++pref("extensions.systemAddon.update.url", "");
++
++// Optional provider-backed features stay off pending a supplier contract.
++// Retain upstream anti-phishing, malware and certificate-revocation protection.
++pref("dom.push.connection.enabled", false);
++pref("dom.push.serverURL", "");
++pref("network.trr.mode", 5);
++pref("doh-rollout.enabled", false);
++pref("network.trr.uri", "");
++pref("network.trr.custom_uri", "");
++pref("geo.enabled", false);
++pref("geo.provider.network.url", "");
++pref("browser.translations.enable", false);
++pref("browser.translations.select.enable", false);
++pref("browser.translations.quickAction.enabled", false);
++pref("extensions.formautofill.useml", false);

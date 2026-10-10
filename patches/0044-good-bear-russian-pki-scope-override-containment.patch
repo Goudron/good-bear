@@ -1,0 +1,222 @@
+# M13-04: scope revocation cannot be undone by an existing host certificate exception.
+
+diff --git a/security/manager/ssl/GoodBearRussianPKIContainerScope.h b/security/manager/ssl/GoodBearRussianPKIContainerScope.h
+--- a/security/manager/ssl/GoodBearRussianPKIContainerScope.h
++++ b/security/manager/ssl/GoodBearRussianPKIContainerScope.h
+@@ -14,6 +14,7 @@
+ #include "mozpkix/Result.h"
+ #include "nsIScriptSecurityManager.h"
+ #include "nsITransportSecurityInfo.h"
++#include "prerror.h"
+ 
+ namespace mozilla::psm {
+ 
+@@ -114,6 +115,25 @@
+           mozilla::pkix::Success};
+ }
+ 
++// Preserve the scope at the start of the verification decision. A later scope
++// revocation must not turn a rejected alternate-trust attempt into permission
++// to resume the same connection through an existing certificate exception.
++// Ordinary non-Russian failures retain Firefox's own exception handling.
++inline PRErrorCode ResolveGoodBearCertificateOverride(
++    GoodBearOrdinaryTrustClassification aOrdinaryClassification,
++    bool aStartedInManagedContainer, mozilla::pkix::Result aStandardResult,
++    PRErrorCode aOriginalError,
++    mozilla::FunctionRef<PRErrorCode()> aApplyUpstreamOverride) {
++  if (aOriginalError == 0 ||
++      !GoodBearOrdinaryClassificationAllowsCertificateOverrides(
++          aOrdinaryClassification) ||
++      (aStartedInManagedContainer &&
++       IsGoodBearRussianPKISecondaryVerificationEligible(aStandardResult))) {
++    return aOriginalError;
++  }
++  return aApplyUpstreamOverride();
++}
++
+ }  // namespace mozilla::psm
+ 
+ #endif  // GoodBearRussianPKIContainerScope_h
+diff --git a/security/manager/ssl/SSLServerCertVerification.cpp b/security/manager/ssl/SSLServerCertVerification.cpp
+--- a/security/manager/ssl/SSLServerCertVerification.cpp
++++ b/security/manager/ssl/SSLServerCertVerification.cpp
+@@ -868,8 +868,11 @@
+     MOZ_LOG(gGoodBearTrustLog, LogLevel::Debug,
+             ("phase=verification result=standard-failed"));
+   }
++  const bool startedInGoodBearManagedContainer =
++      result != Success &&
++      GetGoodBearRussianPKIScopeAuthority().Allows(mOriginAttributes);
+   if (result != Success && mOriginAttributes.mPrivateBrowsingId == 0 &&
+-      !GetGoodBearRussianPKIScopeAuthority().Allows(mOriginAttributes)) {
++      !startedInGoodBearManagedContainer) {
+     GoodBearOrdinaryVerificationResult ordinaryResult =
+         ClassifyGoodBearOrdinaryServerCertificate(result, [&]() {
+           nsTArray<nsTArray<uint8_t>> ignoredBuiltChain;
+@@ -963,13 +966,13 @@
+   nsITransportSecurityInfo::OverridableErrorCategory overridableErrorCategory =
+       nsITransportSecurityInfo::OverridableErrorCategory::ERROR_UNSET;
+   nsCOMPtr<nsIX509Cert> cert(new nsNSSCertificate(std::move(certBytes)));
+-  PRErrorCode finalError = error;
+-  if (GoodBearOrdinaryClassificationAllowsCertificateOverrides(
+-          goodBearOrdinaryClassification)) {
+-    finalError = AuthCertificateParseResults(mAddrForLogging, mHostName, mPort,
+-                                             mOriginAttributes, cert, mTime,
+-                                             error, overridableErrorCategory);
+-  }
++  PRErrorCode finalError = ResolveGoodBearCertificateOverride(
++      goodBearOrdinaryClassification, startedInGoodBearManagedContainer, result,
++      error, [&]() {
++        return AuthCertificateParseResults(mAddrForLogging, mHostName, mPort,
++                                           mOriginAttributes, cert, mTime,
++                                           error, overridableErrorCategory);
++      });
+ 
+   // NB: finalError may be 0 here, in which the connection will continue.
+   nsresult rv = mResultTask->Dispatch(
+diff --git a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+--- a/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
++++ b/security/manager/ssl/tests/gtest/GoodBearRussianPKIVerifierTest.cpp
+@@ -16,6 +16,7 @@
+ #include "nsNetUtil.h"
+ #include "nsStreamUtils.h"
+ #include "nss.h"
++#include "secerr.h"
+ 
+ using namespace mozilla;
+ using namespace mozilla::pkix;
+@@ -323,6 +324,134 @@
+ }
+ 
+ TEST(psm_GoodBearRussianPKIVerifier,
++     ScopeRevocationCannotResumeThroughExistingCertificateOverride)
++{
++  for (bool recreateContainer : {false, true}) {
++    GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++    auto attributes = ChannelAttributes(17);
++    const bool startedInManagedContainer = scope.Allows(attributes);
++    ASSERT_TRUE(startedInManagedContainer);
++    auto result = ClassifyGoodBearContainerServerCertificate(
++        PKIXResult::ERROR_UNKNOWN_ISSUER, attributes,
++        [&](const OriginAttributes& aOriginAttributes) {
++          return scope.Allows(aOriginAttributes);
++        },
++        [&]() {
++          if (recreateContainer) {
++            scope.mDedicatedUserContextId = Some(23U);
++          } else {
++            scope.mEnabled = false;
++          }
++          return Success;
++        });
++    ASSERT_FALSE(result.ChannelUsable());
++
++    bool overrideCalled = false;
++    PRErrorCode finalError = ResolveGoodBearCertificateOverride(
++        GoodBearOrdinaryTrustClassification::Invalid, startedInManagedContainer,
++        result.mResult, SEC_ERROR_UNKNOWN_ISSUER, [&]() -> PRErrorCode {
++          overrideCalled = true;
++          return 0;  // Firefox found a matching saved exception.
++        });
++    ASSERT_FALSE(overrideCalled);
++    ASSERT_EQ(SEC_ERROR_UNKNOWN_ISSUER, finalError);
++  }
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     ScopeRevocationBeforeAlternateCheckCannotUseCertificateOverride)
++{
++  GoodBearRussianPKIContainerScope scope{true, Some(17U)};
++  auto attributes = ChannelAttributes(17);
++  const bool startedInManagedContainer = scope.Allows(attributes);
++  scope.mEnabled = false;
++  bool alternateCalled = false;
++  auto result = ClassifyGoodBearContainerServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, attributes,
++      [&](const OriginAttributes& aOriginAttributes) {
++        return scope.Allows(aOriginAttributes);
++      },
++      [&]() {
++        alternateCalled = true;
++        return Success;
++      });
++  ASSERT_FALSE(alternateCalled);
++  ASSERT_FALSE(result.ChannelUsable());
++  bool overrideCalled = false;
++  ASSERT_EQ(SEC_ERROR_UNKNOWN_ISSUER,
++            ResolveGoodBearCertificateOverride(
++                GoodBearOrdinaryTrustClassification::Invalid,
++                startedInManagedContainer, result.mResult,
++                SEC_ERROR_UNKNOWN_ISSUER, [&]() -> PRErrorCode {
++                  overrideCalled = true;
++                  return 0;
++                }));
++  ASSERT_FALSE(overrideCalled);
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     OrdinaryInvalidCertificatesRetainUpstreamOverridePolicy)
++{
++  bool overrideCalled = false;
++  auto ordinary = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER,
++      []() { return PKIXResult::ERROR_BAD_SIGNATURE; });
++  ASSERT_EQ(0, ResolveGoodBearCertificateOverride(
++                   ordinary.mClassification, false, ordinary.mOriginalResult,
++                   SEC_ERROR_UNKNOWN_ISSUER, [&]() -> PRErrorCode {
++                     overrideCalled = true;
++                     return 0;
++                   }));
++  ASSERT_TRUE(overrideCalled);
++  overrideCalled = false;
++  ASSERT_EQ(SEC_ERROR_UNKNOWN_ISSUER,
++            ResolveGoodBearCertificateOverride(
++                ordinary.mClassification, false, ordinary.mOriginalResult,
++                SEC_ERROR_UNKNOWN_ISSUER, [&]() -> PRErrorCode {
++                  overrideCalled = true;
++                  return SEC_ERROR_UNKNOWN_ISSUER;
++                }));
++  ASSERT_TRUE(overrideCalled);
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     StandardSuccessAndRussianRoutingNeverConsultCertificateOverrides)
++{
++  bool overrideCalled = false;
++  auto savedOverride = [&]() -> PRErrorCode {
++    overrideCalled = true;
++    return 0;
++  };
++  ASSERT_EQ(0, ResolveGoodBearCertificateOverride(
++                   GoodBearOrdinaryTrustClassification::Standard, false,
++                   Success, 0, savedOverride));
++  ASSERT_FALSE(overrideCalled);
++  auto ordinary = ClassifyGoodBearOrdinaryServerCertificate(
++      PKIXResult::ERROR_UNKNOWN_ISSUER, []() { return Success; });
++  ASSERT_EQ(SEC_ERROR_UNKNOWN_ISSUER,
++            ResolveGoodBearCertificateOverride(
++                ordinary.mClassification, false, ordinary.mOriginalResult,
++                SEC_ERROR_UNKNOWN_ISSUER, savedOverride));
++  ASSERT_FALSE(overrideCalled);
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
++     NonEligibleStandardFailuresRetainUpstreamOverridePolicy)
++{
++  for (bool managedContainer : {false, true}) {
++    bool overrideCalled = false;
++    ASSERT_EQ(0, ResolveGoodBearCertificateOverride(
++                     GoodBearOrdinaryTrustClassification::Invalid,
++                     managedContainer, PKIXResult::ERROR_EXPIRED_CERTIFICATE,
++                     SEC_ERROR_EXPIRED_CERTIFICATE, [&]() -> PRErrorCode {
++                       overrideCalled = true;
++                       return 0;
++                     }));
++    ASSERT_TRUE(overrideCalled);
++  }
++}
++
++TEST(psm_GoodBearRussianPKIVerifier,
+      NonEligibleFailureNeverUsesAlternateTrustEvenInDedicatedContainer)
+ {
+   GoodBearRussianPKIContainerScope scope{true, Some(17U)};

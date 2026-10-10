@@ -1,0 +1,2639 @@
+# M7: origin-scoped trust history, first-visit assignment, explicit trust-source-change consent, and sticky reset behavior.
+
+--- a/browser/components/BrowserGlue.sys.mjs
++++ b/browser/components/BrowserGlue.sys.mjs
+@@ -108,6 +108,505 @@
+ }
+ 
+ const PREF_PDFJS_ISDEFAULT_CACHE_STATE = "pdfjs.enabledCache.state";
++const HTTP_MODIFY_REQUEST_BEFORE_COOKIES =
++  "http-on-modify-request-before-cookies";
++const HTTP_EXAMINE_RESPONSE = "http-on-examine-response";
++// This is the stable numeric value of
++// nsITransportSecurityInfo::GoodBearTrustDomain::Standard.
++const GOOD_BEAR_TRUST_DOMAIN_STANDARD = 1;
++// This is the stable numeric value of
++// nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI. XPConnect
++// exposes the cenum result as a number, not an enum object. The value comes
++// directly from native PSM; no certificate strings or browser-side chain
++// classification participate in this decision.
++const GOOD_BEAR_TRUST_DOMAIN_RUSSIAN_PKI = 2;
++
++function exactHTTPSOriginKey(uri) {
++  if (uri?.scheme !== "https" || !uri.asciiHost) {
++    return null;
++  }
++  const port = uri.port === -1 ? 443 : uri.port;
++  if (!Number.isInteger(port) || port < 1 || port > 65535) {
++    return null;
++  }
++  return `https\u0000${uri.asciiHost.toLowerCase()}\u0000${port}`;
++}
++
++export const GoodBearRussianPKINavigationPolicy = {
++  _started: false,
++  _scheduledTopLevelNavigations: new Set(),
++  // Consent is intentionally memory-only and bound to the newly-created
++  // BrowsingContext. History has no authority to populate this map.
++  _pendingTrustChangeNavigations: new WeakMap(),
++  classDescription: "Good Bear Russian PKI Content Policy",
++  contractID: "@goodbear/russian-pki-content-policy;1",
++  classID: Components.ID("{e0bc5761-cafe-4db2-928c-8c1cc2f2c75a}"),
++
++  start() {
++    if (this._started) {
++      return;
++    }
++    const registrar = Components.manager.QueryInterface(
++      Ci.nsIComponentRegistrar
++    );
++    if (!registrar.isContractIDRegistered(this.contractID)) {
++      registrar.registerFactory(
++        this.classID,
++        this.classDescription,
++        this.contractID,
++        this
++      );
++      Services.catMan.addCategoryEntry(
++        "content-policy",
++        this.contractID,
++        this.contractID,
++        false,
++        true
++      );
++    }
++    Services.obs.addObserver(this, HTTP_MODIFY_REQUEST_BEFORE_COOKIES);
++    Services.obs.addObserver(this, HTTP_EXAMINE_RESPONSE);
++    this._started = true;
++  },
++
++  observe(subject, topic) {
++    let channel;
++    try {
++      channel = subject.QueryInterface(Ci.nsIHttpChannel);
++    } catch {
++      return;
++    }
++
++    const originAttributes = channel.loadInfo?.originAttributes;
++    if (!originAttributes) {
++      return;
++    }
++
++    if (topic === HTTP_MODIFY_REQUEST_BEFORE_COOKIES) {
++      this._cancelIfOrdinaryAssignedRequest(
++        channel,
++        channel.URI,
++        originAttributes
++      );
++      return;
++    }
++
++    if (topic !== HTTP_EXAMINE_RESPONSE) {
++      return;
++    }
++
++    this._recordCompletedTrustObservation(channel, originAttributes);
++
++    if (channel.responseStatus < 300 || channel.responseStatus >= 400) {
++      return;
++    }
++
++    let location;
++    try {
++      location = channel.getResponseHeader("Location");
++    } catch {
++      return;
++    }
++    let redirectURI;
++    try {
++      redirectURI = Services.io.newURI(location, null, channel.URI);
++    } catch {
++      return;
++    }
++    this._cancelIfOrdinaryAssignedRequest(
++      channel,
++      redirectURI,
++      originAttributes
++    );
++  },
++
++  _recordCompletedTrustObservation(channel, originAttributes) {
++    if (
++      originAttributes.privateBrowsingId !== 0 ||
++      channel.loadInfo?.externalContentPolicyType !==
++        Ci.nsIContentPolicy.TYPE_DOCUMENT
++    ) {
++      return;
++    }
++
++    const browsingContext = BrowsingContext.get(
++      channel.loadInfo.browsingContextID
++    );
++    if (!browsingContext || browsingContext.top !== browsingContext) {
++      return;
++    }
++
++    const securityInfo = channel.securityInfo;
++    if (
++      originAttributes.userContextId === 0 &&
++      securityInfo?.goodBearTrustDomain === GOOD_BEAR_TRUST_DOMAIN_STANDARD
++    ) {
++      const managedContainer = lazy.GoodBearRussianPKIContainer;
++      // A completed native STANDARD TLS response is an observation only.
++      // The manager waits for both stores before checking sticky Russian
++      // state, so startup races cannot overwrite it.
++      void managedContainer.recordOrdinaryStandardObservation(
++        channel.URI,
++        "STANDARD"
++      );
++      return;
++    }
++
++    if (
++      originAttributes.userContextId !==
++        lazy.GoodBearRussianPKIContainer.dedicatedUserContextId ||
++      securityInfo?.goodBearTrustDomain !== GOOD_BEAR_TRUST_DOMAIN_RUSSIAN_PKI
++    ) {
++      this._pendingTrustChangeNavigations.delete(browsingContext);
++      return;
++    }
++
++    const pendingOrigin =
++      this._pendingTrustChangeNavigations.get(browsingContext);
++    this._pendingTrustChangeNavigations.delete(browsingContext);
++    if (pendingOrigin === exactHTTPSOriginKey(channel.URI)) {
++      // Only the exact origin explicitly confirmed for this new context can
++      // take the transition path. A redirect to another origin cannot borrow
++      // the decision.
++      void lazy.GoodBearRussianPKIContainer.completeConfirmedStandardToRussianPKIAssignment(
++        channel.URI,
++        "RUSSIAN_PKI"
++      );
++      return;
++    }
++
++    // This is deliberately asynchronous: the verified response continues in
++    // its already-isolated container. A persistence failure cannot replay it
++    // or turn an ordinary request into a trusted one.
++    void lazy.GoodBearRussianPKIContainer.completeFirstVisitRussianPKIAssignment(
++      channel.URI,
++      "RUSSIAN_PKI"
++    );
++  },
++
++  // Retained as the focused M7-02 test seam.
++  _recordCompletedFirstVisitRussianPKI(channel, originAttributes) {
++    this._recordCompletedTrustObservation(channel, originAttributes);
++  },
++
++  _cancelIfOrdinaryAssignedRequest(channel, uri, originAttributes) {
++    let assignmentOrigin = uri;
++    if (uri.scheme === "wss") {
++      assignmentOrigin = Services.io.newURI(`https://${uri.hostPort}/`);
++    }
++    const decision = lazy.GoodBearRussianPKIContainer.getLoadDecision(
++      assignmentOrigin,
++      originAttributes.userContextId,
++      { isPrivateBrowsing: originAttributes.privateBrowsingId !== 0 }
++    );
++    if (decision.type !== "ordinary") {
++      channel.cancel(Cr.NS_ERROR_BLOCKED_BY_POLICY);
++    }
++  },
++
++  shouldLoad(contentLocation, loadInfo) {
++    const originAttributes = loadInfo?.originAttributes;
++    if (!originAttributes) {
++      return Ci.nsIContentPolicy.ACCEPT;
++    }
++
++    let assignmentOrigin = contentLocation;
++    if (contentLocation.scheme === "wss") {
++      assignmentOrigin = Services.io.newURI(
++        `https://${contentLocation.hostPort}/`
++      );
++    }
++    const decision = lazy.GoodBearRussianPKIContainer.getLoadDecision(
++      assignmentOrigin,
++      originAttributes.userContextId,
++      { isPrivateBrowsing: originAttributes.privateBrowsingId !== 0 }
++    );
++    if (decision.type === "ordinary") {
++      return Ci.nsIContentPolicy.ACCEPT;
++    }
++
++    const browsingContext = BrowsingContext.get(loadInfo.browsingContextID);
++    const browser =
++      loadInfo.externalContentPolicyType ===
++        Ci.nsIContentPolicy.TYPE_DOCUMENT &&
++      browsingContext?.top === browsingContext
++        ? browsingContext.embedderElement
++        : null;
++    if (!browser?.ownerGlobal || browser.ownerGlobal.closed) {
++      console.warn(
++        "Good Bear: ресурс Российской PKI заблокирован вне выделенного контейнера."
++      );
++      return Ci.nsIContentPolicy.REJECT_POLICY;
++    }
++
++    this._scheduleAddressOnlyOpen(
++      browser,
++      contentLocation.spec,
++      decision.userContextId
++    );
++    return Ci.nsIContentPolicy.REJECT_POLICY;
++  },
++
++  shouldProcess() {
++    return Ci.nsIContentPolicy.ACCEPT;
++  },
++
++  QueryInterface: ChromeUtils.generateQI(["nsIContentPolicy", "nsIObserver"]),
++
++  createInstance(iid) {
++    return this.QueryInterface(iid);
++  },
++
++  _scheduleAddressOnlyOpen(
++    browser,
++    url,
++    userContextId,
++    {
++      closeSourceTab = false,
++      hasRequestBody = false,
++      autoOpen = false,
++      trustSourceChanged = false,
++    } = {}
++  ) {
++    const browsingContextId = browser.browsingContext.id;
++    if (this._scheduledTopLevelNavigations.has(browsingContextId)) {
++      return;
++    }
++    this._scheduledTopLevelNavigations.add(browsingContextId);
++    Services.tm.dispatchToMainThread(() => {
++      this._scheduledTopLevelNavigations.delete(browsingContextId);
++      const window = browser.ownerGlobal;
++      if (!window || window.closed) {
++        return;
++      }
++      this._handleAddressOnlyChoice(
++        window,
++        browser,
++        url,
++        userContextId,
++        closeSourceTab,
++        hasRequestBody,
++        autoOpen,
++        trustSourceChanged
++      );
++    });
++  },
++
++  _handleAddressOnlyChoice(
++    window,
++    browser,
++    url,
++    userContextId,
++    closeSourceTab,
++    hasRequestBody,
++    autoOpen = false,
++    trustSourceChanged = false
++  ) {
++    if (autoOpen) {
++      if (trustSourceChanged) {
++        this._openAddressOnlyInContainer(
++          window,
++          browser,
++          url,
++          userContextId,
++          closeSourceTab,
++          true
++        );
++      } else {
++        this._openAddressOnlyInContainer(
++          window,
++          browser,
++          url,
++          userContextId,
++          closeSourceTab
++        );
++      }
++      return;
++    }
++    const selected = this._promptAddressOnlyOpen(
++      window,
++      hasRequestBody,
++      trustSourceChanged
++    );
++    if (selected === 1) {
++      // This remains entirely within the ordinary source tab. No URL,
++      // request state, or browser context is transferred to the container.
++      browser.goBack();
++      return;
++    }
++    if (selected !== 0) {
++      return;
++    }
++    if (trustSourceChanged) {
++      this._openAddressOnlyInContainer(
++        window,
++        browser,
++        url,
++        userContextId,
++        closeSourceTab,
++        true
++      );
++    } else {
++      this._openAddressOnlyInContainer(
++        window,
++        browser,
++        url,
++        userContextId,
++        closeSourceTab
++      );
++    }
++  },
++
++  _promptAddressOnlyOpen(window, hasRequestBody, trustSourceChanged = false) {
++    const flags =
++      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_0 +
++      Services.prompt.BUTTON_TITLE_IS_STRING * Services.prompt.BUTTON_POS_1;
++    if (trustSourceChanged) {
++      return Services.prompt.confirmEx(
++        window,
++        "Good Bear — источник доверия изменился",
++        hasRequestBody
++          ? "Ранее этот сайт использовал стандартную инфраструктуру доверия. Сейчас сертификат проверяется через Российскую PKI. Good Bear не передаст данные обычного контейнера и не повторит запрос с данными."
++          : "Ранее этот сайт использовал стандартную инфраструктуру доверия. Сейчас сертификат проверяется через Российскую PKI. Good Bear не передаст этому соединению данные обычного контейнера.",
++        flags,
++        "Открыть изолированно",
++        "Назад",
++        null,
++        null,
++        {}
++      );
++    }
++    return Services.prompt.confirmEx(
++      window,
++      "Good Bear — Российская PKI",
++      hasRequestBody
++        ? "Автоматический повтор запроса с данными запрещён. Открыть в изолированном контейнере только адрес без данных запроса?"
++        : "Переход в изолированный контейнер не переносит данные запроса. Открыть только адрес?",
++      flags,
++      "Открыть адрес в контейнере «Российская PKI»",
++      "Назад",
++      null,
++      null,
++      {}
++    );
++  },
++
++  _openAddressOnlyInContainer(
++    window,
++    browser,
++    url,
++    userContextId,
++    closeSourceTab,
++    trustSourceChanged = false
++  ) {
++    this._openLinkIn(window, url, {
++      forceForeground: true,
++      triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
++      userContextId,
++      resolveOnNewTabCreated: targetBrowser => {
++        if (trustSourceChanged) {
++          const originKey = exactHTTPSOriginKey(Services.io.newURI(url));
++          if (originKey && targetBrowser?.browsingContext) {
++            this._pendingTrustChangeNavigations.set(
++              targetBrowser.browsingContext,
++              originKey
++            );
++          }
++        }
++        if (!closeSourceTab) {
++          return;
++        }
++        const sourceTab = window.gBrowser.getTabForBrowser(browser);
++        if (sourceTab) {
++          window.gBrowser.removeTab(sourceTab, { animate: false });
++        }
++      },
++    });
++  },
++
++  _openLinkIn(window, url, params) {
++    ChromeUtils.importESModule(
++      "resource:///modules/URILoadingHelper.sys.mjs"
++    ).URILoadingHelper.openLinkIn(window, url, "tab", params);
++  },
++
++  // Called only by the certificate-error actor after native PSM has marked a
++  // failed ordinary TLS request as requiring the exact Russian PKI anchor.
++  // The actor gives us an address and method, never a channel, certificates,
++  // referrer, opener, form data, cookies, or session state.
++  openAddressOnlyAfterRussianPKICertificateError(browser, url, method) {
++    if (!browser?.ownerGlobal || browser.ownerGlobal.closed) {
++      return false;
++    }
++    const originAttributes = browser.browsingContext?.originAttributes;
++    // A first certificate-error page can win the race with BrowserGlue's
++    // deferred startup task on a new profile. Revalidate/create only the
++    // managed identity here; failure still leaves the ordinary TLS error in
++    // place and never substitutes an arbitrary container.
++    const managedContainer = lazy.GoodBearRussianPKIContainer;
++    const userContextId =
++      managedContainer.dedicatedUserContextId ??
++      managedContainer.ensureContainer()?.userContextId;
++    if (
++      !originAttributes ||
++      originAttributes.privateBrowsingId !== 0 ||
++      originAttributes.userContextId !== 0 ||
++      !userContextId ||
++      typeof method !== "string"
++    ) {
++      return false;
++    }
++
++    // Never decide that an origin is unknown while either profile store is
++    // still loading. Retry on the same error page after initialization; a
++    // failure leaves the standard certificate error untouched.
++    if (!managedContainer.routingStateLoaded) {
++      void managedContainer
++        .initialize()
++        .then(() =>
++          this.openAddressOnlyAfterRussianPKICertificateError(
++            browser,
++            url,
++            method
++          )
++        )
++        .catch(error =>
++          console.error("Good Bear routing state could not be loaded", error)
++        );
++      return true;
++    }
++
++    let uri;
++    try {
++      uri = Services.io.newURI(url);
++    } catch {
++      return false;
++    }
++    if (uri.scheme !== "https" || !uri.asciiHost) {
++      return false;
++    }
++
++    const isSafeFirstVisitMethod = method === "GET" || method === "HEAD";
++    const historyEntry = managedContainer.trustHistoryStore.get(uri);
++    const isUnknownOrigin =
++      !managedContainer.assignmentStore.isAssigned(uri) && !historyEntry;
++    const trustSourceChanged =
++      !managedContainer.assignmentStore.isAssigned(uri) &&
++      historyEntry?.lastConfirmedDomain === "STANDARD";
++
++    this._scheduleAddressOnlyOpen(browser, uri.spec, userContextId, {
++      closeSourceTab: true,
++      hasRequestBody: method !== "GET" && method !== "HEAD",
++      // The actor can only reach this point after native PSM completed the
++      // exact-anchor alternate validation on the failed ordinary request.
++      // An auto-open transfers only that address and records nothing until
++      // the new managed-context connection itself succeeds.
++      autoOpen: isSafeFirstVisitMethod && isUnknownOrigin,
++      trustSourceChanged,
++    });
++    return true;
++  },
++};
+ 
+ ChromeUtils.defineLazyGetter(
+   lazy,
+@@ -1083,7 +1582,8 @@
+         name: "ContextualIdentityService.load",
+         task: async () => {
+           await lazy.ContextualIdentityService.load();
+-          lazy.GoodBearRussianPKIContainer.start();
++          await lazy.GoodBearRussianPKIContainer.initialize();
++          GoodBearRussianPKINavigationPolicy.start();
+           lazy.Discovery.update();
+         },
+       },
+--- a/browser/components/GoodBearRussianPKIContainer.sys.mjs
++++ b/browser/components/GoodBearRussianPKIContainer.sys.mjs
+@@ -7,14 +7,57 @@
+ // This value is an implementation identity, not presentation text. The only
+ // authority for Russian PKI container scope is the real userContextId held by
+ // the matching native contextual identity. M5-02 will own whether support is
+-// enabled; M6 will own routing. Neither a name nor an icon authorizes trust.
+-export const GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE =
+-  "goodbear-russian-pki";
++// enabled. Neither a name nor an icon authorizes trust.
++export const GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE = "goodbear-russian-pki";
+ 
+ const CONTAINER_NAME = "Российская PKI";
+ const CONTAINER_ICON = "fence";
+ const CONTAINER_COLOR = "gray";
+ const CONTAINER_DELETED_TOPIC = "contextual-identity-deleted";
++const ENABLED_PREF = "security.goodbear.russian_pki.enabled";
++const PREF_CHANGED_TOPIC = "nsPref:changed";
++const ASSIGNMENTS_SCHEMA_VERSION = 1;
++const ASSIGNMENTS_FILE_NAME = "goodbear-russian-pki-assignments.json";
++const TRUST_HISTORY_SCHEMA_VERSION = 1;
++const TRUST_HISTORY_FILE_NAME = "goodbear-russian-pki-trust-history.json";
++// This pref is a runtime mirror for the native HTTP guard. It is not a trust
++// decision: a value can only make an ordinary request fail closed. The
++// profile JSON file above remains the canonical assignment store.
++const ASSIGNMENTS_RUNTIME_PREF =
++  "network.goodbear.russian_pki.assigned_origins";
++
++export const GoodBearRussianPKILoadDecision = Object.freeze({
++  Ordinary: "ordinary",
++  Isolated: "isolated",
++  BodyBlocked: "body-blocked",
++});
++
++// These are routing observations, never certificate-verification results or
++// grants. INVALID is deliberately absent: a failed connection must not become
++// history that later code could mistake for a confirmed trust domain.
++export const GoodBearRussianPKITrustDomain = Object.freeze({
++  Standard: "STANDARD",
++  RussianPKI: "RUSSIAN_PKI",
++});
++
++export const GoodBearRussianPKITrustTransition = Object.freeze({
++  InitialStandard: "INITIAL_STANDARD",
++  InitialRussianPKI: "INITIAL_RUSSIAN_PKI",
++  StandardToRussianPKI: "STANDARD_TO_RUSSIAN_PKI",
++  RussianPKIToStandard: "RUSSIAN_PKI_TO_STANDARD",
++});
++
++function getScopeAuthority() {
++  try {
++    return Cc["@mozilla.org/psm;1"].getService(Ci.nsINSSComponent);
++  } catch (error) {
++    console.error(
++      "Good Bear Russian PKI scope authority is unavailable",
++      error
++    );
++    return null;
++  }
++}
+ 
+ function isUsableManagedIdentity(identity) {
+   return (
+@@ -25,30 +68,650 @@
+   );
+ }
+ 
++function canonicalizeAssignmentOrigin(origin) {
++  let uri;
++  try {
++    uri = typeof origin === "string" ? Services.io.newURI(origin) : origin;
++  } catch {
++    return null;
++  }
++
++  if (!uri || uri.scheme !== "https" || !uri.asciiHost) {
++    return null;
++  }
++
++  const port = uri.port === -1 ? 443 : uri.port;
++  if (!Number.isInteger(port) || port < 1 || port > 65535) {
++    return null;
++  }
++
++  return Object.freeze({
++    scheme: "https",
++    host: uri.asciiHost.toLowerCase(),
++    port,
++  });
++}
++
++function assignmentKey(assignment) {
++  return `${assignment.scheme}\u0000${assignment.host}\u0000${assignment.port}`;
++}
++
++function storedAssignmentIsCanonical(assignment) {
++  if (
++    !assignment ||
++    typeof assignment !== "object" ||
++    Array.isArray(assignment) ||
++    Object.keys(assignment).length !== 3 ||
++    typeof assignment.scheme !== "string" ||
++    typeof assignment.host !== "string" ||
++    !Number.isInteger(assignment.port)
++  ) {
++    return false;
++  }
++
++  const host = assignment.host.includes(":")
++    ? `[${assignment.host}]`
++    : assignment.host;
++  const canonical = canonicalizeAssignmentOrigin(
++    `${assignment.scheme}://${host}:${assignment.port}/`
++  );
++  return (
++    canonical !== null &&
++    canonical.scheme === assignment.scheme &&
++    canonical.host === assignment.host &&
++    canonical.port === assignment.port
++  );
++}
++
++function isKnownTrustDomain(domain) {
++  return Object.values(GoodBearRussianPKITrustDomain).includes(domain);
++}
++
++function trustTransitionFor(previousDomain, currentDomain) {
++  if (!previousDomain) {
++    return currentDomain === GoodBearRussianPKITrustDomain.Standard
++      ? GoodBearRussianPKITrustTransition.InitialStandard
++      : GoodBearRussianPKITrustTransition.InitialRussianPKI;
++  }
++  if (
++    previousDomain === GoodBearRussianPKITrustDomain.Standard &&
++    currentDomain === GoodBearRussianPKITrustDomain.RussianPKI
++  ) {
++    return GoodBearRussianPKITrustTransition.StandardToRussianPKI;
++  }
++  if (
++    previousDomain === GoodBearRussianPKITrustDomain.RussianPKI &&
++    currentDomain === GoodBearRussianPKITrustDomain.Standard
++  ) {
++    return GoodBearRussianPKITrustTransition.RussianPKIToStandard;
++  }
++  return null;
++}
++
++function storedTrustHistoryEntryIsCanonical(entry) {
++  if (
++    !entry ||
++    typeof entry !== "object" ||
++    Array.isArray(entry) ||
++    Object.keys(entry).length !== 5 ||
++    !storedAssignmentIsCanonical({
++      scheme: entry.scheme,
++      host: entry.host,
++      port: entry.port,
++    }) ||
++    !isKnownTrustDomain(entry.lastConfirmedDomain) ||
++    !Object.values(GoodBearRussianPKITrustTransition).includes(
++      entry.lastTransition
++    )
++  ) {
++    return false;
++  }
++
++  const isInitialTransition = entry.lastTransition.startsWith("INITIAL_");
++  if (isInitialTransition) {
++    return (
++      (entry.lastTransition ===
++        GoodBearRussianPKITrustTransition.InitialStandard &&
++        entry.lastConfirmedDomain === GoodBearRussianPKITrustDomain.Standard) ||
++      (entry.lastTransition ===
++        GoodBearRussianPKITrustTransition.InitialRussianPKI &&
++        entry.lastConfirmedDomain === GoodBearRussianPKITrustDomain.RussianPKI)
++    );
++  }
++
++  return (
++    trustTransitionFor(
++      entry.lastTransition ===
++        GoodBearRussianPKITrustTransition.StandardToRussianPKI
++        ? GoodBearRussianPKITrustDomain.Standard
++        : GoodBearRussianPKITrustDomain.RussianPKI,
++      entry.lastConfirmedDomain
++    ) === entry.lastTransition
++  );
++}
++
++/**
++ * Keeps the minimum local, origin-scoped observation needed to notice a
++ * trust-domain change. It has no verifier, assignment, or routing authority.
++ */
++export class GoodBearRussianPKITrustHistoryStore {
++  constructor(
++    filePath = PathUtils.join(PathUtils.profileDir, TRUST_HISTORY_FILE_NAME)
++  ) {
++    this._filePath = filePath;
++    this._history = new Map();
++    this._loaded = false;
++    this._loadPromise = null;
++    this._writeQueue = Promise.resolve();
++  }
++
++  async load() {
++    if (this._loadPromise) {
++      return this._loadPromise;
++    }
++    this._loadPromise = this._load();
++    return this._loadPromise;
++  }
++
++  get isLoaded() {
++    return this._loaded;
++  }
++
++  async _load() {
++    let stored;
++    try {
++      stored = await IOUtils.readJSON(this._filePath);
++    } catch (error) {
++      if (error.name !== "NotFoundError") {
++        console.error(
++          "Could not read Good Bear Russian PKI trust history",
++          error
++        );
++      }
++      this._loaded = true;
++      return false;
++    }
++
++    if (
++      !stored ||
++      typeof stored !== "object" ||
++      Array.isArray(stored) ||
++      Object.keys(stored).length !== 2 ||
++      stored.version !== TRUST_HISTORY_SCHEMA_VERSION ||
++      !Array.isArray(stored.history) ||
++      !stored.history.every(storedTrustHistoryEntryIsCanonical)
++    ) {
++      this._loaded = true;
++      return false;
++    }
++
++    const history = new Map();
++    for (const entry of stored.history) {
++      const key = assignmentKey(entry);
++      if (history.has(key)) {
++        this._loaded = true;
++        return false;
++      }
++      history.set(key, Object.freeze({ ...entry }));
++    }
++    this._history = history;
++    this._loaded = true;
++    return true;
++  }
++
++  get(origin) {
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    const entry =
++      this._loaded && assignment
++        ? this._history.get(assignmentKey(assignment))
++        : null;
++    return entry ? { ...entry } : null;
++  }
++
++  entries() {
++    if (!this._loaded) {
++      return [];
++    }
++    return [...this._history.values()]
++      .map(entry => ({ ...entry }))
++      .sort((left, right) =>
++        assignmentKey(left).localeCompare(assignmentKey(right))
++      );
++  }
++
++  async recordConfirmed(origin, domain) {
++    await this.load();
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    if (!assignment || !isKnownTrustDomain(domain)) {
++      return false;
++    }
++
++    const key = assignmentKey(assignment);
++    const previous = this._history.get(key);
++    if (previous?.lastConfirmedDomain === domain) {
++      return true;
++    }
++    const lastTransition = trustTransitionFor(
++      previous?.lastConfirmedDomain,
++      domain
++    );
++    if (!lastTransition) {
++      return false;
++    }
++
++    const entry = Object.freeze({
++      ...assignment,
++      lastConfirmedDomain: domain,
++      lastTransition,
++    });
++    this._history.set(key, entry);
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      if (previous) {
++        this._history.set(key, previous);
++      } else {
++        this._history.delete(key);
++      }
++      console.error(
++        "Could not persist Good Bear Russian PKI trust history",
++        error
++      );
++      return false;
++    }
++  }
++
++  async clear(origin) {
++    await this.load();
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    if (!assignment) {
++      return false;
++    }
++    const key = assignmentKey(assignment);
++    const previous = this._history.get(key);
++    if (!previous) {
++      return false;
++    }
++    this._history.delete(key);
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._history.set(key, previous);
++      console.error(
++        "Could not clear Good Bear Russian PKI trust history",
++        error
++      );
++      return false;
++    }
++  }
++
++  async clearAll() {
++    await this.load();
++    if (!this._history.size) {
++      return true;
++    }
++    const previous = this._history;
++    this._history = new Map();
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._history = previous;
++      console.error(
++        "Could not clear Good Bear Russian PKI trust history",
++        error
++      );
++      return false;
++    }
++  }
++
++  /**
++   * Restores the exact non-authoritative entry after a paired assignment
++   * transaction fails. Only the container manager may use this rollback seam.
++   *
++   * @param {string|nsIURI} origin - Exact HTTPS origin being rolled back.
++   * @param {object} entry - Previously validated history entry.
++   */
++  async _restoreForFailedTransaction(origin, entry) {
++    await this.load();
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    if (
++      !assignment ||
++      !storedTrustHistoryEntryIsCanonical(entry) ||
++      assignmentKey(assignment) !== assignmentKey(entry)
++    ) {
++      return false;
++    }
++
++    const key = assignmentKey(assignment);
++    const current = this._history.get(key);
++    this._history.set(key, Object.freeze({ ...entry }));
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      if (current) {
++        this._history.set(key, current);
++      } else {
++        this._history.delete(key);
++      }
++      console.error(
++        "Could not restore Good Bear Russian PKI trust history transaction",
++        error
++      );
++      return false;
++    }
++  }
++
++  /**
++   * Restores a complete history snapshot after a paired assignment reset
++   * fails. Only the container manager may use this rollback seam.
++   *
++   * @param {Array<object>} entries - Previously validated history entries.
++   */
++  async _restoreAllForFailedTransaction(entries) {
++    await this.load();
++    if (
++      !Array.isArray(entries) ||
++      !entries.every(storedTrustHistoryEntryIsCanonical)
++    ) {
++      return false;
++    }
++
++    const restored = new Map();
++    for (const entry of entries) {
++      const key = assignmentKey(entry);
++      if (restored.has(key)) {
++        return false;
++      }
++      restored.set(key, Object.freeze({ ...entry }));
++    }
++
++    const current = this._history;
++    this._history = restored;
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._history = current;
++      console.error(
++        "Could not restore Good Bear Russian PKI trust history reset transaction",
++        error
++      );
++      return false;
++    }
++  }
++
++  _write() {
++    const serialized = {
++      version: TRUST_HISTORY_SCHEMA_VERSION,
++      history: this.entries(),
++    };
++    this._writeQueue = this._writeQueue
++      .catch(() => {})
++      .then(() =>
++        IOUtils.writeJSON(this._filePath, serialized, {
++          tmpPath: `${this._filePath}.tmp`,
++        })
++      );
++    return this._writeQueue;
++  }
++}
++
++/**
++ * Keeps exact Russian PKI origin assignments in the local profile only.
++ */
++export class GoodBearRussianPKIAssignmentStore {
++  constructor(
++    filePath = PathUtils.join(PathUtils.profileDir, ASSIGNMENTS_FILE_NAME)
++  ) {
++    this._filePath = filePath;
++    this._assignments = new Map();
++    this._loaded = false;
++    this._loadPromise = null;
++    this._writeQueue = Promise.resolve();
++  }
++
++  async load() {
++    if (this._loadPromise) {
++      return this._loadPromise;
++    }
++
++    this._loadPromise = this._load();
++    return this._loadPromise;
++  }
++
++  get isLoaded() {
++    return this._loaded;
++  }
++
++  async _load() {
++    let stored;
++    try {
++      stored = await IOUtils.readJSON(this._filePath);
++    } catch (error) {
++      if (error.name !== "NotFoundError") {
++        console.error(
++          "Could not read Good Bear Russian PKI assignments",
++          error
++        );
++      }
++      this._loaded = true;
++      this._publishRuntimeAssignments();
++      return false;
++    }
++
++    if (
++      !stored ||
++      typeof stored !== "object" ||
++      Array.isArray(stored) ||
++      Object.keys(stored).length !== 2 ||
++      stored.version !== ASSIGNMENTS_SCHEMA_VERSION ||
++      !Array.isArray(stored.assignments) ||
++      !stored.assignments.every(storedAssignmentIsCanonical)
++    ) {
++      this._loaded = true;
++      this._publishRuntimeAssignments();
++      return false;
++    }
++
++    const assignments = new Map();
++    for (const assignment of stored.assignments) {
++      const key = assignmentKey(assignment);
++      if (assignments.has(key)) {
++        this._loaded = true;
++        this._publishRuntimeAssignments();
++        return false;
++      }
++      assignments.set(key, Object.freeze({ ...assignment }));
++    }
++
++    this._assignments = assignments;
++    this._loaded = true;
++    this._publishRuntimeAssignments();
++    return true;
++  }
++
++  isAssigned(origin) {
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    return (
++      this._loaded &&
++      assignment !== null &&
++      this._assignments.has(assignmentKey(assignment))
++    );
++  }
++
++  assignments() {
++    if (!this._loaded) {
++      return [];
++    }
++    return [...this._assignments.values()].map(assignment => ({
++      ...assignment,
++    }));
++  }
++
++  async assign(origin) {
++    await this.load();
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    if (!assignment) {
++      return false;
++    }
++
++    const key = assignmentKey(assignment);
++    if (this._assignments.has(key)) {
++      return true;
++    }
++
++    this._assignments.set(key, assignment);
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._assignments.delete(key);
++      console.error(
++        "Could not persist Good Bear Russian PKI assignment",
++        error
++      );
++      return false;
++    }
++  }
++
++  async clear(origin) {
++    await this.load();
++    const assignment = canonicalizeAssignmentOrigin(origin);
++    if (!assignment) {
++      return false;
++    }
++
++    const key = assignmentKey(assignment);
++    const previous = this._assignments.get(key);
++    if (!previous) {
++      return false;
++    }
++
++    this._assignments.delete(key);
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._assignments.set(key, previous);
++      console.error("Could not clear Good Bear Russian PKI assignment", error);
++      return false;
++    }
++  }
++
++  async clearAll() {
++    await this.load();
++    if (!this._assignments.size) {
++      return true;
++    }
++
++    const previous = this._assignments;
++    this._assignments = new Map();
++    try {
++      await this._write();
++      return true;
++    } catch (error) {
++      this._assignments = previous;
++      console.error("Could not clear Good Bear Russian PKI assignments", error);
++      return false;
++    }
++  }
++
++  _write() {
++    const serialized = {
++      version: ASSIGNMENTS_SCHEMA_VERSION,
++      assignments: [...this._assignments.values()]
++        .map(assignment => ({ ...assignment }))
++        .sort((left, right) =>
++          assignmentKey(left).localeCompare(assignmentKey(right))
++        ),
++    };
++
++    this._writeQueue = this._writeQueue
++      .catch(() => {})
++      .then(() =>
++        IOUtils.writeJSON(this._filePath, serialized, {
++          tmpPath: `${this._filePath}.tmp`,
++        })
++      )
++      .then(() => this._publishRuntimeAssignments());
++    return this._writeQueue;
++  }
++
++  _publishRuntimeAssignments() {
++    const origins = [...this._assignments.values()]
++      .map(({ host, port }) => `${host}:${port}`)
++      .sort();
++    const originKeys = origins.join("\n");
++    Services.prefs.setStringPref(ASSIGNMENTS_RUNTIME_PREF, originKeys);
++    getScopeAuthority()?.setGoodBearRussianPKIAssignedOrigins(originKeys);
++  }
++}
++
++/**
++ * Maintains the native contextual identity that scopes Russian PKI trust.
++ */
+ export class GoodBearRussianPKIContainerManager {
+-  constructor(identityService = ContextualIdentityService) {
++  constructor(
++    identityService = ContextualIdentityService,
++    scopeAuthority = getScopeAuthority(),
++    assignmentStore = new GoodBearRussianPKIAssignmentStore(),
++    trustHistoryStore = new GoodBearRussianPKITrustHistoryStore()
++  ) {
+     this._identityService = identityService;
++    this._scopeAuthority = scopeAuthority;
++    this._assignmentStore = assignmentStore;
++    this._trustHistoryStore = trustHistoryStore;
+     this._dedicatedUserContextId = null;
+     this._started = false;
++    // Every operation that changes the paired local routing state uses this
++    // queue. It prevents a reset from racing a completed TLS observation into
++    // a state where history and assignment refer to different decisions.
++    this._routingTransactionQueue = Promise.resolve();
+   }
+ 
+   start() {
+     if (!this._started) {
+       Services.obs.addObserver(this, CONTAINER_DELETED_TOPIC);
++      Services.prefs.addObserver(ENABLED_PREF, this);
+       this._started = true;
+     }
+     return this.ensureContainer();
+   }
+ 
++  async initialize() {
++    const container = this.start();
++    await Promise.all([
++      this._assignmentStore.load(),
++      this._trustHistoryStore.load(),
++    ]);
++    return container;
++  }
++
+   stop() {
+     if (this._started) {
+       Services.obs.removeObserver(this, CONTAINER_DELETED_TOPIC);
++      Services.prefs.removeObserver(ENABLED_PREF, this);
+       this._started = false;
+     }
+     this._dedicatedUserContextId = null;
++    this._clearPublishedContainer();
+   }
+ 
+-  observe(subject, topic) {
++  observe(subject, topic, data) {
++    if (topic === PREF_CHANGED_TOPIC && data === ENABLED_PREF) {
++      if (!this._isEnabled()) {
++        this._dedicatedUserContextId = null;
++        this._clearPublishedContainer();
++        return;
++      }
++      this.ensureContainer();
++      return;
++    }
++
+     if (topic !== CONTAINER_DELETED_TOPIC) {
+       return;
+     }
+@@ -58,6 +721,7 @@
+       // The replacement necessarily gets a different userContextId, making
+       // stale in-flight IDs fail closed when the scope authority rechecks it.
+       this._dedicatedUserContextId = null;
++      this._clearPublishedContainer();
+       this.ensureContainer();
+     }
+   }
+@@ -66,6 +730,298 @@
+     return this._dedicatedUserContextId;
+   }
+ 
++  get assignmentStore() {
++    return this._assignmentStore;
++  }
++
++  get trustHistoryStore() {
++    return this._trustHistoryStore;
++  }
++
++  get routingStateLoaded() {
++    return this._assignmentStore.isLoaded && this._trustHistoryStore.isLoaded;
++  }
++
++  /**
++   * Records a successful ordinary native STANDARD response as metadata.
++   *
++   * @param {string|nsIURI} origin - Exact successfully loaded HTTPS origin.
++   * @param {string} domain - Immutable successful native trust-domain value.
++   */
++  async recordOrdinaryStandardObservation(origin, domain) {
++    return this._runRoutingTransaction(() =>
++      this._recordOrdinaryStandardObservation(origin, domain)
++    );
++  }
++
++  async _recordOrdinaryStandardObservation(origin, domain) {
++    if (
++      domain !== GoodBearRussianPKITrustDomain.Standard ||
++      !this._isEnabled()
++    ) {
++      return false;
++    }
++    await Promise.all([
++      this._assignmentStore.load(),
++      this._trustHistoryStore.load(),
++    ]);
++    const previous = this._trustHistoryStore.get(origin);
++    if (
++      this._assignmentStore.isAssigned(origin) ||
++      (previous &&
++        previous.lastConfirmedDomain !== GoodBearRussianPKITrustDomain.Standard)
++    ) {
++      return false;
++    }
++    return this._trustHistoryStore.recordConfirmed(origin, domain);
++  }
++
++  /**
++   * Commits the first completed Russian PKI visit as one routing decision.
++   *
++   * The caller must have obtained `domain` directly from a successful native
++   * TLS result in the managed container.  Neither existing history nor an
++   * assignment authorizes this operation: the method is only for an unknown
++   * origin, and storage failures leave no usable assignment behind.
++   *
++   * @param {string|nsIURI} origin - Candidate exact HTTPS origin.
++   * @param {string} domain - Immutable successful native trust-domain value.
++   */
++  async completeFirstVisitRussianPKIAssignment(origin, domain) {
++    return this._runRoutingTransaction(() =>
++      this._completeFirstVisitRussianPKIAssignment(origin, domain)
++    );
++  }
++
++  async _completeFirstVisitRussianPKIAssignment(origin, domain) {
++    if (
++      domain !== GoodBearRussianPKITrustDomain.RussianPKI ||
++      !this._isEnabled() ||
++      !this._dedicatedUserContextId
++    ) {
++      return false;
++    }
++
++    await Promise.all([
++      this._assignmentStore.load(),
++      this._trustHistoryStore.load(),
++    ]);
++    if (
++      this._assignmentStore.isAssigned(origin) ||
++      this._trustHistoryStore.get(origin)
++    ) {
++      return false;
++    }
++
++    // Persist the observation first. It has no routing or trust authority, so
++    // a write failure cannot leave an origin isolated. If the following
++    // assignment write fails, best-effort rollback returns this exact origin
++    // to its prior unknown state; regardless of rollback outcome it never
++    // becomes a usable assignment.
++    if (!(await this._trustHistoryStore.recordConfirmed(origin, domain))) {
++      return false;
++    }
++    if (await this._assignmentStore.assign(origin)) {
++      return true;
++    }
++
++    await this._trustHistoryStore.clear(origin);
++    return false;
++  }
++
++  /**
++   * Commits a user-confirmed STANDARD -> RUSSIAN_PKI transition.
++   *
++   * The caller must pair explicit consent with a successful native Russian
++   * PKI result from the newly-created managed browsing context. History is
++   * only a precondition here: it never authorizes trust or routing by itself.
++   * If either profile write fails, no usable assignment is retained.
++   *
++   * @param {string|nsIURI} origin - Exact HTTPS origin that was confirmed.
++   * @param {string} domain - Immutable successful native trust-domain value.
++   */
++  async completeConfirmedStandardToRussianPKIAssignment(origin, domain) {
++    return this._runRoutingTransaction(() =>
++      this._completeConfirmedStandardToRussianPKIAssignment(origin, domain)
++    );
++  }
++
++  async _completeConfirmedStandardToRussianPKIAssignment(origin, domain) {
++    if (
++      domain !== GoodBearRussianPKITrustDomain.RussianPKI ||
++      !this._isEnabled() ||
++      !this._dedicatedUserContextId
++    ) {
++      return false;
++    }
++
++    await Promise.all([
++      this._assignmentStore.load(),
++      this._trustHistoryStore.load(),
++    ]);
++    const previous = this._trustHistoryStore.get(origin);
++    if (
++      this._assignmentStore.isAssigned(origin) ||
++      previous?.lastConfirmedDomain !== GoodBearRussianPKITrustDomain.Standard
++    ) {
++      return false;
++    }
++
++    // History has no routing authority, so persist the transition first. The
++    // authoritative assignment is published only after history succeeds; a
++    // failed assignment restores the exact prior STANDARD entry.
++    if (
++      !(await this._trustHistoryStore.recordConfirmed(
++        origin,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      ))
++    ) {
++      return false;
++    }
++    if (await this._assignmentStore.assign(origin)) {
++      return true;
++    }
++
++    await this._trustHistoryStore._restoreForFailedTransaction(
++      origin,
++      previous
++    );
++    return false;
++  }
++
++  /**
++   * Removes one exact-origin routing assignment and its non-authoritative
++   * history together. The next visit must be classified as a new visit, so
++   * stale STANDARD or RUSSIAN_PKI history cannot affect it.
++   *
++   * The stores are separate profile files. History is cleared first because
++   * it never grants routing; if the authoritative assignment write fails,
++   * the exact history entry is restored before reporting failure.
++   *
++   * @param {string|nsIURI} origin - Exact HTTPS origin being reset.
++   */
++  async resetAssignment(origin) {
++    return this._runRoutingTransaction(async () => {
++      await Promise.all([
++        this._assignmentStore.load(),
++        this._trustHistoryStore.load(),
++      ]);
++      const previousHistory = this._trustHistoryStore.get(origin);
++      const hadAssignment = this._assignmentStore.isAssigned(origin);
++      if (!previousHistory && !hadAssignment) {
++        return false;
++      }
++
++      if (previousHistory && !(await this._trustHistoryStore.clear(origin))) {
++        return false;
++      }
++      if (!hadAssignment || (await this._assignmentStore.clear(origin))) {
++        return true;
++      }
++
++      if (
++        !(await this._trustHistoryStore._restoreForFailedTransaction(
++          origin,
++          previousHistory
++        ))
++      ) {
++        console.error(
++          "Could not restore Good Bear Russian PKI history after assignment reset failure"
++        );
++      }
++      return false;
++    });
++  }
++
++  /**
++   * Removes all routing assignments and all routing observations as one
++   * logical reset. A failed assignment persistence step restores the complete
++   * history snapshot, leaving every origin on its pre-reset routing path.
++   */
++  async resetAllAssignments() {
++    return this._runRoutingTransaction(async () => {
++      await Promise.all([
++        this._assignmentStore.load(),
++        this._trustHistoryStore.load(),
++      ]);
++      const previousHistory = this._trustHistoryStore.entries();
++      const hasAssignments = !!this._assignmentStore.assignments().length;
++      if (!previousHistory.length && !hasAssignments) {
++        return true;
++      }
++
++      if (
++        previousHistory.length &&
++        !(await this._trustHistoryStore.clearAll())
++      ) {
++        return false;
++      }
++      if (!hasAssignments || (await this._assignmentStore.clearAll())) {
++        return true;
++      }
++
++      if (
++        previousHistory.length &&
++        !(await this._trustHistoryStore._restoreAllForFailedTransaction(
++          previousHistory
++        ))
++      ) {
++        console.error(
++          "Could not restore Good Bear Russian PKI history after full assignment reset failure"
++        );
++      }
++      return false;
++    });
++  }
++
++  _runRoutingTransaction(operation) {
++    const result = this._routingTransactionQueue.then(operation, operation);
++    this._routingTransactionQueue = result.catch(() => {});
++    return result;
++  }
++
++  resolveUserContextIdForLoad(
++    origin,
++    currentUserContextId = 0,
++    isPrivateBrowsing = false
++  ) {
++    if (
++      isPrivateBrowsing ||
++      currentUserContextId !== 0 ||
++      !this._isEnabled() ||
++      !this._dedicatedUserContextId ||
++      !this._assignmentStore.isAssigned(origin)
++    ) {
++      return currentUserContextId;
++    }
++    return this._dedicatedUserContextId;
++  }
++
++  getLoadDecision(
++    origin,
++    currentUserContextId = 0,
++    { isPrivateBrowsing = false, hasRequestBody = false } = {}
++  ) {
++    const userContextId = this.resolveUserContextIdForLoad(
++      origin,
++      currentUserContextId,
++      isPrivateBrowsing
++    );
++    if (userContextId === currentUserContextId) {
++      return Object.freeze({
++        type: GoodBearRussianPKILoadDecision.Ordinary,
++        userContextId,
++      });
++    }
++
++    return Object.freeze({
++      type: hasRequestBody
++        ? GoodBearRussianPKILoadDecision.BodyBlocked
++        : GoodBearRussianPKILoadDecision.Isolated,
++      userContextId,
++    });
++  }
++
+   getScopeSnapshot() {
+     return this._dedicatedUserContextId === null
+       ? null
+@@ -76,6 +1032,15 @@
+   }
+ 
+   ensureContainer() {
++    // Never leave a previous runtime ID authorized while validating profile
++    // state. Any failure below therefore remains fail-closed.
++    this._dedicatedUserContextId = null;
++    this._clearPublishedContainer();
++
++    if (!this._isEnabled()) {
++      return null;
++    }
++
+     const matches = this._identityService
+       .getPublicIdentities()
+       .filter(isUsableManagedIdentity);
+@@ -84,17 +1049,16 @@
+     // Do not select one, do not erase a possibly user-owned identity, and do
+     // not fall back to the ordinary context.
+     if (matches.length > 1) {
+-      this._dedicatedUserContextId = null;
+       return null;
+     }
+ 
+     if (matches.length === 1) {
+       const identity = matches[0];
+-      this._dedicatedUserContextId = identity.userContextId;
+       this._repairPresentation(identity);
+-      return this._identityService.getPublicIdentityFromId(
++      const repairedIdentity = this._identityService.getPublicIdentityFromId(
+         identity.userContextId
+       );
++      return this._publishValidatedContainer(repairedIdentity);
+     }
+ 
+     const identity = this._identityService.createManagedIdentity(
+@@ -103,8 +1067,7 @@
+       CONTAINER_COLOR,
+       GOOD_BEAR_RUSSIAN_PKI_CONTAINER_PURPOSE
+     );
+-    this._dedicatedUserContextId = identity.userContextId;
+-    return identity;
++    return this._publishValidatedContainer(identity);
+   }
+ 
+   _repairPresentation(identity) {
+@@ -121,6 +1084,38 @@
+       );
+     }
+   }
++
++  _isEnabled() {
++    return Services.prefs.getBoolPref(ENABLED_PREF, true);
++  }
++
++  _clearPublishedContainer() {
++    try {
++      this._scopeAuthority?.clearGoodBearRussianPKIContainerId();
++    } catch (error) {
++      console.error("Could not clear Good Bear Russian PKI scope", error);
++    }
++  }
++
++  _publishValidatedContainer(identity) {
++    if (!isUsableManagedIdentity(identity)) {
++      return null;
++    }
++    try {
++      if (
++        !this._scopeAuthority?.setGoodBearRussianPKIContainerId(
++          identity.userContextId
++        )
++      ) {
++        return null;
++      }
++    } catch (error) {
++      console.error("Could not publish Good Bear Russian PKI scope", error);
++      return null;
++    }
++    this._dedicatedUserContextId = identity.userContextId;
++    return identity;
++  }
+ }
+ 
+ export const GoodBearRussianPKIContainer =
+--- a/browser/components/contextualidentity/test/browser/browser.toml
++++ b/browser/components/contextualidentity/test/browser/browser.toml
+@@ -30,3 +30,11 @@
+ ["browser_goodbear_russian_pki_container.js"]
+-
++
++["browser_goodbear_russian_pki_trust_history.js"]
++
++["browser_goodbear_russian_pki_first_visit.js"]
++
++["browser_goodbear_russian_pki_trust_change.js"]
++
++["browser_goodbear_russian_pki_sticky_assignment.js"]
++
+ ["browser_forgetAPI_EME_forgetThisSite.js"]
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_history.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_history.js
+@@ -0,0 +1,169 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearRussianPKIAssignmentStore,
++  GoodBearRussianPKIContainerManager,
++  GoodBearRussianPKITrustDomain,
++  GoodBearRussianPKITrustHistoryStore,
++  GoodBearRussianPKITrustTransition,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++
++const TEST_STORE_FILE_PATH = PathUtils.join(
++  PathUtils.tempDir,
++  `goodbear-trust-history-${Services.uuid.generateUUID()}.json`
++);
++
++/**
++ * Provides the container-manager publication boundary without PSM state.
++ */
++class FakeScopeAuthority {
++  setGoodBearRussianPKIContainerId() {
++    return true;
++  }
++
++  clearGoodBearRussianPKIContainerId() {}
++}
++
++add_task(async function test_minimal_trust_history_survives_restart() {
++  registerCleanupFunction(() =>
++    IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true })
++  );
++
++  const history = new GoodBearRussianPKITrustHistoryStore(TEST_STORE_FILE_PATH);
++  ok(
++    await history.recordConfirmed(
++      "https://Example.TEST/path?must=not-persist",
++      GoodBearRussianPKITrustDomain.Standard
++    ),
++    "a STANDARD observation is stored"
++  );
++  ok(
++    await history.recordConfirmed(
++      "https://example.test/next",
++      GoodBearRussianPKITrustDomain.RussianPKI
++    ),
++    "a later Russian PKI observation is stored"
++  );
++
++  const reloaded = new GoodBearRussianPKITrustHistoryStore(
++    TEST_STORE_FILE_PATH
++  );
++  ok(await reloaded.load(), "trust history survives a new store instance");
++  const entry = reloaded.get("https://example.test:443/another-path");
++  is(entry.scheme, "https", "only the canonical scheme is retained");
++  is(entry.host, "example.test", "only the canonical host is retained");
++  is(entry.port, 443, "only the effective port is retained");
++  is(
++    entry.lastConfirmedDomain,
++    GoodBearRussianPKITrustDomain.RussianPKI,
++    "the final confirmed trust domain is retained"
++  );
++  is(
++    entry.lastTransition,
++    GoodBearRussianPKITrustTransition.StandardToRussianPKI,
++    "only the domain transition metadata is retained"
++  );
++  is(reloaded.entries().length, 1, "one exact origin is retained");
++  ok(
++    await reloaded.clear("https://example.test/"),
++    "one exact history entry can be cleared"
++  );
++  is(
++    reloaded.get("https://example.test/"),
++    null,
++    "the cleared entry is absent"
++  );
++});
++
++add_task(async function test_corrupt_or_extra_trust_history_fails_closed() {
++  registerCleanupFunction(() =>
++    IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true })
++  );
++  await IOUtils.writeJSON(
++    TEST_STORE_FILE_PATH,
++    {
++      version: 1,
++      history: [
++        {
++          scheme: "https",
++          host: "example.test",
++          port: 443,
++          lastConfirmedDomain: "RUSSIAN_PKI",
++          lastTransition: "INITIAL_RUSSIAN_PKI",
++          leafFingerprint: "must-not-be-accepted",
++        },
++      ],
++    },
++    { tmpPath: `${TEST_STORE_FILE_PATH}.tmp` }
++  );
++
++  const history = new GoodBearRussianPKITrustHistoryStore(TEST_STORE_FILE_PATH);
++  ok(!(await history.load()), "an extra certificate field rejects all history");
++  is(history.entries().length, 0, "corrupt history exposes no entry");
++  const nonTlsOrigin = new URL("https://example.test/");
++  nonTlsOrigin.protocol = "http:";
++  ok(
++    !(await history.recordConfirmed(
++      nonTlsOrigin.href,
++      GoodBearRussianPKITrustDomain.Standard
++    )),
++    "a non-HTTPS origin cannot be recorded"
++  );
++  ok(
++    !(await history.recordConfirmed("https://example.test/", "INVALID")),
++    "INVALID never becomes a confirmed trust-domain record"
++  );
++});
++
++add_task(async function test_history_has_no_routing_or_trust_authority() {
++  const assignmentPath = `${TEST_STORE_FILE_PATH}.assignments`;
++  const identityPath = `${TEST_STORE_FILE_PATH}.identities`;
++  registerCleanupFunction(async () => {
++    await IOUtils.remove(TEST_STORE_FILE_PATH, { ignoreAbsent: true });
++    await IOUtils.remove(assignmentPath, { ignoreAbsent: true });
++    await IOUtils.remove(identityPath, { ignoreAbsent: true });
++  });
++
++  const history = new GoodBearRussianPKITrustHistoryStore(TEST_STORE_FILE_PATH);
++  ok(
++    await history.recordConfirmed(
++      "https://history-only.example.test/",
++      GoodBearRussianPKITrustDomain.RussianPKI
++    ),
++    "a Russian PKI history observation exists"
++  );
++  const assignments = new GoodBearRussianPKIAssignmentStore(assignmentPath);
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(identityPath);
++  const manager = new GoodBearRussianPKIContainerManager(
++    identityService,
++    new FakeScopeAuthority(),
++    assignments,
++    history
++  );
++  registerCleanupFunction(() => manager.stop());
++  await manager.initialize();
++
++  is(
++    manager.trustHistoryStore.get("https://history-only.example.test/")
++      .lastConfirmedDomain,
++    GoodBearRussianPKITrustDomain.RussianPKI,
++    "the manager restores local history without treating it as a grant"
++  );
++
++  is(
++    manager.resolveUserContextIdForLoad(
++      "https://history-only.example.test/",
++      0
++    ),
++    0,
++    "history alone never creates a container assignment"
++  );
++  ok(
++    !assignments.isAssigned("https://history-only.example.test/"),
++    "history alone never grants routing authority"
++  );
++});
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_first_visit.js
+@@ -0,0 +1,222 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearRussianPKIAssignmentStore,
++  GoodBearRussianPKIContainer,
++  GoodBearRussianPKIContainerManager,
++  GoodBearRussianPKITrustDomain,
++  GoodBearRussianPKITrustHistoryStore,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++const { GoodBearRussianPKINavigationPolicy } = ChromeUtils.importESModule(
++  "resource:///modules/BrowserGlue.sys.mjs"
++);
++
++const TEST_STORE_FILE_PATH = PathUtils.join(
++  PathUtils.tempDir,
++  `goodbear-first-visit-${Services.uuid.generateUUID()}.json`
++);
++
++/** Provides the container-manager publication boundary without PSM state. */
++class FakeScopeAuthority {
++  setGoodBearRussianPKIContainerId() {
++    return true;
++  }
++
++  clearGoodBearRussianPKIContainerId() {}
++}
++
++async function withFirstVisitManager(callback) {
++  const assignmentPath = `${TEST_STORE_FILE_PATH}.assignments`;
++  const identityPath = `${TEST_STORE_FILE_PATH}.identities`;
++  const historyPath = `${TEST_STORE_FILE_PATH}.history`;
++  const assignments = new GoodBearRussianPKIAssignmentStore(assignmentPath);
++  const history = new GoodBearRussianPKITrustHistoryStore(historyPath);
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(identityPath);
++  const manager = new GoodBearRussianPKIContainerManager(
++    identityService,
++    new FakeScopeAuthority(),
++    assignments,
++    history
++  );
++  registerCleanupFunction(async () => {
++    manager.stop();
++    await Promise.all(
++      [assignmentPath, identityPath, historyPath].map(path =>
++        IOUtils.remove(path, { ignoreAbsent: true })
++      )
++    );
++  });
++  await manager.initialize();
++  await callback({ assignments, history, manager });
++}
++
++add_task(async function test_first_visit_commits_assignment_and_history() {
++  await withFirstVisitManager(async ({ assignments, history, manager }) => {
++    const origin = "https://first-visit.example.test/path?not=persisted";
++    ok(
++      await manager.completeFirstVisitRussianPKIAssignment(
++        origin,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      ),
++      "a completed managed-context Russian PKI visit commits"
++    );
++    ok(assignments.isAssigned(origin), "the exact origin is assigned");
++    is(
++      history.get(origin).lastConfirmedDomain,
++      GoodBearRussianPKITrustDomain.RussianPKI,
++      "only the native Russian PKI domain observation is recorded"
++    );
++    ok(
++      !(await manager.completeFirstVisitRussianPKIAssignment(
++        origin,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      )),
++      "an already known origin cannot produce a second first-visit commit"
++    );
++  });
++});
++
++add_task(async function test_first_visit_failure_leaves_no_assignment() {
++  await withFirstVisitManager(async ({ assignments, history, manager }) => {
++    const origin = "https://no-partial-assignment.example.test/";
++    const originalAssign = assignments.assign;
++    assignments.assign = async () => false;
++    registerCleanupFunction(() => {
++      assignments.assign = originalAssign;
++    });
++
++    ok(
++      !(await manager.completeFirstVisitRussianPKIAssignment(
++        origin,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      )),
++      "a failed assignment commit reports failure"
++    );
++    ok(!assignments.isAssigned(origin), "no partial assignment survives");
++    is(history.get(origin), null, "the paired history entry is rolled back");
++  });
++});
++
++add_task(async function test_only_native_managed_russian_response_commits() {
++  const origin = "https://native-result.example.test/";
++  const standardOrigin = "https://standard-result.example.test/";
++  const assignments = GoodBearRussianPKIContainer.assignmentStore;
++  const history = GoodBearRussianPKIContainer.trustHistoryStore;
++  await Promise.all([assignments.load(), history.load()]);
++  registerCleanupFunction(async () => {
++    await assignments.clear(origin);
++    await assignments.clear(standardOrigin);
++    await history.clear(origin);
++    await history.clear(standardOrigin);
++  });
++
++  const browser = gBrowser.selectedBrowser;
++  const originAttributes = {
++    privateBrowsingId: 0,
++    userContextId: GoodBearRussianPKIContainer.dedicatedUserContextId,
++  };
++  const channelFor = (url, domain) => ({
++    URI: Services.io.newURI(url),
++    securityInfo: { goodBearTrustDomain: domain },
++    loadInfo: {
++      browsingContextID: browser.browsingContext.id,
++      externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++    },
++  });
++
++  GoodBearRussianPKINavigationPolicy._recordCompletedFirstVisitRussianPKI(
++    channelFor(
++      standardOrigin,
++      1 // nsITransportSecurityInfo::GoodBearTrustDomain::Standard
++    ),
++    originAttributes
++  );
++  await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
++  ok(
++    !assignments.isAssigned(standardOrigin),
++    "a STANDARD response cannot create a Russian PKI assignment"
++  );
++
++  GoodBearRussianPKINavigationPolicy._recordCompletedFirstVisitRussianPKI(
++    channelFor(
++      origin,
++      2 // nsITransportSecurityInfo::GoodBearTrustDomain::RussianPKI
++    ),
++    originAttributes
++  );
++  await TestUtils.waitForCondition(
++    () => assignments.isAssigned(origin),
++    "the native Russian PKI response commits after complete validation"
++  );
++  is(
++    history.get(origin).lastConfirmedDomain,
++    GoodBearRussianPKITrustDomain.RussianPKI,
++    "the stored observation agrees with the immutable native result"
++  );
++});
++
++add_task(
++  async function test_unknown_get_head_auto_route_once_without_safety_ui() {
++    const policy = GoodBearRussianPKINavigationPolicy;
++    const managedContainer = ChromeUtils.importESModule(
++      "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++    ).GoodBearRussianPKIContainer;
++    const originalSchedule = policy._scheduleAddressOnlyOpen;
++    const calls = [];
++    policy._scheduleAddressOnlyOpen = (...args) => calls.push(args);
++    registerCleanupFunction(() => {
++      policy._scheduleAddressOnlyOpen = originalSchedule;
++    });
++
++    const browser = {
++      ownerGlobal: window,
++      browsingContext: {
++        originAttributes: { privateBrowsingId: 0, userContextId: 0 },
++      },
++    };
++    ok(
++      policy.openAddressOnlyAfterRussianPKICertificateError(
++        browser,
++        "https://unknown-first-visit.example.test/",
++        "GET"
++      ),
++      "the PSM-qualified first GET accepts address-only recovery"
++    );
++    is(calls.length, 1, "only one navigation is scheduled");
++    ok(
++      calls[0][3].autoOpen,
++      "unknown GET auto-opens after alternate validation"
++    );
++    ok(!calls[0][3].hasRequestBody, "no body crosses the boundary");
++    ok(calls[0][3].closeSourceTab, "the technical error tab closes later");
++
++    ok(
++      policy.openAddressOnlyAfterRussianPKICertificateError(
++        browser,
++        "https://unknown-head.example.test/",
++        "HEAD"
++      ),
++      "the PSM-qualified first HEAD accepts address-only recovery"
++    );
++    ok(calls[1][3].autoOpen, "unknown HEAD auto-opens without a safety claim");
++
++    ok(
++      policy.openAddressOnlyAfterRussianPKICertificateError(
++        browser,
++        "https://unknown-body.example.test/",
++        "POST"
++      ),
++      "a body method retains the explicit non-replay path"
++    );
++    ok(!calls[2][3].autoOpen, "POST is never auto-routed");
++    ok(calls[2][3].hasRequestBody, "POST remains explicitly body-blocked");
++    ok(
++      managedContainer.dedicatedUserContextId,
++      "the production identity exists"
++    );
++  }
++);
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_trust_change.js
+@@ -0,0 +1,371 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearRussianPKIAssignmentStore,
++  GoodBearRussianPKIContainer,
++  GoodBearRussianPKIContainerManager,
++  GoodBearRussianPKITrustDomain,
++  GoodBearRussianPKITrustHistoryStore,
++  GoodBearRussianPKITrustTransition,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++const { GoodBearRussianPKINavigationPolicy } = ChromeUtils.importESModule(
++  "resource:///modules/BrowserGlue.sys.mjs"
++);
++
++/** Provides the native publication boundary without production PSM state. */
++class FakeScopeAuthority {
++  setGoodBearRussianPKIContainerId() {
++    return true;
++  }
++
++  clearGoodBearRussianPKIContainerId() {}
++}
++
++async function withTransitionManager(callback) {
++  const basePath = PathUtils.join(
++    PathUtils.tempDir,
++    `goodbear-trust-change-${Services.uuid.generateUUID()}`
++  );
++  const assignmentPath = `${basePath}.assignments`;
++  const identityPath = `${basePath}.identities`;
++  const historyPath = `${basePath}.history`;
++  const assignments = new GoodBearRussianPKIAssignmentStore(assignmentPath);
++  const history = new GoodBearRussianPKITrustHistoryStore(historyPath);
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(identityPath);
++  const manager = new GoodBearRussianPKIContainerManager(
++    identityService,
++    new FakeScopeAuthority(),
++    assignments,
++    history
++  );
++  await manager.initialize();
++  try {
++    await callback({ assignments, history, manager });
++  } finally {
++    manager.stop();
++    await Promise.all(
++      [assignmentPath, identityPath, historyPath].map(path =>
++        IOUtils.remove(path, { ignoreAbsent: true })
++      )
++    );
++  }
++}
++
++add_task(async function test_confirmed_transition_commits_as_one_decision() {
++  await withTransitionManager(async ({ assignments, history, manager }) => {
++    const origin = "https://changed.example.test/path";
++    ok(
++      await history.recordConfirmed(
++        origin,
++        GoodBearRussianPKITrustDomain.Standard
++      ),
++      "a prior native STANDARD observation exists"
++    );
++    ok(
++      await manager.completeConfirmedStandardToRussianPKIAssignment(
++        origin,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      ),
++      "explicit consent followed by native Russian PKI success commits"
++    );
++    ok(assignments.isAssigned(origin), "the exact origin becomes assigned");
++    const entry = history.get(origin);
++    is(
++      entry.lastConfirmedDomain,
++      GoodBearRussianPKITrustDomain.RussianPKI,
++      "history records the newly confirmed domain"
++    );
++    is(
++      entry.lastTransition,
++      GoodBearRussianPKITrustTransition.StandardToRussianPKI,
++      "history records only the expected transition"
++    );
++  });
++});
++
++add_task(async function test_transition_commit_fails_closed_and_rolls_back() {
++  await withTransitionManager(async ({ assignments, history, manager }) => {
++    const origin = "https://commit-failure.example.test/";
++    const unknown = "https://no-standard-history.example.test/";
++    await history.recordConfirmed(
++      origin,
++      GoodBearRussianPKITrustDomain.Standard
++    );
++
++    ok(
++      !(await manager.completeConfirmedStandardToRussianPKIAssignment(
++        unknown,
++        GoodBearRussianPKITrustDomain.RussianPKI
++      )),
++      "history cannot be skipped to manufacture transition consent"
++    );
++    ok(!assignments.isAssigned(unknown), "unknown origin remains unassigned");
++
++    const originalRecordConfirmed = history.recordConfirmed;
++    history.recordConfirmed = async () => false;
++    try {
++      ok(
++        !(await manager.completeConfirmedStandardToRussianPKIAssignment(
++          origin,
++          GoodBearRussianPKITrustDomain.RussianPKI
++        )),
++        "a paired history-write failure rejects the commit"
++      );
++    } finally {
++      history.recordConfirmed = originalRecordConfirmed;
++    }
++    ok(
++      !assignments.isAssigned(origin),
++      "no usable assignment survives the paired-write failure"
++    );
++    is(
++      history.get(origin).lastConfirmedDomain,
++      GoodBearRussianPKITrustDomain.Standard,
++      "the previous STANDARD state survives the failure"
++    );
++
++    const assignmentFailure = "https://assignment-failure.example.test/";
++    await history.recordConfirmed(
++      assignmentFailure,
++      GoodBearRussianPKITrustDomain.Standard
++    );
++    const previousEntry = history.get(assignmentFailure);
++    const originalAssign = assignments.assign;
++    assignments.assign = async () => false;
++    try {
++      ok(
++        !(await manager.completeConfirmedStandardToRussianPKIAssignment(
++          assignmentFailure,
++          GoodBearRussianPKITrustDomain.RussianPKI
++        )),
++        "an assignment-write failure rejects the paired transaction"
++      );
++    } finally {
++      assignments.assign = originalAssign;
++    }
++    ok(
++      !assignments.isAssigned(assignmentFailure),
++      "an assignment failure publishes no routing authority"
++    );
++    Assert.deepEqual(
++      history.get(assignmentFailure),
++      previousEntry,
++      "an assignment failure restores the exact prior history entry"
++    );
++  });
++});
++
++add_task(async function test_native_standard_response_creates_history_only() {
++  const origin = "https://observed-standard.example.test/";
++  const assignments = GoodBearRussianPKIContainer.assignmentStore;
++  const history = GoodBearRussianPKIContainer.trustHistoryStore;
++  await Promise.all([assignments.load(), history.load()]);
++  registerCleanupFunction(async () => {
++    await assignments.clear(origin);
++    await history.clear(origin);
++  });
++
++  const browser = gBrowser.selectedBrowser;
++  GoodBearRussianPKINavigationPolicy._recordCompletedTrustObservation(
++    {
++      URI: Services.io.newURI(origin),
++      securityInfo: {
++        goodBearTrustDomain: 1,
++      },
++      loadInfo: {
++        browsingContextID: browser.browsingContext.id,
++        externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++      },
++    },
++    { privateBrowsingId: 0, userContextId: 0 }
++  );
++  await TestUtils.waitForCondition(
++    () => history.get(origin)?.lastConfirmedDomain === "STANDARD",
++    "the asynchronous STANDARD observation is persisted"
++  );
++  ok(!assignments.isAssigned(origin), "history alone grants no routing");
++});
++
++add_task(async function test_back_preserves_prior_standard_state() {
++  const origin = "https://back-from-change.example.test/";
++  const assignments = GoodBearRussianPKIContainer.assignmentStore;
++  const history = GoodBearRussianPKIContainer.trustHistoryStore;
++  await history.recordConfirmed(origin, GoodBearRussianPKITrustDomain.Standard);
++  registerCleanupFunction(async () => {
++    await assignments.clear(origin);
++    await history.clear(origin);
++  });
++
++  const policy = GoodBearRussianPKINavigationPolicy;
++  const originalSchedule = policy._scheduleAddressOnlyOpen;
++  const originalPrompt = policy._promptAddressOnlyOpen;
++  const originalOpen = policy._openAddressOnlyInContainer;
++  const scheduled = [];
++  const opened = [];
++  let backCalls = 0;
++  const browser = {
++    ownerGlobal: window,
++    browsingContext: {
++      id: 7003,
++      originAttributes: { privateBrowsingId: 0, userContextId: 0 },
++    },
++    goBack() {
++      backCalls++;
++    },
++  };
++  policy._scheduleAddressOnlyOpen = (...args) => scheduled.push(args);
++  policy._promptAddressOnlyOpen = () => 1;
++  policy._openAddressOnlyInContainer = (...args) => opened.push(args);
++  try {
++    ok(
++      policy.openAddressOnlyAfterRussianPKICertificateError(
++        browser,
++        origin,
++        "POST"
++      ),
++      "native PSM classification reaches the blocking transition decision"
++    );
++    is(scheduled.length, 1, "one blocking decision is scheduled");
++    ok(
++      scheduled[0][3].trustSourceChanged,
++      "the decision is explicitly marked as a trust-source change"
++    );
++    ok(!scheduled[0][3].autoOpen, "a prior STANDARD origin never auto-opens");
++    ok(
++      scheduled[0][3].hasRequestBody,
++      "a body-bearing method remains explicitly non-replayable"
++    );
++
++    policy._handleAddressOnlyChoice(
++      window,
++      browser,
++      origin,
++      GoodBearRussianPKIContainer.dedicatedUserContextId,
++      true,
++      true,
++      false,
++      true
++    );
++  } finally {
++    policy._scheduleAddressOnlyOpen = originalSchedule;
++    policy._promptAddressOnlyOpen = originalPrompt;
++    policy._openAddressOnlyInContainer = originalOpen;
++  }
++  is(backCalls, 1, "Back operates only on the original error tab");
++  is(opened.length, 0, "Back opens no isolated connection");
++  ok(!assignments.isAssigned(origin), "Back creates no assignment");
++  is(
++    history.get(origin).lastConfirmedDomain,
++    GoodBearRussianPKITrustDomain.Standard,
++    "Back preserves the previous trust history"
++  );
++});
++
++add_task(async function test_confirm_opens_address_only_then_native_commit() {
++  const origin = "https://confirmed-change.example.test/path?address=only";
++  const mismatch = "https://different-origin.example.test/";
++  const assignments = GoodBearRussianPKIContainer.assignmentStore;
++  const history = GoodBearRussianPKIContainer.trustHistoryStore;
++  await history.recordConfirmed(origin, GoodBearRussianPKITrustDomain.Standard);
++  await history.recordConfirmed(
++    mismatch,
++    GoodBearRussianPKITrustDomain.Standard
++  );
++  registerCleanupFunction(async () => {
++    await assignments.clear(origin);
++    await assignments.clear(mismatch);
++    await history.clear(origin);
++    await history.clear(mismatch);
++  });
++
++  const policy = GoodBearRussianPKINavigationPolicy;
++  const originalOpenLinkIn = policy._openLinkIn;
++  const calls = [];
++  policy._openLinkIn = (targetWindow, url, params) => {
++    calls.push({ targetWindow, url, params });
++    params.resolveOnNewTabCreated(gBrowser.selectedBrowser);
++  };
++  try {
++    policy._openAddressOnlyInContainer(
++      window,
++      gBrowser.selectedBrowser,
++      origin,
++      GoodBearRussianPKIContainer.dedicatedUserContextId,
++      false,
++      true
++    );
++  } finally {
++    policy._openLinkIn = originalOpenLinkIn;
++  }
++
++  is(calls.length, 1, "confirmation creates one isolated address load");
++  const { params } = calls[0];
++  ok(!("postData" in params), "no request body is transferred");
++  ok(!("referrerInfo" in params), "no ordinary referrer is transferred");
++  ok(!("openerBrowser" in params), "no ordinary opener is transferred");
++  ok(
++    params.triggeringPrincipal.isSystemPrincipal,
++    "the new load does not inherit an ordinary content principal"
++  );
++  ok(!assignments.isAssigned(origin), "confirmation alone is not a grant");
++
++  const channelFor = url => ({
++    URI: Services.io.newURI(url),
++    securityInfo: { goodBearTrustDomain: 2 },
++    loadInfo: {
++      browsingContextID: gBrowser.selectedBrowser.browsingContext.id,
++      externalContentPolicyType: Ci.nsIContentPolicy.TYPE_DOCUMENT,
++    },
++  });
++  const managedOriginAttributes = {
++    privateBrowsingId: 0,
++    userContextId: GoodBearRussianPKIContainer.dedicatedUserContextId,
++  };
++
++  policy._recordCompletedTrustObservation(
++    channelFor(mismatch),
++    managedOriginAttributes
++  );
++  await new Promise(resolve => Services.tm.dispatchToMainThread(resolve));
++  ok(
++    !assignments.isAssigned(mismatch),
++    "another origin cannot borrow the exact-origin consent"
++  );
++  ok(
++    !assignments.isAssigned(origin),
++    "a mismatched response consumes the transient consent fail-closed"
++  );
++
++  policy._openLinkIn = (targetWindow, url, openParams) => {
++    openParams.resolveOnNewTabCreated(gBrowser.selectedBrowser);
++  };
++  try {
++    policy._openAddressOnlyInContainer(
++      window,
++      gBrowser.selectedBrowser,
++      origin,
++      GoodBearRussianPKIContainer.dedicatedUserContextId,
++      false,
++      true
++    );
++  } finally {
++    policy._openLinkIn = originalOpenLinkIn;
++  }
++  policy._recordCompletedTrustObservation(
++    channelFor(origin),
++    managedOriginAttributes
++  );
++  await TestUtils.waitForCondition(
++    () => assignments.isAssigned(origin),
++    "native Russian PKI success consumes the exact consent and commits"
++  );
++  is(
++    history.get(origin).lastTransition,
++    GoodBearRussianPKITrustTransition.StandardToRussianPKI,
++    "the committed transition is STANDARD to Russian PKI"
++  );
++});
+--- a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_sticky_assignment.js
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_sticky_assignment.js
+@@ -0,0 +1,222 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++const {
++  GoodBearRussianPKIAssignmentStore,
++  GoodBearRussianPKIContainerManager,
++  GoodBearRussianPKILoadDecision,
++  GoodBearRussianPKITrustDomain,
++  GoodBearRussianPKITrustHistoryStore,
++  GoodBearRussianPKITrustTransition,
++} = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++
++/** Provides the native publication boundary without production PSM state. */
++class FakeScopeAuthority {
++  setGoodBearRussianPKIContainerId() {
++    return true;
++  }
++
++  clearGoodBearRussianPKIContainerId() {}
++}
++
++async function withResetManager(callback) {
++  const basePath = PathUtils.join(
++    PathUtils.tempDir,
++    `goodbear-sticky-assignment-${Services.uuid.generateUUID()}`
++  );
++  const assignmentPath = `${basePath}.assignments`;
++  const identityPath = `${basePath}.identities`;
++  const historyPath = `${basePath}.history`;
++  const assignments = new GoodBearRussianPKIAssignmentStore(assignmentPath);
++  const history = new GoodBearRussianPKITrustHistoryStore(historyPath);
++  const identityService =
++    ContextualIdentityService.createNewInstanceForTesting(identityPath);
++  const manager = new GoodBearRussianPKIContainerManager(
++    identityService,
++    new FakeScopeAuthority(),
++    assignments,
++    history
++  );
++  await manager.initialize();
++  try {
++    await callback({ assignments, history, manager });
++  } finally {
++    manager.stop();
++    await Promise.all(
++      [assignmentPath, identityPath, historyPath].map(path =>
++        IOUtils.remove(path, { ignoreAbsent: true })
++      )
++    );
++  }
++}
++
++async function assignRussianPKIOrigin(manager, origin) {
++  ok(
++    await manager.completeFirstVisitRussianPKIAssignment(
++      origin,
++      GoodBearRussianPKITrustDomain.RussianPKI
++    ),
++    `${origin} is assigned only after a native Russian PKI result`
++  );
++}
++
++add_task(
++  async function test_assignment_stays_isolated_after_standard_observation() {
++    await withResetManager(async ({ assignments, history, manager }) => {
++      const origin = "https://sticky-standard.example.test/";
++      await assignRussianPKIOrigin(manager, origin);
++
++      ok(
++        !(await manager.recordOrdinaryStandardObservation(
++          origin,
++          GoodBearRussianPKITrustDomain.Standard
++        )),
++        "a later STANDARD observation cannot overwrite an assigned origin"
++      );
++      ok(
++        assignments.isAssigned(origin),
++        "the exact assignment remains present"
++      );
++      is(
++        history.get(origin).lastConfirmedDomain,
++        GoodBearRussianPKITrustDomain.RussianPKI,
++        "the prior Russian PKI routing observation remains unchanged"
++      );
++      is(
++        manager.getLoadDecision(origin, 0).type,
++        GoodBearRussianPKILoadDecision.Isolated,
++        "RUSSIAN_PKI to STANDARD never silently returns to the ordinary context"
++      );
++    });
++  }
++);
++
++add_task(async function test_one_origin_reset_removes_assignment_and_history() {
++  await withResetManager(async ({ assignments, history, manager }) => {
++    const resetOrigin = "https://reset-one.example.test/path";
++    const retainedOrigin = "https://retain-one.example.test/";
++    await assignRussianPKIOrigin(manager, resetOrigin);
++    await assignRussianPKIOrigin(manager, retainedOrigin);
++
++    ok(
++      await manager.resetAssignment(resetOrigin),
++      "one exact origin is reset as a paired routing-state operation"
++    );
++    ok(!assignments.isAssigned(resetOrigin), "the selected assignment is gone");
++    is(history.get(resetOrigin), null, "the selected history is also gone");
++    is(
++      manager.getLoadDecision(resetOrigin, 0).type,
++      GoodBearRussianPKILoadDecision.Ordinary,
++      "the next visit has no stale container routing decision"
++    );
++    ok(
++      await manager.recordOrdinaryStandardObservation(
++        resetOrigin,
++        GoodBearRussianPKITrustDomain.Standard
++      ),
++      "the next successful visit is freshly classified"
++    );
++    is(
++      history.get(resetOrigin).lastTransition,
++      GoodBearRussianPKITrustTransition.InitialStandard,
++      "fresh classification does not inherit the removed Russian PKI state"
++    );
++    ok(
++      assignments.isAssigned(retainedOrigin),
++      "resetting one origin does not weaken another assignment"
++    );
++  });
++});
++
++add_task(async function test_all_reset_removes_every_assignment_and_history() {
++  await withResetManager(async ({ assignments, history, manager }) => {
++    const firstOrigin = "https://reset-all-first.example.test/";
++    const secondOrigin = "https://reset-all-second.example.test/";
++    await assignRussianPKIOrigin(manager, firstOrigin);
++    await assignRussianPKIOrigin(manager, secondOrigin);
++
++    ok(
++      await manager.resetAllAssignments(),
++      "the full reset commits all routing-state removals together"
++    );
++    is(assignments.assignments().length, 0, "no assignment remains");
++    is(history.entries().length, 0, "no routing history remains");
++    for (const origin of [firstOrigin, secondOrigin]) {
++      is(
++        manager.getLoadDecision(origin, 0).type,
++        GoodBearRussianPKILoadDecision.Ordinary,
++        `${origin} is freshly classified on its next visit`
++      );
++    }
++  });
++});
++
++add_task(async function test_failed_reset_restores_the_exact_prior_pair() {
++  await withResetManager(async ({ assignments, history, manager }) => {
++    const origin = "https://failed-reset.example.test/";
++    await assignRussianPKIOrigin(manager, origin);
++    const previousHistory = history.get(origin);
++    const originalClear = assignments.clear;
++    assignments.clear = async () => false;
++    try {
++      ok(
++        !(await manager.resetAssignment(origin)),
++        "a failed authoritative assignment write rejects the reset"
++      );
++    } finally {
++      assignments.clear = originalClear;
++    }
++    ok(
++      assignments.isAssigned(origin),
++      "the assignment remains after the failed paired reset"
++    );
++    Assert.deepEqual(
++      history.get(origin),
++      previousHistory,
++      "the exact prior history is restored after the failed paired reset"
++    );
++    is(
++      manager.getLoadDecision(origin, 0).type,
++      GoodBearRussianPKILoadDecision.Isolated,
++      "a failed reset never leaks the assigned origin into the ordinary context"
++    );
++  });
++});
++
++add_task(async function test_failed_full_reset_restores_every_prior_pair() {
++  await withResetManager(async ({ assignments, history, manager }) => {
++    const firstOrigin = "https://failed-all-first.example.test/";
++    const secondOrigin = "https://failed-all-second.example.test/";
++    await assignRussianPKIOrigin(manager, firstOrigin);
++    await assignRussianPKIOrigin(manager, secondOrigin);
++    const previousHistory = history.entries();
++    const originalClearAll = assignments.clearAll;
++    assignments.clearAll = async () => false;
++    try {
++      ok(
++        !(await manager.resetAllAssignments()),
++        "a failed authoritative full-reset write rejects the reset"
++      );
++    } finally {
++      assignments.clearAll = originalClearAll;
++    }
++    Assert.deepEqual(
++      history.entries(),
++      previousHistory,
++      "every prior history entry is restored after the failed full reset"
++    );
++    for (const origin of [firstOrigin, secondOrigin]) {
++      ok(
++        assignments.isAssigned(origin),
++        `${origin} remains assigned after the failed full reset`
++      );
++      is(
++        manager.getLoadDecision(origin, 0).type,
++        GoodBearRussianPKILoadDecision.Isolated,
++        `${origin} never leaks into the ordinary context after the failed full reset`
++      );
++    }
++  });
++});

@@ -1,0 +1,279 @@
+# M11-02: prove that the actual browser network boundary drops ordinary
+# cookie, referrer, and opener state when a known origin is reopened in the
+# managed Russian PKI container.
+
+diff --git a/browser/components/contextualidentity/test/browser/browser.toml b/browser/components/contextualidentity/test/browser/browser.toml
+--- a/browser/components/contextualidentity/test/browser/browser.toml
++++ b/browser/components/contextualidentity/test/browser/browser.toml
+@@ -9,5 +9,6 @@
+   "worker.js",
+   "blank.html",
++  "goodbear_russian_pki_navigation.sjs",
+ ]
+ prefs = [
+   "sidebar.verticalTabs.dragToPinPromo.dismissed=true",
+@@ -42,4 +43,6 @@
+ ["browser_goodbear_russian_pki_sticky_assignment.js"]
+ 
++["browser_goodbear_russian_pki_navigation_network.js"]
++
+ ["browser_forgetAPI_EME_forgetThisSite.js"]
+ 
+diff --git a/browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs b/browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs
+@@ -0,0 +1,34 @@
++const ORIGIN = "https://example.com";
++const PATH =
++  "/browser/browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs";
++
++function requestHeader(aRequest, name) {
++  return aRequest.hasHeader(name) ? aRequest.getHeader(name) : "";
++}
++
++function attribute(value) {
++  return String(value)
++    .replaceAll("&", "&amp;")
++    .replaceAll('"', "&quot;")
++    .replaceAll("<", "&lt;");
++}
++
++function handleRequest(aRequest, aResponse) {
++  const mode = new URLSearchParams(aRequest.queryString).get("mode");
++  if (mode === "redirect") {
++    aResponse.setStatusLine(aRequest.httpVersion, 302, "Found");
++    aResponse.setHeader("Location", `${ORIGIN}${PATH}?mode=report`, false);
++    return;
++  }
++
++  aResponse.setHeader("Content-Type", "text/html", false);
++  aResponse.setStatusLine(aRequest.httpVersion, 200, "OK");
++  aResponse.write(`<!doctype html>
++    <meta charset="utf-8">
++    <body data-cookie="${attribute(requestHeader(aRequest, "Cookie"))}"
++          data-referrer="${attribute(requestHeader(aRequest, "Referer"))}">
++      <script>
++        document.body.dataset.opener = window.opener ? "present" : "absent";
++      </script>
++    </body>`);
++}
+
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_russian_pki_navigation_network.js
+@@ -0,0 +1,213 @@
++/* Any copyright is dedicated to the Public Domain.
++ * http://creativecommons.org/publicdomain/zero/1.0/ */
++
++"use strict";
++
++const { GoodBearRussianPKIContainer } = ChromeUtils.importESModule(
++  "resource:///modules/GoodBearRussianPKIContainer.sys.mjs"
++);
++const { GoodBearRussianPKINavigationPolicy } = ChromeUtils.importESModule(
++  "resource:///modules/BrowserGlue.sys.mjs"
++);
++
++const TEST_ORIGIN = "https://example.com";
++const TEST_PATH =
++  "/browser/browser/components/contextualidentity/test/browser/goodbear_russian_pki_navigation.sjs";
++const SOURCE_URL = `${TEST_ORIGIN}${TEST_PATH}?mode=source`;
++const REDIRECT_URL = `${TEST_ORIGIN}${TEST_PATH}?mode=redirect`;
++const REPORT_URL = `${TEST_ORIGIN}${TEST_PATH}?mode=report`;
++const STICKY_URL = `${TEST_ORIGIN}${TEST_PATH}?mode=report&step=sticky`;
++const ORDINARY_COOKIE = "goodbear_m11_02=ordinary";
++
++function header(channel, name) {
++  try {
++    return channel.getRequestHeader(name);
++  } catch {
++    return "";
++  }
++}
++
++function collectNavigationRequests(events, topic) {
++  return subject => {
++    let channel;
++    try {
++      channel = subject.QueryInterface(Ci.nsIHttpChannel);
++    } catch {
++      return;
++    }
++    if (!channel.URI.spec.startsWith(`${TEST_ORIGIN}${TEST_PATH}`)) {
++      return;
++    }
++    events.push({
++      topic,
++      method: channel.requestMethod,
++      url: channel.URI.spec,
++      userContextId: channel.loadInfo?.originAttributes?.userContextId,
++      cookie: header(channel, "Cookie"),
++      referrer: header(channel, "Referer"),
++    });
++  };
++}
++
++add_task(async function test_network_state_is_never_transferred() {
++  await SpecialPowers.pushPrefEnv({
++    set: [["privacy.userContext.enabled", true]],
++  });
++  await GoodBearRussianPKIContainer.initialize();
++  GoodBearRussianPKINavigationPolicy.start();
++
++  const assignments = GoodBearRussianPKIContainer.assignmentStore;
++  const history = GoodBearRussianPKIContainer.trustHistoryStore;
++  await Promise.all([assignments.load(), history.load()]);
++  await assignments.clear(TEST_ORIGIN);
++  await history.clear(TEST_ORIGIN);
++  registerCleanupFunction(async () => {
++    await assignments.clear(TEST_ORIGIN);
++    await history.clear(TEST_ORIGIN);
++    Services.cookies.remove("example.com", "goodbear_m11_02", "/", {});
++  });
++
++  const sourceTab = await BrowserTestUtils.openNewForegroundTab({
++    gBrowser,
++    url: SOURCE_URL,
++  });
++  const sourceBrowser = sourceTab.linkedBrowser;
++  await SpecialPowers.spawn(sourceBrowser, [ORDINARY_COOKIE], cookie => {
++    content.document.cookie = `${cookie}; Secure; SameSite=None; Path=/`;
++    Assert.ok(
++      content.document.cookie.includes(cookie),
++      "the ordinary source context owns the test cookie"
++    );
++  });
++
++  ok(
++    await assignments.assign(TEST_ORIGIN),
++    "the exact origin is a known Russian PKI assignment"
++  );
++  const dedicatedUserContextId =
++    GoodBearRussianPKIContainer.dedicatedUserContextId;
++  Assert.greater(
++    dedicatedUserContextId,
++    0,
++    "the managed container has a real identity"
++  );
++
++  const events = [];
++  const beforeCookies = collectNavigationRequests(
++    events,
++    "http-on-modify-request-before-cookies"
++  );
++  const beforeCookiesTopic = "http-on-modify-request-before-cookies";
++  const sent = collectNavigationRequests(events, "http-on-modify-request");
++  Services.obs.addObserver(beforeCookies, beforeCookiesTopic);
++  Services.obs.addObserver(sent, "http-on-modify-request");
++  registerCleanupFunction(() => {
++    Services.obs.removeObserver(
++      beforeCookies,
++      "http-on-modify-request-before-cookies"
++    );
++    Services.obs.removeObserver(sent, "http-on-modify-request");
++  });
++
++  const isolatedTabPromise = BrowserTestUtils.waitForNewTab(
++    gBrowser,
++    REPORT_URL,
++    true
++  );
++  await SpecialPowers.spawn(sourceBrowser, [REDIRECT_URL], url => {
++    content.open(url, "_blank");
++  });
++  const isolatedTab = await isolatedTabPromise;
++  const isolatedBrowser = isolatedTab.linkedBrowser;
++
++  is(
++    isolatedBrowser.browsingContext.originAttributes.userContextId,
++    dedicatedUserContextId,
++    "the redirected real request runs in the managed native container"
++  );
++  const report = await SpecialPowers.spawn(isolatedBrowser, [], () => ({
++    cookie: content.document.body.dataset.cookie,
++    referrer: content.document.body.dataset.referrer,
++    opener: content.document.body.dataset.opener,
++  }));
++  ok(
++    !report.cookie.includes("goodbear_m11_02"),
++    "the response server did not receive the ordinary-context cookie"
++  );
++  is(report.referrer, "", "the response server did not receive a referrer");
++  is(report.opener, "absent", "the isolated document has no ordinary opener");
++
++  const ordinaryAttempts = events.filter(
++    event =>
++      event.topic === "http-on-modify-request-before-cookies" &&
++      event.url === REDIRECT_URL &&
++      event.userContextId === 0
++  );
++  is(
++    ordinaryAttempts.length,
++    1,
++    "the known ordinary request is observed exactly once before cookies"
++  );
++  is(
++    events.filter(
++      event =>
++        event.topic === "http-on-modify-request" &&
++        event.url === REDIRECT_URL &&
++        event.userContextId === 0
++    ).length,
++    0,
++    "the ordinary request is cancelled before it can be sent with cookies"
++  );
++  const managedRequests = events.filter(
++    event =>
++      event.topic === "http-on-modify-request" &&
++      event.userContextId === dedicatedUserContextId
++  );
++  Assert.greaterOrEqual(
++    managedRequests.length,
++    2,
++    "the managed request and its redirect were sent"
++  );
++  for (const request of managedRequests) {
++    ok(
++      !request.cookie.includes("goodbear_m11_02"),
++      `${request.url} has no ordinary-context cookie at the network boundary`
++    );
++    is(
++      request.referrer,
++      "",
++      `${request.url} has no ordinary-context referrer at the network boundary`
++    );
++  }
++
++  BrowserTestUtils.startLoadingURIString(isolatedBrowser, STICKY_URL);
++  await BrowserTestUtils.browserLoaded(isolatedBrowser, false, STICKY_URL);
++  is(
++    isolatedBrowser.browsingContext.originAttributes.userContextId,
++    dedicatedUserContextId,
++    "a later STANDARD navigation in the assigned tab remains sticky"
++  );
++  const stickyRequest = events.find(
++    event =>
++      event.topic === "http-on-modify-request" && event.url === STICKY_URL
++  );
++  is(
++    stickyRequest?.userContextId,
++    dedicatedUserContextId,
++    "the sticky navigation is sent only from the managed container"
++  );
++  ok(
++    !stickyRequest?.cookie.includes("goodbear_m11_02"),
++    "the sticky navigation still has no ordinary cookie"
++  );
++
++  const assignmentWasCleared = await assignments.clear(TEST_ORIGIN);
++  ok(assignmentWasCleared, "the exact assignment reset succeeds");
++  is(
++    GoodBearRussianPKIContainer.getLoadDecision(TEST_ORIGIN, 0).type,
++    "ordinary",
++    "the next ordinary visit is freshly classified after reset"
++  );
++  BrowserTestUtils.removeTab(isolatedTab);
++  BrowserTestUtils.removeTab(sourceTab);
++});

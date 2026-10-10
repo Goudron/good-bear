@@ -1,0 +1,18 @@
+# M15-07: enable spelling in a fresh Good Bear profile without locking the
+# dictionary selected by content language or the user.
+
+diff --git a/browser/app/profile/firefox.js b/browser/app/profile/firefox.js
+--- a/browser/app/profile/firefox.js
++++ b/browser/app/profile/firefox.js
+@@ -78,6 +78,11 @@ pref("extensions.dataCollectionPermissions.enabled", true);
+ // Dictionary download preference
+ pref("browser.dictionaries.download.url", "https://addons.mozilla.org/%LOCALE%/firefox/language-tools/");
+ 
++// Good Bear ships Russian RusSpell and Firefox's built-in English dictionary.
++// This default enables checking in new profiles only; it does not lock a
++// language or a later user preference.
++pref("layout.spellcheckDefault", 1);
++
+ // Whether the Nova Themes picker should be enabled in the about:addons page.
+ // (needs also browser.nova.enabled for the Nova Themes picker to be shown
+ // in the about:addons page).

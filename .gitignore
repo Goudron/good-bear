@@ -1,0 +1,7 @@
+/source/
+/artifacts/
+*.tar
+*.tar.xz
+*.tar.gz
+*.deb
+*.exe

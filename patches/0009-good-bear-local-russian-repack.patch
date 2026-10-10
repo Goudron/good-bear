@@ -1,0 +1,25 @@
+# Good Bear M5-01: Russian repack from the locally built base package
+#
+# A materialized upstream source archive has no Firefox VCS checkout. Reuse
+# the preceding local Good Bear package instead of resolving an artifact by
+# upstream revision, which keeps the Russian-only distribution reproducible.
+
+--- a/toolkit/locales/l10n.mk
++++ b/toolkit/locales/l10n.mk
+@@ -71,6 +71,16 @@
+ unpack:
+ 	$(RM) -r -f '$(ABS_DIST)/l10n-stage'
++# Good Bear host builds materialize Firefox from a pinned archive rather than a
++# VCS checkout. For a Russian repack, reuse the just-produced local base
++# package instead of asking `mach artifact install` to resolve a remote VCS
++# artifact. Ordinary Firefox and other downstream repacks retain upstream's
++# artifact-install path.
++ifdef GOODBEAR_BASE_PACKAGE
++	$(NSINSTALL) -D '$(ABS_DIST)/l10n-stage'
++	$(TAR) -xf '$(GOODBEAR_BASE_PACKAGE)' -C '$(ABS_DIST)/l10n-stage'
++else
+ 	$(PYTHON3) $(topsrcdir)/mach --log-no-times artifact install --unfiltered-project-package --distdir '$(ABS_DIST)/l10n-stage/$(MOZ_PKG_DIR)' --verbose
++endif
+ 
+ # The path to the object dir for the mozilla-central build system,
+ # may be overridden if necessary.

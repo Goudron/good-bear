@@ -1,0 +1,192 @@
+diff --git a/browser/moz.configure b/browser/moz.configure
+--- a/browser/moz.configure
++++ b/browser/moz.configure
+@@ -14,6 +14,9 @@
+ imply_option("MOZ_APP_VENDOR", "Good Bear Project")
+ imply_option("MOZ_APP_ID", "{ec8030f7-c20a-464f-9b0e-13a3a9e97384}")
+ imply_option("MOZ_APP_PROFILE", "goodbear")
++# Keep the native Firefox compatibility token independent of public branding.
++# The HTTP handler retains upstream version reduction for this product name.
++imply_option("MOZ_APP_UA_NAME", "Firefox")
+ # Include the DevTools client, not just the server (which is the default)
+ imply_option("MOZ_DEVTOOLS", "all")
+ imply_option("BROWSER_CHROME_URL", "chrome://browser/content/browser.xhtml")
+diff --git a/netwerk/test/unit/xpcshell.toml b/netwerk/test/unit/xpcshell.toml
+--- a/netwerk/test/unit/xpcshell.toml
++++ b/netwerk/test/unit/xpcshell.toml
+@@ -1347,6 +1347,8 @@
+ 
+ ["test_http_headers.js"]
+ 
++["test_goodbear_user_agent.js"]
++
+ ["test_http_server_timing.js"]
+ 
+ ["test_http_sfv.js"]
+diff --git a/netwerk/test/unit/test_goodbear_user_agent.js b/netwerk/test/unit/test_goodbear_user_agent.js
+new file mode 100644
+--- /dev/null
++++ b/netwerk/test/unit/test_goodbear_user_agent.js
+@@ -0,0 +1,85 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++const { AppConstants: UserAgentAppConstants } = ChromeUtils.importESModule(
++  "resource://gre/modules/AppConstants.sys.mjs"
++);
++
++const { HttpServer: UserAgentHttpServer } = ChromeUtils.importESModule(
++  "resource://testing-common/httpd.sys.mjs"
++);
++const USER_AGENT_OVERRIDE_PREF = "general.useragent.override";
++let userAgentServer;
++let userAgentRequestNumber = 0;
++
++add_setup(function setup_user_agent_echo_server() {
++  do_get_profile();
++  Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++  userAgentServer = new UserAgentHttpServer();
++  userAgentServer.registerPathHandler("/user-agent", (request, response) => {
++    response.setHeader("Content-Type", "text/plain", false);
++    response.setHeader("Cache-Control", "no-store", false);
++    response.write(request.getHeader("User-Agent"));
++  });
++  userAgentServer.start(-1);
++  registerCleanupFunction(async () => {
++    Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++    await new Promise(resolve => userAgentServer.stop(resolve));
++  });
++});
++
++function receivedUserAgent() {
++  const channel = NetUtil.newChannel({
++    uri:
++      "http://127.0.0.1:" +
++      userAgentServer.identity.primaryPort +
++      "/user-agent?request=" +
++      ++userAgentRequestNumber,
++    loadUsingSystemPrincipal: true,
++  });
++  return new Promise(resolve => {
++    channel.asyncOpen(
++      new ChannelListener((request, body) => resolve(body), null)
++    );
++  });
++}
++
++function assertFirefoxCompatibilityUserAgent(userAgent) {
++  const majorVersion = UserAgentAppConstants.MOZ_APP_VERSION.match(/^\d+/)[0];
++  Assert.ok(
++    userAgent.endsWith(" Firefox/" + majorVersion + ".0"),
++    "the server receives the upstream reduced Firefox compatibility token"
++  );
++  Assert.ok(
++    !/Good\s*Bear\//i.test(userAgent),
++    "public product branding is absent from the technical User-Agent"
++  );
++}
++
++add_task(
++  async function test_native_http_user_agent_preserves_firefox_compatibility() {
++    Assert.equal(
++      Services.prefs.getPrefType(USER_AGENT_OVERRIDE_PREF),
++      Ci.nsIPrefBranch.PREF_INVALID,
++      "native compatibility must work without a production preference override"
++    );
++    assertFirefoxCompatibilityUserAgent(await receivedUserAgent());
++  }
++);
++
++add_task(
++  async function test_clearing_override_never_restores_goodbear_product_token() {
++    const temporaryOverride = "GoodBear-UA-Regression-Sentinel/0";
++    Services.prefs.setStringPref(USER_AGENT_OVERRIDE_PREF, temporaryOverride);
++    Assert.equal(
++      await receivedUserAgent(),
++      temporaryOverride,
++      "the negative control observes the actual network preference override"
++    );
++    Services.prefs.clearUserPref(USER_AGENT_OVERRIDE_PREF);
++    assertFirefoxCompatibilityUserAgent(await receivedUserAgent());
++  }
++);
+diff --git a/browser/components/contextualidentity/test/browser/browser.toml b/browser/components/contextualidentity/test/browser/browser.toml
+--- a/browser/components/contextualidentity/test/browser/browser.toml
++++ b/browser/components/contextualidentity/test/browser/browser.toml
+@@ -29,6 +29,8 @@
+ ["browser_favicon.js"]
+ 
+ ["browser_goodbear_russian_pki_container.js"]
++
++["browser_goodbear_user_agent.js"]
+ 
+ ["browser_goodbear_russian_pki_trust_history.js"]
+ 
+diff --git a/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js b/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js
+new file mode 100644
+--- /dev/null
++++ b/browser/components/contextualidentity/test/browser/browser_goodbear_user_agent.js
+@@ -0,0 +1,60 @@
++/* This Source Code Form is subject to the terms of the Mozilla Public
++ * License, v. 2.0. If a copy of the MPL was not distributed with this
++ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
++
++"use strict";
++
++add_task(
++  async function test_navigator_user_agent_matches_native_firefox_token() {
++    await SpecialPowers.pushPrefEnv({
++      clear: [["general.useragent.override"]],
++      set: [["privacy.userContext.enabled", true]],
++    });
++    const nativeUserAgent = Services.io
++      .getProtocolHandler("http")
++      .QueryInterface(Ci.nsIHttpProtocolHandler).userAgent;
++    const majorVersion = Services.appinfo.platformVersion.match(/^\d+/)[0];
++    ok(
++      nativeUserAgent.endsWith(" Firefox/" + majorVersion + ".0"),
++      "native HTTP identity preserves the reduced Firefox version"
++    );
++    ok(
++      !/Good\s*Bear\//i.test(nativeUserAgent),
++      "the compatibility token does not expose public Good Bear branding"
++    );
++
++    for (const userContextId of [0, 1]) {
++      await BrowserTestUtils.withNewTab(
++        {
++          gBrowser,
++          opening() {
++            gBrowser.selectedTab = BrowserTestUtils.addTab(
++              gBrowser,
++              "https://example.com/browser/browser/components/contextualidentity/test/browser/empty_file.html",
++              { userContextId }
++            );
++          },
++        },
++        async browser => {
++          is(
++            browser.browsingContext.originAttributes.userContextId,
++            userContextId,
++            "the requested context is actually exercised"
++          );
++          const navigatorUserAgent = await SpecialPowers.spawn(
++            browser,
++            [],
++            () => {
++              return content.navigator.userAgent;
++            }
++          );
++          is(
++            navigatorUserAgent,
++            nativeUserAgent,
++            "navigator and HTTP agree in context " + userContextId
++          );
++        }
++      );
++    }
++  }
++);
